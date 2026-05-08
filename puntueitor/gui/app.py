@@ -2,8 +2,8 @@ import os
 import glob
 from pathlib import Path
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, LoadingIndicator, Label
-from textual.containers import Horizontal, Center, Middle, Vertical
+from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar
+from textual.containers import Horizontal, Center, Middle, Vertical, Container
 from textual import work
 
 from puntueitor.gui.widgets.game_list import GameList
@@ -13,8 +13,9 @@ from puntueitor.gui.screens.quit_confirmation import QuitConfirmation
 from puntueitor.gui.screens.sorting import SortingScreen
 from puntueitor.gui.screens.filtering import FilteringScreen
 from puntueitor.gui.screens.filter_input import FilterInputScreen
+from puntueitor.gui.screens.enrichers import EnrichersScreen
 from puntueitor.core.repository.library_repository import LibraryRepository
-from puntueitor.core.models import Library
+from puntueitor.core.models import Library, Game
 from puntueitor.core.scoring.mixed_score import MixedScore
 from puntueitor.core.models.scoring_context import ScoringContext
 
@@ -30,6 +31,7 @@ class PuntueitorApp(App):
         ("c", "configure", "Configurar"),
         ("s", "sort_library", "Ordenar"),
         ("f", "filter_library", "Filtrar"),
+        ("e", "enrich_library", "Enriquecer"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
     ]
@@ -41,13 +43,9 @@ class PuntueitorApp(App):
             yield GameList(id="game-list")
             yield GameDetail(id="game-detail")
 
-        with Center(id="loading-container"):
-            with Middle():
-                with Vertical(id="loading-box"):
-                    yield LoadingIndicator(id="spinner")
-                    yield Label("Preparando recarga...", id="loading-title")
-                    yield Label("", id="loading-counter")
-                    yield Label("", id="loading-game-name")
+        with Horizontal(id="status-bar"):
+            yield Label("Listo", id="status-message")
+            yield ProgressBar(total=100, id="status-progress", show_eta=False)
 
         yield Footer()
 
@@ -76,8 +74,8 @@ class PuntueitorApp(App):
             )
 
         try:
-            repo = LibraryRepository()
-            self.full_library = repo.load()
+            self.repo = LibraryRepository()
+            self.full_library = self.repo.load()
             self.current_library = self.full_library
             game_list.populate_games(self.current_library)
             game_list.select_first()
@@ -152,6 +150,81 @@ class PuntueitorApp(App):
         game_list = self.query_one(GameList)
         game_list.populate_games(self.current_library)
         game_list.select_first()
+
+    def action_enrich_library(self) -> None:
+        def handle_enricher(enricher_type: str | None) -> None:
+            if enricher_type == "hltb":
+                self._start_enrichment("hltb")
+        self.push_screen(EnrichersScreen(), handle_enricher)
+
+    def _start_enrichment(self, enricher_type: str) -> None:
+        self.query_one("#status-message", Label).update("Enriqueciendo biblioteca...")
+        self.query_one("#status-bar").add_class("active")
+        self.query_one("#status-progress", ProgressBar).progress = 0
+        self.run_worker(lambda: self._enrich_worker(enricher_type), thread=True)
+
+    def _enrich_worker(self, enricher_type: str):
+        try:
+            if enricher_type == "hltb":
+                from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+                from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
+                
+                resolver = HLTBResolver()
+                enricher = HLTBEnricher(client=resolver)
+                
+                games = list(self.full_library.games)
+                total = len(games)
+                self.call_from_thread(self._setup_progress, total)
+                
+                for i, game in enumerate(games, 1):
+                    # Solo enriquecer si no tiene duración
+                    if game.duration_hours is not None:
+                        self.call_from_thread(self._update_loading_counter, i, total, game.title)
+                        continue
+                        
+                    self.call_from_thread(self._update_loading_counter, i, total, game.title)
+                    enriched_game = enricher.enrich(game)
+                    
+                    if enriched_game.duration_hours is not None:
+                        # Guardar inmediatamente
+                        self.repo.save_game(enriched_game)
+                        # Actualizar interfaz en tiempo real
+                        self.call_from_thread(self._on_game_enriched, enriched_game)
+                
+                self.call_from_thread(self._finish_enrich)
+        except Exception as e:
+            self.call_from_thread(self.notify, f"Error enriqueciendo: {e}", severity="error")
+            self.call_from_thread(self._hide_loading)
+
+    def _on_game_enriched(self, game: Game) -> None:
+        """Actualiza un juego en la memoria y en la tabla."""
+        # 1. Actualizar en full_library
+        new_games = [g if g.igdb_id != game.igdb_id else game for g in self.full_library.games]
+        self.full_library = Library.from_iterable(new_games)
+        
+        # 2. Actualizar en current_library (si está presente)
+        if self.current_library.contains_igdb_id(game.igdb_id):
+            new_curr = [g if g.igdb_id != game.igdb_id else game for g in self.current_library.games]
+            self.current_library = Library.from_iterable(new_curr)
+            
+            # 3. Actualizar la fila en la DataTable a través de GameList
+            game_list = self.query_one(GameList)
+            game_list.update_game(game)
+
+    def _finish_enrich(self) -> None:
+        self._hide_loading()
+        self.notify("Proceso de enriquecimiento finalizado")
+
+    def _hide_loading(self) -> None:
+        self.query_one("#status-bar").remove_class("active")
+        self.query_one("#status-message", Label).update("Listo")
+
+    def _setup_progress(self, total: int) -> None:
+        self.query_one("#status-progress", ProgressBar).total = total
+
+    def _update_loading_counter(self, current: int, total: int, game_name: str) -> None:
+        self.query_one("#status-message", Label).update(f"Enriqueciendo: {game_name}")
+        self.query_one("#status-progress", ProgressBar).progress = current
 
     def apply_sorting(self, criteria: str, reverse: bool = False) -> None:
         games = list(self.current_library.games)

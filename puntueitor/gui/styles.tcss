@@ -1,6 +1,6 @@
 #main-container {
     layout: horizontal;
-    height: 100%;
+    height: 1fr;
     width: 100%;
 }
 
@@ -70,51 +70,35 @@ ConfigurationScreen {
     margin-left: 2;
 }
 
-#loading-container {
+#status-bar {
+    height: 1;
+    background: $surface;
+    color: $text;
     width: 100%;
-    height: 100%;
-    align: center middle;
+    layout: horizontal;
     display: none;
 }
 
-#loading-container.active {
+#status-bar.active {
     display: block;
 }
 
-#loading-box {
-    width: 50;
-    height: auto;
-    align: center middle;
-    background: $surface;
-    border: round $primary;
-    padding: 2 4;
-}
-
-#spinner {
-    width: 100%;
-    height: 3;
-    margin-bottom: 1;
-}
-
-#loading-title {
-    width: 100%;
-    text-align: center;
-    text-style: bold;
+#status-message {
+    width: 40%;
+    padding: 0 1;
+    text-overflow: ellipsis;
     color: $accent;
-}
-
-#loading-counter {
-    width: 100%;
-    text-align: center;
-    color: $text;
     text-style: bold;
-    margin-top: 1;
 }
 
-#loading-game-name {
-    width: 100%;
-    text-align: center;
-    color: $text-muted;
+#status-progress {
+    width: 60%;
+    height: 1;
+}
+
+#status-progress > .progress--bar {
+    color: $accent;
+    background: $surface;
 }
 
 /* Quit Confirmation Styles */
@@ -148,8 +132,8 @@ ConfigurationScreen {
     padding: 0 2;
 }
 
-/* Sorting & Filtering Screen Styles */
-#sorting-dialog, #filtering-dialog, #input-dialog {
+/* Sorting, Filtering & Enrichers Screen Styles */
+#sorting-dialog, #filtering-dialog, #input-dialog, #enrichers-dialog {
     width: 45;
     height: auto;
     background: $surface;
@@ -158,7 +142,7 @@ ConfigurationScreen {
     align: center middle;
 }
 
-#sorting-title, #filtering-title, #input-title {
+#sorting-title, #filtering-title, #input-title, #enrichers-title {
     width: 100%;
     text-align: center;
     text-style: bold;
@@ -166,13 +150,13 @@ ConfigurationScreen {
     margin-bottom: 1;
 }
 
-.sort-option, .filter-option {
+.sort-option, .filter-option, .enricher-option {
     width: 100%;
     padding: 0 2;
     margin-bottom: 0;
 }
 
-#sorting-hint, #filtering-hint, #input-hint {
+#sorting-hint, #filtering-hint, #input-hint, #enrichers-hint {
     width: 100%;
     text-align: center;
     margin-top: 1;

@@ -35,8 +35,12 @@ class LibraryRepository:
         Las relaciones se guardan en resolvers.sqlite durante el pipeline.
         """
         for game in library:
-            if game.duration_hours is not None:
-                self.extras_cacher.save_extras(game.igdb_id, game.duration_hours)
+            self.save_game(game)
+
+    def save_game(self, game: Game) -> None:
+        """Persiste los extras de un solo juego."""
+        if game.duration_hours is not None:
+            self.extras_cacher.save_extras(game.igdb_id, game.duration_hours)
 
     def load(self, path: str | Path | None = None) -> Library:
         """

@@ -22,7 +22,10 @@ class GameList(Vertical):
 
     def on_mount(self):
         table = self.query_one(DataTable)
-        table.add_columns("Título", "U", "C", "Dur")
+        table.add_column("Título", key="title")
+        table.add_column("U", key="user")
+        table.add_column("C", key="critic")
+        table.add_column("Dur", key="duration")
 
     def populate_games(self, library: Library):
         table = self.query_one("#game-options", DataTable)
@@ -69,5 +72,19 @@ class GameList(Vertical):
                 first_key = row_keys[0].value
                 if first_key in self.games_map:
                     self.post_message(self.GameSelected(self.games_map[first_key]))
+
+    def update_game(self, game: Game):
+        """Actualiza la información de un juego en la lista sin recargarla entera."""
+        row_key = str(game.igdb_id)
+        self.games_map[row_key] = game
+        
+        table = self.query_one(DataTable)
+        duration_str = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
+        
+        try:
+            table.update_cell(row_key, "duration", duration_str)
+        except Exception:
+            # Si falla por clave, intentamos por índice (col 3)
+            table.update_cell(row_key, 3, duration_str)
 
 
