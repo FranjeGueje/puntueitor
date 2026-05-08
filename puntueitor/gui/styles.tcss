@@ -1,0 +1,174 @@
+#main-container {
+    layout: horizontal;
+    height: 100%;
+    width: 100%;
+}
+
+GameList {
+    width: 35%;
+    height: 100%;
+    border: round $primary;
+}
+
+#game-count {
+    padding: 1 2;
+    text-style: bold;
+    background: $surface;
+    color: $accent;
+    width: 100%;
+    text-align: center;
+}
+
+#game-options {
+    height: 1fr;
+    border: none;
+    background: transparent;
+}
+
+
+GameDetail {
+    width: 65%;
+    height: 100%;
+    border: round $secondary;
+    padding: 1 2;
+}
+
+/* Config Screen Styles */
+ConfigurationScreen {
+    align: center middle;
+}
+
+#config-dialog {
+    width: 60%;
+    height: auto;
+    border: thick $background 80%;
+    background: $surface;
+    padding: 2 4;
+}
+
+.section-title {
+    text-style: bold;
+    color: $accent;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+#config-buttons {
+    align: right middle;
+    height: auto;
+    margin-top: 2;
+}
+
+#config-buttons Button {
+    margin-left: 2;
+}
+
+#loading-container {
+    width: 100%;
+    height: 100%;
+    align: center middle;
+    display: none;
+}
+
+#loading-container.active {
+    display: block;
+}
+
+#loading-box {
+    width: 50;
+    height: auto;
+    align: center middle;
+    background: $surface;
+    border: round $primary;
+    padding: 2 4;
+}
+
+#spinner {
+    width: 100%;
+    height: 3;
+    margin-bottom: 1;
+}
+
+#loading-title {
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+}
+
+#loading-counter {
+    width: 100%;
+    text-align: center;
+    color: $text;
+    text-style: bold;
+    margin-top: 1;
+}
+
+#loading-game-name {
+    width: 100%;
+    text-align: center;
+    color: $text-muted;
+}
+
+/* Quit Confirmation Styles */
+#quit-dialog {
+    width: 40;
+    height: auto;
+    background: $surface;
+    border: thick $error;
+    padding: 1 2;
+    align: center middle;
+}
+
+#quit-message {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+    text-style: bold;
+}
+
+#quit-buttons {
+    align: center middle;
+    height: auto;
+}
+
+#quit-buttons Button {
+    margin: 1 2;
+}
+
+#library-count {
+    dock: right;
+    padding: 0 2;
+}
+
+/* Sorting Screen Styles */
+#sorting-dialog {
+    width: 45;
+    height: auto;
+    background: $surface;
+    border: thick $primary;
+    padding: 1 2;
+    align: center middle;
+}
+
+#sorting-title {
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+.sort-option {
+    width: 100%;
+    padding: 0 2;
+    margin-bottom: 0;
+}
+
+#sorting-hint {
+    width: 100%;
+    text-align: center;
+    margin-top: 1;
+    color: $text-muted;
+}
+
