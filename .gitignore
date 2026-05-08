@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Añadimos cosas extras por parte del autor:
+cache/
+tests/
