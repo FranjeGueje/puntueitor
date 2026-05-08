@@ -13,17 +13,22 @@ class GameDetail(VerticalScroll):
         
         genres = ", ".join(game.genres) if game.genres else "Desconocido"
         duration = f"{game.duration_hours}h" if game.duration_hours is not None else "N/A"
-        user_score = f"{game.user_score}/100" if game.user_score is not None else "N/A"
-        critic_score = f"{game.critic_score}/100" if game.critic_score is not None else "N/A"
+        user_score = f"{game.user_score:.0f}/100" if game.user_score is not None else "N/A"
+        critic_score = f"{game.critic_score:.0f}/100" if game.critic_score is not None else "N/A"
+        storyline = game.storyline if game.storyline else "Sin descripción disponible."
         
         content = f"""# {game.title}
 
 **Géneros:** {genres}
 
-**Duración HLTB:** {duration}
+**Duración:** {duration}
 
 **Puntuación Usuario:** {user_score}
 
 **Puntuación Crítica:** {critic_score}
+
+---
+
+{storyline}
 """
         md.update(content)
