@@ -158,6 +158,9 @@ class PuntueitorApp(App):
         if self.is_reloading:
             self.notify("No se puede enriquecer mientras se recarga la biblioteca", severity="warning")
             return
+        if self.is_enriching:
+            self.notify("Ya hay un proceso de enriquecimiento en curso", severity="warning")
+            return
             
         def handle_enricher(enricher_type: str | None) -> None:
             if enricher_type == "hltb":
