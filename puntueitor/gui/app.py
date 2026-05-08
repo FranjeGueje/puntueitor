@@ -14,6 +14,7 @@ from puntueitor.gui.screens.sorting import SortingScreen
 from puntueitor.gui.screens.filtering import FilteringScreen
 from puntueitor.gui.screens.filter_input import FilterInputScreen
 from puntueitor.gui.screens.enrichers import EnrichersScreen
+from puntueitor.gui.screens.reload_confirmation import ReloadConfirmationScreen
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library, Game
 from puntueitor.core.scoring.mixed_score import MixedScore
@@ -53,6 +54,8 @@ class PuntueitorApp(App):
         self.title = "Puntueitor"
         self.full_library = Library.from_iterable(())
         self.current_library = Library.from_iterable(())
+        self.is_reloading = False
+        self.is_enriching = False
         game_list = self.query_one(GameList)
 
 
@@ -152,12 +155,17 @@ class PuntueitorApp(App):
         game_list.select_first()
 
     def action_enrich_library(self) -> None:
+        if self.is_reloading:
+            self.notify("No se puede enriquecer mientras se recarga la biblioteca", severity="warning")
+            return
+            
         def handle_enricher(enricher_type: str | None) -> None:
             if enricher_type == "hltb":
                 self._start_enrichment("hltb")
         self.push_screen(EnrichersScreen(), handle_enricher)
 
     def _start_enrichment(self, enricher_type: str) -> None:
+        self.is_enriching = True
         self.query_one("#status-message", Label).update("Enriqueciendo biblioteca...")
         self.query_one("#status-bar").add_class("active")
         self.query_one("#status-progress", ProgressBar).progress = 0
@@ -193,6 +201,7 @@ class PuntueitorApp(App):
                 
                 self.call_from_thread(self._finish_enrich)
         except Exception as e:
+            self.is_enriching = False
             self.call_from_thread(self.notify, f"Error enriqueciendo: {e}", severity="error")
             self.call_from_thread(self._hide_loading)
 
@@ -212,6 +221,7 @@ class PuntueitorApp(App):
             game_list.update_game(game)
 
     def _finish_enrich(self) -> None:
+        self.is_enriching = False
         self._hide_loading()
         self.notify("Proceso de enriquecimiento finalizado")
 
@@ -259,80 +269,109 @@ class PuntueitorApp(App):
             return False
         return True
 
-    def _show_loading(self, title: str) -> None:
-        self.query_one("#main-container").styles.display = "none"
-        self.query_one("#loading-container").add_class("active")
-        self.query_one("#loading-title", Label).update(title)
-        self.query_one("#loading-counter", Label).update("")
-        self.query_one("#loading-game-name", Label).update("")
 
     def action_soft_reload(self) -> None:
         """r: actualiza tiendas desde API y añade solo juegos nuevos a resolvers/igdb."""
+        if self.is_reloading:
+            self.notify("Ya hay una recarga en curso", severity="warning")
+            return
+        if self.is_enriching:
+            self.notify("No se puede recargar mientras se enriquece la biblioteca", severity="warning")
+            return
         if not self._check_config():
             return
-        self._show_loading("Actualizando tiendas... (solo juegos nuevos)")
-        self.do_reload(refresh=False, force_store_refresh=True)
+        self._start_reload(refresh=False)
 
     def action_reload_library(self) -> None:
         """R: borra toda la caché SQLite y recarga todo desde cero."""
+        if self.is_reloading:
+            self.notify("Ya hay una recarga en curso", severity="warning")
+            return
+        if self.is_enriching:
+            self.notify("No se puede recargar mientras se enriquece la biblioteca", severity="warning")
+            return
         if not self._check_config():
             return
-        self._show_loading("Borrando caché y recargando todo desde cero...")
-        self.do_reload(refresh=True, force_store_refresh=True)
+            
+        def handle_confirmation(confirmed: bool) -> None:
+            if confirmed:
+                self._start_reload(refresh=True)
+                
+        self.push_screen(ReloadConfirmationScreen(), handle_confirmation)
+
+    def _start_reload(self, refresh: bool) -> None:
+        self.is_reloading = True
+        self.query_one("#status-message", Label).update("Iniciando recarga...")
+        self.query_one("#status-bar").add_class("active")
+        self.query_one("#status-progress", ProgressBar).progress = 0
+        
+        if refresh:
+            self.full_library = Library.from_iterable(())
+            self.current_library = self.full_library
+            self.query_one(GameList).populate_games(self.current_library)
+
+        self.run_worker(lambda: self.do_reload(refresh=refresh, force_store_refresh=True), thread=True)
 
     @work(thread=True)
     def do_reload(self, refresh: bool = False, force_store_refresh: bool = False) -> None:
         def progress(current: int, total: int, name: str) -> None:
-            self.call_from_thread(self._update_progress, current, total, name)
+            self.call_from_thread(self._update_reload_progress, current, total, name)
 
         try:
             if refresh:
-                # Borrar todas las DBs de caché SQLite (locales y de usuario)
                 for db_file in glob.glob("cache/*.sqlite"):
-                    os.remove(db_file)
-                
-                user_cache_dir = Path.home() / ".cache" / "puntueitor"
-                if user_cache_dir.exists():
-                    for db_file in glob.glob(str(user_cache_dir / "*.sqlite")):
-                        os.remove(db_file)
+                    try: os.remove(db_file)
+                    except: pass
 
+            from puntueitor.core.igdb.service import IGDBService
+            from puntueitor.core.pipeline.load_steam_library import load_steam_library
+            
             igdb_service = IGDBService()
-            library = load_steam_library(
+            game_generator = load_steam_library(
                 engine=igdb_service,
                 refresh=refresh,
                 force_store_refresh=force_store_refresh,
                 progress_callback=progress,
             )
 
-            repo = LibraryRepository()
-            repo.save(library)
-
-            self.full_library = library
-            self.current_library = library
-            self.call_from_thread(self._finish_reload, library, refresh)
+            loaded_games = []
+            for game in game_generator:
+                loaded_games.append(game)
+                self.call_from_thread(self._on_game_loaded, game)
+            
+            new_library = Library.from_iterable(loaded_games)
+            self.repo.save(new_library)
+            self.call_from_thread(self._finish_reload, refresh)
 
         except Exception as e:
+            self.is_reloading = False
             self.call_from_thread(self._handle_reload_error, str(e))
 
-    def _finish_reload(self, library: Library, refresh: bool = False) -> None:
-        self.query_one("#loading-container").remove_class("active")
-        self.query_one("#main-container").styles.display = "block"
-        game_list = self.query_one(GameList)
-        game_list.populate_games(library)
-        game_list.select_first()
-        msg = "¡Biblioteca recargada desde cero!" if refresh else f"¡Biblioteca actualizada! ({len(library.games)} juegos)"
-        self.notify(msg, severity="information")
+    def _on_game_loaded(self, game: Game) -> None:
+        if self.full_library.contains_igdb_id(game.igdb_id):
+            return
+        new_games = list(self.full_library.games)
+        new_games.append(game)
+        self.full_library = Library.from_iterable(new_games)
+        self.current_library = self.full_library
+        self.query_one(GameList).add_game_to_table(game)
+
+    def _finish_reload(self, refresh: bool = False) -> None:
+        self.is_reloading = False
+        self._hide_loading()
+        msg = "¡Biblioteca recargada!" if refresh else "¡Actualización finalizada!"
+        self.notify(msg)
+        self.query_one(GameList).select_first()
 
     def _handle_reload_error(self, error_msg: str) -> None:
-        self.query_one("#loading-container").remove_class("active")
-        self.query_one("#main-container").styles.display = "block"
+        self._hide_loading()
         self.notify(f"Fallo al recargar: {error_msg}", severity="error")
 
-    def _update_progress(self, current: int, total: int, name: str) -> None:
-        self.query_one("#loading-title", Label).update("Cargando juegos desde IGDB...")
-        self.query_one("#loading-counter", Label).update(f"{current} / {total} juegos")
-        short_name = name[:50] + "..." if len(name) > 50 else name
-        self.query_one("#loading-game-name", Label).update(f"[ {short_name} ]")
+    def _update_reload_progress(self, current: int, total: int, name: str) -> None:
+        self.query_one("#status-message", Label).update(f"Cargando IGDB: {name}")
+        bar = self.query_one("#status-progress", ProgressBar)
+        bar.total = total
+        bar.progress = current
 
 if __name__ == "__main__":
     app = PuntueitorApp()

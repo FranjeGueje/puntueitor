@@ -168,3 +168,36 @@ ConfigurationScreen {
     border: tall $accent;
 }
 
+/* Reload Confirmation Styles */
+#reload-dialog {
+    width: 50;
+    height: auto;
+    background: $surface;
+    border: thick $error;
+    padding: 1 2;
+    align: center middle;
+}
+
+#reload-title-warn {
+    width: 100%;
+    text-align: center;
+    color: $error;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#reload-message {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#reload-buttons {
+    align: center middle;
+    height: auto;
+}
+
+#reload-buttons Button {
+    margin: 1 2;
+}
+

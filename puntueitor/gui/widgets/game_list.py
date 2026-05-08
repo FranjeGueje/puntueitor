@@ -87,4 +87,20 @@ class GameList(Vertical):
             # Si falla por clave, intentamos por índice (col 3)
             table.update_cell(row_key, 3, duration_str)
 
+    def add_game_to_table(self, game: Game):
+        """Añade un solo juego a la tabla sin limpiarla."""
+        table = self.query_one("#game-options", DataTable)
+        row_key = str(game.igdb_id)
+        self.games_map[row_key] = game
+        
+        u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
+        c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
+        d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
+        
+        table.add_row(game.title, u, c, d, key=row_key)
+        
+        # Actualizar contador
+        count_label = self.query_one("#game-count", Static)
+        count_label.update(f"Biblioteca: {len(self.games_map)} juegos")
+
 
