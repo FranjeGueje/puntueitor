@@ -99,34 +99,38 @@ class PuntueitorApp(App):
         self.push_screen(QuitConfirmation(), check_quit)
 
     def action_sort_library(self) -> None:
-        def handle_sorting(criteria: str | None) -> None:
-            if criteria:
-                self.apply_sorting(criteria)
+        def handle_sorting(result: tuple[str, bool] | None) -> None:
+            if result:
+                criteria, reverse = result
+                self.apply_sorting(criteria, reverse)
         
         self.push_screen(SortingScreen(), handle_sorting)
 
-    def apply_sorting(self, criteria: str) -> None:
+    def apply_sorting(self, criteria: str, reverse: bool = False) -> None:
         games = list(self.current_library.games)
         
         if criteria == "title":
-            games.sort(key=lambda g: g.title.lower())
+            games.sort(key=lambda g: g.title.lower(), reverse=reverse)
         elif criteria == "user_score":
-            games.sort(key=lambda g: g.user_score or 0.0, reverse=True)
+            games.sort(key=lambda g: g.user_score or 0.0, reverse=reverse)
         elif criteria == "critic_score":
-            games.sort(key=lambda g: g.critic_score or 0.0, reverse=True)
+            games.sort(key=lambda g: g.critic_score or 0.0, reverse=reverse)
         elif criteria == "duration":
-            # Más cortos primero, pero si es None (desconocido) al final
-            games.sort(key=lambda g: g.duration_hours if g.duration_hours is not None else 9999.0)
+            # Si reverse=False (Asc), None va al final (9999.0)
+            # Si reverse=True (Desc), None va al final (-1.0)
+            none_val = 9999.0 if not reverse else -1.0
+            games.sort(key=lambda g: g.duration_hours if g.duration_hours is not None else none_val, reverse=reverse)
         elif criteria == "mixed":
             strategy = MixedScore()
             ctx = ScoringContext()
-            games.sort(key=lambda g: strategy.score(g, ctx), reverse=True)
+            games.sort(key=lambda g: strategy.score(g, ctx), reverse=reverse)
 
         self.current_library = Library.from_iterable(games)
         game_list = self.query_one(GameList)
         game_list.populate_games(self.current_library)
         game_list.select_first()
-        self.notify(f"Biblioteca ordenada por: {criteria}")
+        order_str = "Descendente" if reverse else "Ascendente"
+        self.notify(f"Biblioteca ordenada por: {criteria} ({order_str})")
 
     def _check_config(self) -> bool:
         config = ConfigManager().get
