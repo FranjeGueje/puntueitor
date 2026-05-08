@@ -11,6 +11,8 @@ from puntueitor.gui.widgets.game_detail import GameDetail
 from puntueitor.gui.screens.configuration import ConfigurationScreen
 from puntueitor.gui.screens.quit_confirmation import QuitConfirmation
 from puntueitor.gui.screens.sorting import SortingScreen
+from puntueitor.gui.screens.filtering import FilteringScreen
+from puntueitor.gui.screens.filter_input import FilterInputScreen
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library
 from puntueitor.core.scoring.mixed_score import MixedScore
@@ -19,6 +21,7 @@ from puntueitor.core.models.scoring_context import ScoringContext
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.pipeline.load_steam_library import load_steam_library
+from puntueitor.core.filters import NameFilter, DurationFilter
 
 class PuntueitorApp(App):
     CSS_PATH = "styles.tcss"
@@ -26,6 +29,7 @@ class PuntueitorApp(App):
         ("q", "request_quit", "Salir"),
         ("c", "configure", "Configurar"),
         ("s", "sort_library", "Ordenar"),
+        ("f", "filter_library", "Filtrar"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
     ]
@@ -49,6 +53,7 @@ class PuntueitorApp(App):
 
     def on_mount(self) -> None:
         self.title = "Puntueitor"
+        self.full_library = Library.from_iterable(())
         self.current_library = Library.from_iterable(())
         game_list = self.query_one(GameList)
 
@@ -72,7 +77,8 @@ class PuntueitorApp(App):
 
         try:
             repo = LibraryRepository()
-            self.current_library = repo.load()
+            self.full_library = repo.load()
+            self.current_library = self.full_library
             game_list.populate_games(self.current_library)
             game_list.select_first()
 
@@ -105,6 +111,47 @@ class PuntueitorApp(App):
                 self.apply_sorting(criteria, reverse)
         
         self.push_screen(SortingScreen(), handle_sorting)
+
+    def action_filter_library(self) -> None:
+        def handle_filter_type(filter_type: str | None) -> None:
+            if filter_type == "clear":
+                self.apply_filter(None)
+            elif filter_type == "name":
+                self.push_screen(
+                    FilterInputScreen("Filtrar por nombre", "Introduce el nombre del juego..."),
+                    lambda val: self.apply_filter("name", val) if val is not None else None
+                )
+            elif filter_type == "duration":
+                self.push_screen(
+                    FilterInputScreen("Duración máxima (horas)", "Ej: 20"),
+                    lambda val: self.apply_filter("duration", val) if val is not None else None
+                )
+
+        self.push_screen(FilteringScreen(), handle_filter_type)
+
+    def apply_filter(self, filter_type: str | None, value: str | None = None) -> None:
+        if filter_type is None:
+            self.current_library = self.full_library
+            self.notify("Filtros limpiados")
+        elif filter_type == "name" and value:
+            f = NameFilter(value)
+            filtered_games = [g for g in self.full_library.games if f.matches(g)]
+            self.current_library = Library.from_iterable(filtered_games)
+            self.notify(f"Filtrado por nombre: {value}")
+        elif filter_type == "duration" and value:
+            try:
+                hours = float(value)
+                f = DurationFilter(hours)
+                filtered_games = [g for g in self.full_library.games if f.matches(g)]
+                self.current_library = Library.from_iterable(filtered_games)
+                self.notify(f"Filtrado por duración máx: {hours}h")
+            except ValueError:
+                self.notify("Error: La duración debe ser un número", severity="error")
+                return
+
+        game_list = self.query_one(GameList)
+        game_list.populate_games(self.current_library)
+        game_list.select_first()
 
     def apply_sorting(self, criteria: str, reverse: bool = False) -> None:
         games = list(self.current_library.games)
@@ -187,6 +234,7 @@ class PuntueitorApp(App):
             repo = LibraryRepository()
             repo.save(library)
 
+            self.full_library = library
             self.current_library = library
             self.call_from_thread(self._finish_reload, library, refresh)
 

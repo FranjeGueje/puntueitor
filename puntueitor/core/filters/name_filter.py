@@ -19,10 +19,14 @@ class NameFilter(GameFilter):
 
 
     def matches(self, game: Game) -> bool:
-        # Fuzzy match usando similarity
-        score = similarity(self.normalized_query, game.title_normalized)
-
-        if score >= self.similarity_thrd:
+        # 1. Búsqueda por subcadena (más intuitiva)
+        if self.normalized_query in game.title_normalized:
             return True
         
-        return False
+        # 2. Búsqueda por subcadena en el título original (por si acaso)
+        if self.normalized_query in game.title.lower():
+            return True
+
+        # 3. Fuzzy match usando similarity para errores tipográficos
+        score = similarity(self.normalized_query, game.title_normalized)
+        return score >= self.similarity_thrd

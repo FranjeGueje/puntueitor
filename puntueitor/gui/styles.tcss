@@ -148,8 +148,8 @@ ConfigurationScreen {
     padding: 0 2;
 }
 
-/* Sorting Screen Styles */
-#sorting-dialog {
+/* Sorting & Filtering Screen Styles */
+#sorting-dialog, #filtering-dialog, #input-dialog {
     width: 45;
     height: auto;
     background: $surface;
@@ -158,7 +158,7 @@ ConfigurationScreen {
     align: center middle;
 }
 
-#sorting-title {
+#sorting-title, #filtering-title, #input-title {
     width: 100%;
     text-align: center;
     text-style: bold;
@@ -166,16 +166,21 @@ ConfigurationScreen {
     margin-bottom: 1;
 }
 
-.sort-option {
+.sort-option, .filter-option {
     width: 100%;
     padding: 0 2;
     margin-bottom: 0;
 }
 
-#sorting-hint {
+#sorting-hint, #filtering-hint, #input-hint {
     width: 100%;
     text-align: center;
     margin-top: 1;
     color: $text-muted;
+}
+
+#filter-input {
+    margin: 1 0;
+    border: tall $accent;
 }
 
