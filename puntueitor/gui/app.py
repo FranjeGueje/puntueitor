@@ -135,16 +135,16 @@ class PuntueitorApp(App):
             self.notify("Filtros limpiados")
         elif filter_type == "name" and value:
             f = NameFilter(value)
-            filtered_games = [g for g in self.full_library.games if f.matches(g)]
+            filtered_games = [g for g in self.current_library.games if f.matches(g)]
             self.current_library = Library.from_iterable(filtered_games)
-            self.notify(f"Filtrado por nombre: {value}")
+            self.notify(f"Filtro añadido: {value}")
         elif filter_type == "duration" and value:
             try:
                 hours = float(value)
                 f = DurationFilter(hours)
-                filtered_games = [g for g in self.full_library.games if f.matches(g)]
+                filtered_games = [g for g in self.current_library.games if f.matches(g)]
                 self.current_library = Library.from_iterable(filtered_games)
-                self.notify(f"Filtrado por duración máx: {hours}h")
+                self.notify(f"Filtro añadido: duración máx {hours}h")
             except ValueError:
                 self.notify("Error: La duración debe ser un número", severity="error")
                 return
