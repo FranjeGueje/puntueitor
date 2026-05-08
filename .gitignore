@@ -220,5 +220,3 @@ __marimo__/
 # Añadimos cosas extras por parte del autor:
 cache/
 tests/
-cache
-test
