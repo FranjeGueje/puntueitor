@@ -5,7 +5,7 @@
 }
 
 GameList {
-    width: 35%;
+    width: 50%;
     height: 100%;
     border: round $primary;
 }
@@ -23,11 +23,18 @@ GameList {
     height: 1fr;
     border: none;
     background: transparent;
+    color: $text;
+}
+
+DataTable > .datatable--header {
+    text-style: bold;
+    color: $accent;
+    background: $surface;
 }
 
 
 GameDetail {
-    width: 65%;
+    width: 50%;
     height: 100%;
     border: round $secondary;
     padding: 1 2;

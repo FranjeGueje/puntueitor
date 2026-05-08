@@ -1,6 +1,5 @@
-from textual.widgets import OptionList, Static
+from textual.widgets import DataTable, Static
 from textual.containers import Vertical
-from textual.widgets.option_list import Option
 from textual.message import Message
 from textual import on
 
@@ -19,42 +18,56 @@ class GameList(Vertical):
 
     def compose(self):
         yield Static("Biblioteca: 0 juegos", id="game-count")
-        yield OptionList(id="game-options")
+        yield DataTable(id="game-options", cursor_type="row")
+
+    def on_mount(self):
+        table = self.query_one(DataTable)
+        table.add_columns("Título", "U", "C", "Dur")
 
     def populate_games(self, library: Library):
-        option_list = self.query_one("#game-options", OptionList)
+        table = self.query_one("#game-options", DataTable)
         count_label = self.query_one("#game-count", Static)
         
-        option_list.clear_options()
+        table.clear()
         self.games_map.clear()
-
+ 
         count = len(library.games)
         count_label.update(f"Biblioteca: {count} juegos")
-
+ 
         if count == 0:
-            option_list.add_option(Option("Biblioteca vacía", id="empty", disabled=True))
             return
 
         for game in library.games:
-            opt_id = f"game_{game.igdb_id}"
-            self.games_map[opt_id] = game
-            option_list.add_option(Option(game.title, id=opt_id))
+            row_key = str(game.igdb_id)
+            self.games_map[row_key] = game
             
-    @on(OptionList.OptionSelected, "#game-options")
-    def on_game_selected(self, event: OptionList.OptionSelected):
-        opt_id = event.option_id
-        if opt_id and opt_id in self.games_map:
-            self.post_message(self.GameSelected(self.games_map[opt_id]))
+            # Formatear métricas
+            u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
+            c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
+            d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
+            
+            table.add_row(game.title, u, c, d, key=row_key)
+            
+    @on(DataTable.RowSelected, "#game-options")
+    def on_game_selected(self, event: DataTable.RowSelected):
+        row_key = event.row_key.value
+        if row_key and row_key in self.games_map:
+            self.post_message(self.GameSelected(self.games_map[row_key]))
 
     def select_first(self):
-        option_list = self.query_one("#game-options", OptionList)
-        if option_list.option_count > 0:
-            option_list.highlighted = 0
-            option_list.focus()
+        table = self.query_one("#game-options", DataTable)
+        if table.row_count > 0:
+            table.move_cursor(row=0)
+            table.focus()
             
-            # Si hay un juego real, disparamos la selección para que se vean los detalles
-            opt = option_list.get_option_at_index(0)
-            if opt.id and opt.id in self.games_map:
-                self.post_message(self.GameSelected(self.games_map[opt.id]))
+            # Si hay un juego real, disparamos la selección
+            # Nota: move_cursor no dispara RowSelected automáticamente en algunas versiones
+            row_key = table.get_row_at(0) # Esto no es correcto para obtener la key
+            # En Textual, table.rows es un dict de RowKey: Row
+            row_keys = list(table.rows.keys())
+            if row_keys:
+                first_key = row_keys[0].value
+                if first_key in self.games_map:
+                    self.post_message(self.GameSelected(self.games_map[first_key]))
 
 

@@ -25,12 +25,12 @@ class SortingScreen(ModalScreen[tuple[str, bool]]):
             with Middle():
                 with Vertical(id="sorting-dialog"):
                     yield Label("Ordenar biblioteca por...", id="sorting-title")
-                    yield Static("[a/A] Nombre Alfabético", classes="sort-option")
-                    yield Static("[u/U] Puntuación de usuarios", classes="sort-option")
-                    yield Static("[c/C] Puntuación de crítica", classes="sort-option")
-                    yield Static("[m/M] Puntuación media", classes="sort-option")
-                    yield Static("[d/D] Duración", classes="sort-option")
-                    yield Label("Minúsculas: Orden natural | Mayúsculas: Invertido", id="sorting-hint")
+                    yield Static("Nombre Alfabético", classes="sort-option")
+                    yield Static("Puntuación de usuarios", classes="sort-option")
+                    yield Static("Puntuación de crítica", classes="sort-option")
+                    yield Static("Puntuación media", classes="sort-option")
+                    yield Static("Duración", classes="sort-option")
+                    yield Label("Pulse una tecla para ordenar por un criterio", id="sorting-hint")
         yield Footer()
 
     def action_select(self, criteria: str, reverse: bool = False) -> None:
