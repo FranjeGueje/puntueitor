@@ -13,7 +13,6 @@ from puntueitor.gui.screens.quit_confirmation import QuitConfirmation
 from puntueitor.gui.screens.sorting import SortingScreen
 from puntueitor.gui.screens.filtering import FilteringScreen
 from puntueitor.gui.screens.filter_input import FilterInputScreen
-from puntueitor.gui.screens.enrichers import EnrichersScreen
 from puntueitor.gui.screens.reload_confirmation import ReloadConfirmationScreen
 from puntueitor.gui.screens.scoring import ScoringScreen
 from puntueitor.core.repository.library_repository import LibraryRepository
@@ -27,14 +26,14 @@ from puntueitor.core.services.library_service import LibraryService
 class PuntueitorApp(App):
     CSS_PATH = "styles.tcss"
     BINDINGS = [
-        ("q", "request_quit", "Salir"),
+        ("p", "select_scoring", "Puntueitor"),
         ("c", "configure", "Configurar"),
         ("s", "sort_library", "Ordenar"),
         ("f", "filter_library", "Filtrar"),
-        ("e", "enrich_library", "Enriquecer"),
-        ("p", "select_scoring", "Puntueitor"),
+        ("e", "enrich_library", "Enriquecedores"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
+        ("q", "request_quit", "Salir"),
     ]
 
 
@@ -164,11 +163,8 @@ class PuntueitorApp(App):
         if self.is_enriching:
             self.notify("Ya hay un proceso de enriquecimiento en curso", severity="warning")
             return
-            
-        def handle_enricher(enricher_type: str | None) -> None:
-            if enricher_type == "hltb":
-                self._start_enrichment("hltb")
-        self.push_screen(EnrichersScreen(), handle_enricher)
+        
+        self._start_enrichment()
 
     def action_select_scoring(self) -> None:
         def handle_scoring(scoring_type: str | None) -> None:
@@ -186,42 +182,34 @@ class PuntueitorApp(App):
         game_list.select_first()
         self.notify(f"Biblioteca puntuada y ordenada por: {scoring_type}")
 
-    def _start_enrichment(self, enricher_type: str) -> None:
+    def _start_enrichment(self) -> None:
         self.is_enriching = True
         self.query_one("#status-message", Label).update("Enriqueciendo biblioteca...")
         self.query_one("#status-bar").add_class("active")
         self.query_one("#status-progress", ProgressBar).progress = 0
-        self.run_worker(lambda: self._enrich_worker(enricher_type), thread=True)
+        self.run_worker(self._enrich_worker, thread=True)
 
-    def _enrich_worker(self, enricher_type: str):
+    def _enrich_worker(self):
         try:
-            if enricher_type == "hltb":
-                from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
-                from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
+            from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+            from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
+            
+            resolver = HLTBResolver()
+            enricher = HLTBEnricher(client=resolver)
+            
+            games = list(self.full_library.games)
+            total = len(games)
+            self.call_from_thread(self._setup_progress, total)
+            
+            for i, game in enumerate(games, 1):
+                self.call_from_thread(self._update_loading_counter, i, total, game.title)
+                enriched_game = enricher.enrich(game)
                 
-                resolver = HLTBResolver()
-                enricher = HLTBEnricher(client=resolver)
-                
-                games = list(self.full_library.games)
-                total = len(games)
-                self.call_from_thread(self._setup_progress, total)
-                
-                for i, game in enumerate(games, 1):
-                    # Solo enriquecer si no tiene duración
-                    if game.duration_hours is not None:
-                        self.call_from_thread(self._update_loading_counter, i, total, game.title)
-                        continue
-                        
-                    self.call_from_thread(self._update_loading_counter, i, total, game.title)
-                    enriched_game = enricher.enrich(game)
-                    
-                    if enriched_game.duration_hours is not None:
-                        # Guardar inmediatamente
-                        self.repo.save_game(enriched_game)
-                        # Actualizar interfaz en tiempo real
-                        self.call_from_thread(self._on_game_enriched, enriched_game)
-                
-                self.call_from_thread(self._finish_enrich)
+                if enriched_game.duration_hours is not None:
+                    self.repo.save_game(enriched_game)
+                    self.call_from_thread(self._on_game_enriched, enriched_game)
+            
+            self.call_from_thread(self._finish_enrich)
         except Exception as e:
             self.is_enriching = False
             self.call_from_thread(self.notify, f"Error enriqueciendo: {e}", severity="error")

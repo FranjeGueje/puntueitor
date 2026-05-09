@@ -30,7 +30,7 @@ class SortingScreen(ModalScreen[tuple[str, bool]]):
                     yield Static("Puntuación de crítica", classes="sort-option")
                     yield Static("Puntuación media", classes="sort-option")
                     yield Static("Duración", classes="sort-option")
-                    yield Label("Pulse una tecla para ordenar por un criterio", id="sorting-hint")
+                    yield Label("Pulse la tecla en minúscula/mayúscula para ordenar de forma ascendente/descendente", id="sorting-hint")
         yield Footer()
 
     def action_select(self, criteria: str, reverse: bool = False) -> None:
