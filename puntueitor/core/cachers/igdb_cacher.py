@@ -103,3 +103,21 @@ class IGDBCacher:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT id FROM games")
             return [row[0] for row in cursor.fetchall()]
+
+    def get_all_genres(self) -> list[str]:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT genres FROM games WHERE genres IS NOT NULL")
+            all_genres: set[str] = set()
+            for row in cursor.fetchall():
+                if row[0]:
+                    try:
+                        genres_list = json.loads(row[0])
+                        if genres_list:
+                            for g in genres_list:
+                                if isinstance(g, dict) and "name" in g:
+                                    all_genres.add(g["name"])
+                                elif isinstance(g, str):
+                                    all_genres.add(g)
+                    except json.JSONDecodeError:
+                        continue
+            return sorted(all_genres)

@@ -2,9 +2,14 @@ import json
 import logging
 import threading
 from pathlib import Path
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MIXED_WEIGHTS = {"critics": 0.3, "users": 0.5, "duration": 0.2}
+DEFAULT_WEIGHTED_WEIGHTS = {"critics": 0.4, "users": 0.4, "duration": 0.2}
+DEFAULT_AVAILABLE_HOURS = 20.0
+
 
 @dataclass
 class Config:
@@ -12,6 +17,17 @@ class Config:
     steam_user_id: int = 0
     igdb_client_id: str = ""
     igdb_client_secret: str = ""
+
+    scoring_mixed_critics: float = DEFAULT_MIXED_WEIGHTS["critics"]
+    scoring_mixed_users: float = DEFAULT_MIXED_WEIGHTS["users"]
+    scoring_mixed_duration: float = DEFAULT_MIXED_WEIGHTS["duration"]
+
+    scoring_weighted_critics: float = DEFAULT_WEIGHTED_WEIGHTS["critics"]
+    scoring_weighted_users: float = DEFAULT_WEIGHTED_WEIGHTS["users"]
+    scoring_weighted_duration: float = DEFAULT_WEIGHTED_WEIGHTS["duration"]
+
+    scoring_available_hours: float = DEFAULT_AVAILABLE_HOURS
+    scoring_preferred_genres: list[str] = field(default_factory=list)
 
 class ConfigManager:
     _instance = None

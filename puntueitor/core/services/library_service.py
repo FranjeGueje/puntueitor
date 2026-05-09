@@ -14,6 +14,7 @@ from puntueitor.core.scoring.atomic import (
 )
 from puntueitor.core.scoring.weighted_score import WeightedScore
 from puntueitor.core.pipeline.scoring_ops import score_library
+from puntueitor.core.config import ConfigManager
 
 
 logger = logging.getLogger(__name__)
@@ -77,10 +78,15 @@ class LibraryService:
         scoring_type: str,
         ctx: ScoringContext | None = None,
     ) -> tuple[Library, dict[int, float]]:
-        if ctx is None:
-            ctx = ScoringContext(available_hours=20.0)
+        config = ConfigManager().get
 
-        scorer = self._get_scorer(scoring_type)
+        if ctx is None:
+            ctx = ScoringContext(
+                available_hours=config.scoring_available_hours,
+                preferred_genres=set(config.scoring_preferred_genres) if config.scoring_preferred_genres else None,
+            )
+
+        scorer = self._get_scorer(scoring_type, config)
         if scorer is None:
             return library, {}
 
@@ -90,20 +96,26 @@ class LibraryService:
         sorted_games = [sg.game for sg in scored_lib.scored_games]
         return Library.from_iterable(sorted_games), scores_map
 
-    def _get_scorer(self, scoring_type: str) -> GameScorer | None:
-        scorers = {
-            "mixed": MixedScore(),
-            "weighted": WeightedScore(
+    def _get_scorer(self, scoring_type: str, config) -> GameScorer | None:
+        if scoring_type == "mixed":
+            return MixedScore(
+                weight_critics=config.scoring_mixed_critics,
+                weight_users=config.scoring_mixed_users,
+                weight_duration=config.scoring_mixed_duration,
+            )
+        elif scoring_type == "weighted":
+            return WeightedScore(
                 [
-                    (CriticScoreScorer(), 0.4),
-                    (UserScoreScorer(), 0.4),
-                    (DurationScoreScorer(), 0.2),
+                    (CriticScoreScorer(), config.scoring_weighted_critics),
+                    (UserScoreScorer(), config.scoring_weighted_users),
+                    (DurationScoreScorer(), config.scoring_weighted_duration),
                 ]
-            ),
-            "time": self._get_available_time_scorer(),
-            "genre": GenreScorer(),
-        }
-        return scorers.get(scoring_type)
+            )
+        elif scoring_type == "time":
+            return self._get_available_time_scorer()
+        elif scoring_type == "genre":
+            return GenreScorer()
+        return None
 
     def _get_available_time_scorer(self) -> GameScorer:
         from puntueitor.core.scoring.available_time import AvailableTimeScorer

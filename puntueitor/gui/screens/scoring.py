@@ -4,6 +4,8 @@ from textual.containers import Vertical, Horizontal, Center, Middle, Container
 from textual.widgets import Label, Static, Footer, ListItem, ListView
 from textual import on
 
+from puntueitor.gui.screens.scoring_config import ScoringConfigScreen
+
 SCORING_INFO = {
     "weighted": {
         "title": "Weighted Score (El \"Equilibrado\")",
@@ -98,7 +100,10 @@ class ScoringScreen(ModalScreen[str]):
             self.dismiss(selected_item.id)
 
     def action_configure(self) -> None:
-        self.notify("Configuración no implementada todavía", severity="information")
+        list_view = self.query_one("#scoring-list", ListView)
+        selected = list_view.index
+        scoring_type = ["mixed", "weighted", "time", "genre"][selected]
+        self.app.push_screen(ScoringConfigScreen(scoring_type))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
