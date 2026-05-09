@@ -256,25 +256,48 @@ ScoringScreen {
 }
 
 /* Scoring Config Screen Styles */
-#genre-list-config {
-    height: 10;
-    border: solid $accent;
-    padding: 1;
-    margin-top: 1;
+ScoringConfigScreen {
+    align: center middle;
+    background: $foreground 10%;
 }
 
-#config-inputs {
-    padding: 1 2;
+#scoring-config-dialog {
+    width: 60;
+    height: auto;
+    background: $surface;
+    border: thick $primary;
+    padding: 2;
 }
 
-#config-inputs Label {
-    margin-top: 1;
+#config-title {
+    width: 100%;
+    text-align: center;
     text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#config-form {
+    height: auto;
+    min-height: 20;
+    border: solid $accent;
+    margin: 1 0;
+}
+
+#config-form Label {
+    margin: 0;
+}
+
+#config-form Input {
+    margin-bottom: 0;
+}
+
+#genre-scroll {
+    height: 15;
 }
 
 #config-buttons {
-    margin-top: 2;
-    align: right middle;
+    margin-top: 1;
 }
 
 #config-buttons Button {
