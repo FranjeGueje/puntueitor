@@ -18,14 +18,11 @@ from puntueitor.gui.screens.reload_confirmation import ReloadConfirmationScreen
 from puntueitor.gui.screens.scoring import ScoringScreen
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library, Game
-from puntueitor.core.scoring import MixedScore, WeightedScore, AvailableTimeScorer
-from puntueitor.core.scoring.atomic import GenreScorer, CriticScoreScorer, UserScoreScorer, DurationScoreScorer
-from puntueitor.core.models.scoring_context import ScoringContext
 
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.pipeline.load_steam_library import load_steam_library
-from puntueitor.core.filters import NameFilter, DurationFilter
+from puntueitor.core.services.library_service import LibraryService
 
 class PuntueitorApp(App):
     CSS_PATH = "styles.tcss"
@@ -61,7 +58,6 @@ class PuntueitorApp(App):
         self.is_enriching = False
         game_list = self.query_one(GameList)
 
-
         config = ConfigManager().get
         missing = []
         if not config.steam_api_key:
@@ -81,11 +77,11 @@ class PuntueitorApp(App):
 
         try:
             self.repo = LibraryRepository()
-            self.full_library = self.repo.load()
+            self.library_service = LibraryService(self.repo)
+            self.full_library = self.library_service.load()
             self.current_library = self.full_library
             game_list.populate_games(self.current_library)
             game_list.select_first()
-
 
             old_path = "cache/library.json"
             if os.path.exists(old_path):
@@ -135,19 +131,19 @@ class PuntueitorApp(App):
 
     def apply_filter(self, filter_type: str | None, value: str | None = None) -> None:
         if filter_type is None:
-            self.current_library = self.full_library
+            self.current_library = self.library_service.clear_filters(self.full_library)
             self.notify("Filtros limpiados")
         elif filter_type == "name" and value:
-            f = NameFilter(value)
-            filtered_games = [g for g in self.current_library.games if f.matches(g)]
-            self.current_library = Library.from_iterable(filtered_games)
+            self.current_library = self.library_service.filter_by_name(
+                self.current_library, value
+            )
             self.notify(f"Filtro añadido: {value}")
         elif filter_type == "duration" and value:
             try:
                 hours = float(value)
-                f = DurationFilter(hours)
-                filtered_games = [g for g in self.current_library.games if f.matches(g)]
-                self.current_library = Library.from_iterable(filtered_games)
+                self.current_library = self.library_service.filter_by_duration(
+                    self.current_library, hours
+                )
                 self.notify(f"Filtro añadido: duración máx {hours}h")
             except ValueError:
                 self.notify("Error: La duración debe ser un número", severity="error")
@@ -177,37 +173,14 @@ class PuntueitorApp(App):
         self.push_screen(ScoringScreen(), handle_scoring)
 
     def apply_scoring(self, scoring_type: str) -> None:
-        scorer = None
-        if scoring_type == "mixed":
-            scorer = MixedScore()
-        elif scoring_type == "weighted":
-            scorer = WeightedScore([
-                (CriticScoreScorer(), 0.4),
-                (UserScoreScorer(), 0.4),
-                (DurationScoreScorer(), 0.2)
-            ])
-        elif scoring_type == "time":
-            scorer = AvailableTimeScorer()
-        elif scoring_type == "genre":
-            scorer = GenreScorer()
+        self.current_library, scores_map = self.library_service.score(
+            self.current_library, scoring_type
+        )
 
-        if scorer:
-            ctx = ScoringContext(available_hours=20.0) # Ejemplo
-            # Usamos el pipeline de scoring
-            from puntueitor.core.pipeline.scoring_ops import score_library
-            scored_lib = score_library(self.current_library, scorer, ctx)
-            
-            # Extraemos los scores para mostrarlos
-            scores_map = {sg.game.igdb_id: sg.score for sg in scored_lib.scored_games}
-            
-            # Convertimos de vuelta a Library (ordenada)
-            sorted_games = [sg.game for sg in scored_lib.scored_games]
-            self.current_library = Library.from_iterable(sorted_games)
-            
-            game_list = self.query_one(GameList)
-            game_list.populate_games(self.current_library, scores=scores_map)
-            game_list.select_first()
-            self.notify(f"Biblioteca puntuada y ordenada por: {scoring_type}")
+        game_list = self.query_one(GameList)
+        game_list.populate_games(self.current_library, scores=scores_map)
+        game_list.select_first()
+        self.notify(f"Biblioteca puntuada y ordenada por: {scoring_type}")
 
     def _start_enrichment(self, enricher_type: str) -> None:
         self.is_enriching = True
@@ -282,25 +255,9 @@ class PuntueitorApp(App):
         self.query_one("#status-progress", ProgressBar).progress = current
 
     def apply_sorting(self, criteria: str, reverse: bool = False) -> None:
-        games = list(self.current_library.games)
-        
-        if criteria == "title":
-            games.sort(key=lambda g: g.title.lower(), reverse=reverse)
-        elif criteria == "user_score":
-            games.sort(key=lambda g: g.user_score or 0.0, reverse=reverse)
-        elif criteria == "critic_score":
-            games.sort(key=lambda g: g.critic_score or 0.0, reverse=reverse)
-        elif criteria == "duration":
-            # Si reverse=False (Asc), None va al final (9999.0)
-            # Si reverse=True (Desc), None va al final (-1.0)
-            none_val = 9999.0 if not reverse else -1.0
-            games.sort(key=lambda g: g.duration_hours if g.duration_hours is not None else none_val, reverse=reverse)
-        elif criteria == "mixed":
-            strategy = MixedScore()
-            ctx = ScoringContext()
-            games.sort(key=lambda g: strategy.score(g, ctx), reverse=reverse)
-
-        self.current_library = Library.from_iterable(games)
+        self.current_library = self.library_service.sort(
+            self.current_library, criteria, reverse
+        )
         game_list = self.query_one(GameList)
         game_list.populate_games(self.current_library)
         game_list.select_first()

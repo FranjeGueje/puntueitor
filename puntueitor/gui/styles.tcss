@@ -254,3 +254,29 @@ ScoringScreen {
     height: 1fr;
     color: $text;
 }
+
+/* Scoring Config Screen Styles */
+#genre-list-config {
+    height: 10;
+    border: solid $accent;
+    padding: 1;
+    margin-top: 1;
+}
+
+#config-inputs {
+    padding: 1 2;
+}
+
+#config-inputs Label {
+    margin-top: 1;
+    text-style: bold;
+}
+
+#config-buttons {
+    margin-top: 2;
+    align: right middle;
+}
+
+#config-buttons Button {
+    margin-left: 1;
+}
