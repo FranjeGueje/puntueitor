@@ -48,16 +48,6 @@ class Game:
     # 🔢 Derivados (NO persistidos)
     # ──────────────────────────────
 
-    @property
-    def total_score(self) -> float | None:
-        """
-        Media simple IGDB (user + critic).
-        Derivado, no persistido.
-        """
-        if self.user_score is None or self.critic_score is None:
-            return None
-        return (self.user_score + self.critic_score) / 2
-
     # ──────────────────────────────
     # 🏬 Stores
     # ──────────────────────────────

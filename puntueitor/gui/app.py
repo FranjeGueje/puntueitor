@@ -15,9 +15,11 @@ from puntueitor.gui.screens.filtering import FilteringScreen
 from puntueitor.gui.screens.filter_input import FilterInputScreen
 from puntueitor.gui.screens.enrichers import EnrichersScreen
 from puntueitor.gui.screens.reload_confirmation import ReloadConfirmationScreen
+from puntueitor.gui.screens.scoring import ScoringScreen
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library, Game
-from puntueitor.core.scoring.mixed_score import MixedScore
+from puntueitor.core.scoring import MixedScore, WeightedScore, AvailableTimeScorer
+from puntueitor.core.scoring.atomic import GenreScorer, CriticScoreScorer, UserScoreScorer, DurationScoreScorer
 from puntueitor.core.models.scoring_context import ScoringContext
 
 from puntueitor.core.config import ConfigManager
@@ -33,6 +35,7 @@ class PuntueitorApp(App):
         ("s", "sort_library", "Ordenar"),
         ("f", "filter_library", "Filtrar"),
         ("e", "enrich_library", "Enriquecer"),
+        ("p", "select_scoring", "Puntueitor"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
     ]
@@ -166,6 +169,45 @@ class PuntueitorApp(App):
             if enricher_type == "hltb":
                 self._start_enrichment("hltb")
         self.push_screen(EnrichersScreen(), handle_enricher)
+
+    def action_select_scoring(self) -> None:
+        def handle_scoring(scoring_type: str | None) -> None:
+            if scoring_type:
+                self.apply_scoring(scoring_type)
+        self.push_screen(ScoringScreen(), handle_scoring)
+
+    def apply_scoring(self, scoring_type: str) -> None:
+        scorer = None
+        if scoring_type == "mixed":
+            scorer = MixedScore()
+        elif scoring_type == "weighted":
+            scorer = WeightedScore([
+                (CriticScoreScorer(), 0.4),
+                (UserScoreScorer(), 0.4),
+                (DurationScoreScorer(), 0.2)
+            ])
+        elif scoring_type == "time":
+            scorer = AvailableTimeScorer()
+        elif scoring_type == "genre":
+            scorer = GenreScorer()
+
+        if scorer:
+            ctx = ScoringContext(available_hours=20.0) # Ejemplo
+            # Usamos el pipeline de scoring
+            from puntueitor.core.pipeline.scoring_ops import score_library
+            scored_lib = score_library(self.current_library, scorer, ctx)
+            
+            # Extraemos los scores para mostrarlos
+            scores_map = {sg.game.igdb_id: sg.score for sg in scored_lib.scored_games}
+            
+            # Convertimos de vuelta a Library (ordenada)
+            sorted_games = [sg.game for sg in scored_lib.scored_games]
+            self.current_library = Library.from_iterable(sorted_games)
+            
+            game_list = self.query_one(GameList)
+            game_list.populate_games(self.current_library, scores=scores_map)
+            game_list.select_first()
+            self.notify(f"Biblioteca puntuada y ordenada por: {scoring_type}")
 
     def _start_enrichment(self, enricher_type: str) -> None:
         self.is_enriching = True

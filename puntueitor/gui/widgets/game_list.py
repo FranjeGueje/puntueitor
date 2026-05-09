@@ -27,11 +27,30 @@ class GameList(Vertical):
         table.add_column("C", key="critic")
         table.add_column("Dur", key="duration")
 
-    def populate_games(self, library: Library):
+    def populate_games(self, library: Library, scores: dict[int, float] | None = None):
         table = self.query_one("#game-options", DataTable)
         count_label = self.query_one("#game-count", Static)
         
+        # Guardar posición actual
+        try:
+            current_row = table.cursor_row
+        except:
+            current_row = 0
+
         table.clear()
+        
+        # Manejo de la columna Score
+        has_score_col = any(col.key.value == "score" for col in table.columns.values())
+        if scores is not None and not has_score_col:
+            table.add_column("Puntos", key="score")
+        elif scores is None and has_score_col:
+            # Recreamos columnas sin score para limpiar
+            table.clear(columns=True)
+            table.add_column("Título", key="title")
+            table.add_column("U", key="user")
+            table.add_column("C", key="critic")
+            table.add_column("Dur", key="duration")
+
         self.games_map.clear()
  
         count = len(library.games)
@@ -49,7 +68,18 @@ class GameList(Vertical):
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
             d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
             
-            table.add_row(game.title, u, c, d, key=row_key)
+            row_data = [game.title, u, c, d]
+            if scores is not None:
+                s = scores.get(game.igdb_id, 0.0)
+                # Si el rango es 0-1, lo mostramos como porcentaje o 0.xx
+                # Pero como MixedScore era 0-100 y ahora lo estandarizamos,
+                # mostramos 0-100 para que sea legible.
+                row_data.append(f"{s*100:.1f}")
+            
+            table.add_row(*row_data, key=row_key)
+        
+        if table.row_count > current_row:
+            table.move_cursor(row=current_row)
             
     @on(DataTable.RowSelected, "#game-options")
     def on_game_selected(self, event: DataTable.RowSelected):
