@@ -94,6 +94,10 @@ class PuntueitorApp(App):
         detail = self.query_one(GameDetail)
         detail.show_game(message.game)
 
+    def on_game_list_game_highlighted(self, message: GameList.GameHighlighted) -> None:
+        detail = self.query_one(GameDetail)
+        detail.show_game(message.game)
+
     def action_configure(self) -> None:
         self.push_screen(ConfigurationScreen())
 

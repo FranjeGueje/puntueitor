@@ -12,6 +12,11 @@ class GameList(Vertical):
             self.game = game
             super().__init__()
 
+    class GameHighlighted(Message):
+        def __init__(self, game: Game):
+            self.game = game
+            super().__init__()
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.games_map: dict[str, Game] = {}
@@ -86,6 +91,12 @@ class GameList(Vertical):
         row_key = event.row_key.value
         if row_key and row_key in self.games_map:
             self.post_message(self.GameSelected(self.games_map[row_key]))
+
+    @on(DataTable.RowHighlighted, "#game-options")
+    def on_game_highlighted(self, event: DataTable.RowHighlighted):
+        row_key = event.row_key.value
+        if row_key and row_key in self.games_map:
+            self.post_message(self.GameHighlighted(self.games_map[row_key]))
 
     def select_first(self):
         table = self.query_one("#game-options", DataTable)
