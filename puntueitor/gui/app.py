@@ -323,6 +323,9 @@ class PuntueitorApp(App):
         def progress(current: int, total: int, name: str) -> None:
             self.call_from_thread(self._update_reload_progress, current, total, name)
 
+        def on_enriched(enriched_game: Game) -> None:
+            self.call_from_thread(self._on_game_enriched, enriched_game)
+
         try:
             if refresh:
                 for db_file in glob.glob("cache/*.sqlite"):
@@ -331,13 +334,26 @@ class PuntueitorApp(App):
 
             from puntueitor.core.igdb.service import IGDBService
             from puntueitor.core.pipeline.load_steam_library import load_steam_library
+            from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+            from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
             
             igdb_service = IGDBService()
+            
+            enrichers = []
+            try:
+                hltb_resolver = HLTBResolver()
+                hltb_enricher = HLTBEnricher(client=hltb_resolver, overwrite=False)
+                enrichers.append(hltb_enricher)
+            except Exception as e:
+                self.call_from_thread(self.notify, f"Warning: No se pudo inicializar HLTB: {e}", severity="warning")
+            
             game_generator = load_steam_library(
                 engine=igdb_service,
                 refresh=refresh,
                 force_store_refresh=force_store_refresh,
                 progress_callback=progress,
+                enrichers=enrichers if enrichers else None,
+                enrichment_callback=on_enriched if enrichers else None,
             )
 
             loaded_games = []
@@ -361,6 +377,9 @@ class PuntueitorApp(App):
         self.full_library = Library.from_iterable(new_games)
         self.current_library = self.full_library
         self.query_one(GameList).add_game_to_table(game)
+        
+        if game.duration_hours is not None:
+            self.repo.save_game(game)
 
     def _finish_reload(self, refresh: bool = False) -> None:
         self.is_reloading = False
