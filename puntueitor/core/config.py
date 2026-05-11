@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MIXED_WEIGHTS = {"critics": 0.3, "users": 0.5, "duration": 0.2}
 DEFAULT_WEIGHTED_WEIGHTS = {"critics": 0.4, "users": 0.4, "duration": 0.2}
 DEFAULT_AVAILABLE_HOURS = 20.0
+DEFAULT_ENABLED_STORES = ["steam"]
 
 
 @dataclass
@@ -29,6 +30,10 @@ class Config:
     scoring_available_hours: float = DEFAULT_AVAILABLE_HOURS
     scoring_preferred_genres: list[str] = field(default_factory=list)
 
+    steam_is_active: bool = True
+    heroic_is_active: bool = False
+    heroic_path: str = ""
+
 class ConfigManager:
     _instance = None
     _lock = threading.Lock()
@@ -48,23 +53,33 @@ class ConfigManager:
     def _load(self):
         self.config_dir = Path.home() / ".config" / "puntueitor"
         self.config_file = self.config_dir / "config.json"
-        
+
         if not self.config_file.exists():
             self.config_dir.mkdir(parents=True, exist_ok=True)
             self.config = Config()
             self.save()
+            logger.info(f"Created new config file: {self.config_file}")
         else:
             try:
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self.config = Config(**{k: v for k, v in data.items() if hasattr(Config, k)})
-            except (json.JSONDecodeError, OSError):
+                    logger.info(f"Loaded config data: {data.keys()}")
+
+                # Filter fields that exist in Config dataclass
+                config_data = {k: v for k, v in data.items() if hasattr(Config, k)}
+
+                self.config = Config(**config_data)
+                logger.info(f"Config loaded: steam_is_active={getattr(self.config, 'steam_is_active', True)}, heroic_is_active={getattr(self.config, 'heroic_is_active', False)}")
+            except (json.JSONDecodeError, OSError) as e:
+                logger.error(f"Error loading config: {e}")
                 self.config = Config()
 
     def save(self):
         self.config_dir.mkdir(parents=True, exist_ok=True)
+        config_dict = asdict(self.config)
         with open(self.config_file, "w", encoding="utf-8") as f:
-            json.dump(asdict(self.config), f, indent=4)
+            json.dump(config_dict, f, indent=4)
+        logger.info(f"Config saved: {config_dict}")
 
     @property
     def get(self) -> Config:
