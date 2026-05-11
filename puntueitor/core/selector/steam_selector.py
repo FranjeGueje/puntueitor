@@ -18,13 +18,21 @@ class SteamSelector(GameSelector):
 
     def select(
         self,
-        candidates: Sequence[Game],
+        candidates: Sequence[Game] | None,
         ctx: SelectionContext,
     ) -> Game | None:
         """
         Selecciona el mejor Game basándose en score y disponibilidad de datos.
         """
         if not candidates:
+            return None
+
+        try:
+            candidates = list(candidates)
+        except TypeError:
+            return None
+
+        if len(candidates) == 0:
             return None
 
         if len(candidates) == 1:

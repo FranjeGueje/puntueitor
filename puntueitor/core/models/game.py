@@ -13,6 +13,7 @@ class Stores(StrEnum):
     STEAM = "steam"
     EPIC = "epic"
     GOG = "gog"
+    AMAZON = "amazon"
 
 
 StoreMap = dict[Stores, str]

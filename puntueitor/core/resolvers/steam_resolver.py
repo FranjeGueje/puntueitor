@@ -8,6 +8,7 @@ from puntueitor.core.mappers import IGMapperGame
 from puntueitor.core.models import Game, Stores
 
 from puntueitor.core.cachers.resolvers_cacher import ResolversCacher
+from puntueitor.core.cachers.desconocidos_cacher import DesconocidosCacher
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class SteamIGDBResolver(BaseResolver):
     ):
         self.igdb = igdb
         self.cacher = ResolversCacher(cache_file) if cache_file else None
+        self.unknown_cacher = DesconocidosCacher()
 
     def resolve(self, raw: dict, refresh: bool = False) -> Sequence[Game]:
         """
@@ -56,6 +58,10 @@ class SteamIGDBResolver(BaseResolver):
                     logger.warning(f"Skipping fallback search for app {appid}: invalid name '{name}'")
             
             igdb_ids = [r["id"] for r in results]
+
+            if not igdb_ids:
+                logger.warning(f"Steam game not found in IGDB: {name} (ID: {appid})")
+                self.unknown_cacher.save_unknown("steam", name, str(appid))
 
             # Guardar correlación
             if self.cacher and igdb_ids:
