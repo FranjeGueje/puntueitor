@@ -485,21 +485,18 @@ class PuntueitorApp(App):
 
             from puntueitor.core.igdb.service import IGDBService
             from puntueitor.core.pipeline.load_steam_library import load_library
+            from puntueitor.core.pipeline.load_steam_library import load_library
             from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
             from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
             from puntueitor.core.heroics import HeroicsLoader
             from puntueitor.core.config import ConfigManager
 
-            logger.info("do_reload: creating IGDBService...")
             config = ConfigManager().get
             igdb_service = IGDBService()
 
             heroic_loader = None
             if getattr(config, 'heroic_is_active', False):
                 heroic_loader = HeroicsLoader()
-
-            logger.info("do_reload: loading extras cache...")
-            extras_cache = self.repo.extras_cacher.get_all_extras()
 
             enrichers = []
             try:
@@ -509,9 +506,9 @@ class PuntueitorApp(App):
             except Exception as e:
                 self.call_from_thread(self.notify, f"Warning: No se pudo inicializar HLTB: {e}", severity="warning")
 
-            logger.info("do_reload: calling load_library...")
             game_generator = load_library(
                 engine=igdb_service,
+                heroic_loader=heroic_loader,
                 heroic_loader=heroic_loader,
                 refresh=refresh,
                 force_store_refresh=force_store_refresh,

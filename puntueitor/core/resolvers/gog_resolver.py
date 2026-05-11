@@ -39,20 +39,12 @@ class GOGHeroicResolver(BaseResolver):
             logger.warning(f"GOG game missing ID, skipping: {title}")
             return []
 
-        if self.unknown_cacher.is_unknown("gog", gog_id):
-            logger.debug(f"Skipping known unknown GOG game: {title}")
-            return []
-
         igdb_ids: list[int] | None = None
 
         if not refresh and self.cacher:
             igdb_ids = self.cacher.get_igdb_ids("gog", gog_id)
 
         if not igdb_ids:
-            if self.cacher and not self.cacher._available:
-                logger.warning(f"GOG: skipping '{title}' — resolver cache unavailable")
-                return []
-
             results = self.igdb.search_by_external_game(
                 source_id=self.GOG_SOURCE_ID,
                 external_uid=gog_id,
