@@ -11,6 +11,7 @@ class IGDBCacher:
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
+        self.ttl_seconds = ttl_seconds or self.DEFAULT_TTL_SECONDS
         self._available = False
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -32,7 +33,8 @@ class IGDBCacher:
                     name TEXT,
                     rating REAL,
                     storyline TEXT,
-                    total_rating REAL
+                    total_rating REAL,
+                    cached_at INTEGER
                 )
             """)
             conn.commit()
@@ -41,12 +43,17 @@ class IGDBCacher:
         if not self._available:
             return None
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM games WHERE id = ?", (igdb_id,))
                 row = cursor.fetchone()
                 if row:
                     res = dict(row)
+                    cached_at = res.get("cached_at")
+
+                    if not self._is_cache_valid(cached_at):
+                        logger.debug(f"Cache expired for game {igdb_id}")
+                        return None
 
                     if res.get("cover"):
                         res["cover"] = json.loads(res["cover"])
@@ -56,14 +63,13 @@ class IGDBCacher:
                 return None
         except Exception as e:
             logger.warning(f"Error getting game {igdb_id}: {e}")
-            self._available = False
             return None
 
     def save_game(self, game_dict: dict) -> None:
         if not self._available:
             return
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            with sqlite3.connect(self.db_path) as conn:
                 data = {
                     "id": game_dict.get("id"),
                     "aggregated_rating": game_dict.get("aggregated_rating"),
@@ -73,16 +79,17 @@ class IGDBCacher:
                     "name": game_dict.get("name"),
                     "rating": game_dict.get("rating"),
                     "storyline": game_dict.get("storyline"),
-                    "total_rating": game_dict.get("total_rating")
+                    "total_rating": game_dict.get("total_rating"),
+                    "cached_at": int(time.time())
                 }
 
                 conn.execute("""
                     INSERT INTO games (
                         id, aggregated_rating, cover, first_release_date,
-                        genres, name, rating, storyline, total_rating
+                        genres, name, rating, storyline, total_rating, cached_at
                     ) VALUES (
                         :id, :aggregated_rating, :cover, :first_release_date,
-                        :genres, :name, :rating, :storyline, :total_rating
+                        :genres, :name, :rating, :storyline, :total_rating, :cached_at
                     )
                     ON CONFLICT(id) DO UPDATE SET
                         aggregated_rating=excluded.aggregated_rating,
@@ -92,37 +99,29 @@ class IGDBCacher:
                         name=excluded.name,
                         rating=excluded.rating,
                         storyline=excluded.storyline,
-                        total_rating=excluded.total_rating
+                        total_rating=excluded.total_rating,
+                        cached_at=excluded.cached_at
                 """, data)
                 conn.commit()
         except Exception as e:
             logger.warning(f"Error saving game: {e}")
 
-    def get_all_games(self) -> list[dict]:
+    def get_all_cached_ids(self) -> list[int]:
         if not self._available:
             return []
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute("SELECT * FROM games")
-                results = []
-                for row in cursor.fetchall():
-                    res = dict(row)
-                    if res.get("cover"):
-                        res["cover"] = json.loads(res["cover"])
-                    if res.get("genres"):
-                        res["genres"] = json.loads(res["genres"])
-                    results.append(res)
-                return results
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("SELECT id FROM games")
+                return [row[0] for row in cursor.fetchall()]
         except Exception as e:
-            logger.warning(f"Error getting all games: {e}")
+            logger.warning(f"Error getting all cached ids: {e}")
             return []
 
     def get_all_genres(self) -> list[str]:
         if not self._available:
             return []
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("SELECT genres FROM games WHERE genres IS NOT NULL")
                 all_genres: set[str] = set()
                 for row in cursor.fetchall():

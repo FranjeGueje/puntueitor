@@ -1,7 +1,13 @@
 import sqlite3
 import logging
+import logging
 from pathlib import Path
 from typing import Sequence
+
+from puntueitor.core.models import Stores
+
+logger = logging.getLogger(__name__)
+
 
 from puntueitor.core.models import Stores
 
@@ -11,6 +17,14 @@ logger = logging.getLogger(__name__)
 class ResolversCacher:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
+        self._available = False
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
+            self._available = True
+        except Exception as e:
+            logger.warning(f"Failed to initialize ResolversCacher at {self.db_path}: {e}")
+            self._available = False
         self._available = False
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,7 +50,7 @@ class ResolversCacher:
         if not self._available:
             return None
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute(
                     "SELECT id_igdb FROM resolvers WHERE store = ? AND id_store = ?",
                     (store, str(id_store))
@@ -47,14 +61,13 @@ class ResolversCacher:
                 return None
         except Exception as e:
             logger.warning(f"Error getting igdb ids: {e}")
-            self._available = False
             return None
 
     def set_igdb_ids(self, store: str, id_store: str, igdb_ids: Sequence[int]) -> None:
         if not self._available:
             return
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
                     "DELETE FROM resolvers WHERE store = ? AND id_store = ?",
                     (store, str(id_store))
@@ -73,7 +86,7 @@ class ResolversCacher:
             return {}
         result: dict[int, dict[Stores, str]] = {}
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("SELECT store, id_store, id_igdb FROM resolvers")
                 for store_str, id_store, igdb_id in cursor.fetchall():
                     try:

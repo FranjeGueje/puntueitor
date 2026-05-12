@@ -1,6 +1,10 @@
 import sqlite3
 import logging
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 
 logger = logging.getLogger(__name__)
 
@@ -8,6 +12,14 @@ logger = logging.getLogger(__name__)
 class ExtrasCacher:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
+        self._available = False
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
+            self._available = True
+        except Exception as e:
+            logger.warning(f"Failed to initialize ExtrasCacher at {self.db_path}: {e}")
+            self._available = False
         self._available = False
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,8 +56,7 @@ class ExtrasCacher:
         if not self._available:
             return {}
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-                conn.execute("CREATE TABLE IF NOT EXISTS extras (id_igdb INTEGER PRIMARY KEY, duration_hours REAL)")
+            with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM extras WHERE id_igdb = ?", (igdb_id,))
                 row = cursor.fetchone()
@@ -57,10 +68,10 @@ class ExtrasCacher:
     def save_extras(self, igdb_id: int, duration_hours: float | None) -> None:
         if not self._available:
             return
-
+        if duration_hours is None:
+            return
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-                conn.execute("CREATE TABLE IF NOT EXISTS extras (id_igdb INTEGER PRIMARY KEY, duration_hours REAL)")
+            with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
                     INSERT INTO extras (id_igdb, duration_hours)
                     VALUES (?, ?)

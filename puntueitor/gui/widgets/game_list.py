@@ -78,12 +78,15 @@ class GameList(Vertical):
             row_key = str(game.igdb_id)
             self.games_map[row_key] = game
 
+            # Truncar título si es muy largo
+            title = game.title[:37] + "..." if len(game.title) > 40 else game.title
+
             # Formatear métricas
             u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
-            d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None and game.duration_hours > 0 else "--"
+            d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
 
-            row_data = [game.title, u, c, d]
+            row_data = [title, u, c, d]
             if scores is not None:
                 s = scores.get(game.igdb_id, 0.0)
                 row_data.append(f"{s*100:.1f}")

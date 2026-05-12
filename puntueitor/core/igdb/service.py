@@ -35,9 +35,12 @@ class IGDBService:
         db_path = Path(cache_dir) / "igdb.sqlite"
         logger.info(f"IGDBService: IGDBCacher at {db_path}")
         self.cacher = IGDBCacher(db_path)
-
-        self.token = self._load_token_from_disk()
-        self.wrapper = None
+         
+        self.token = self._load_or_generate_token()
+        self.wrapper = igdbpy.IgdbWrapper(
+            client_id=self.client_id,
+            access_token=self.token["access_token"],
+        )
     
     # ---------------------------
     # TOKEN MANAGEMENT
@@ -160,6 +163,7 @@ class IGDBService:
         # Intentar caché
         if not refresh:
             data = self.cacher.get_game(igdb_id)
+            if data:
             if data:
                 return data
             if not self.cacher._available:
