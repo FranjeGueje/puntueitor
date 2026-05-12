@@ -50,7 +50,7 @@ class ResolversCacher:
         if not self._available:
             return None
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 cursor = conn.execute(
                     "SELECT id_igdb FROM resolvers WHERE store = ? AND id_store = ?",
                     (store, str(id_store))
@@ -67,7 +67,7 @@ class ResolversCacher:
         if not self._available:
             return
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 conn.execute(
                     "DELETE FROM resolvers WHERE store = ? AND id_store = ?",
                     (store, str(id_store))
@@ -86,7 +86,7 @@ class ResolversCacher:
             return {}
         result: dict[int, dict[Stores, str]] = {}
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 cursor = conn.execute("SELECT store, id_store, id_igdb FROM resolvers")
                 for store_str, id_store, igdb_id in cursor.fetchall():
                     try:

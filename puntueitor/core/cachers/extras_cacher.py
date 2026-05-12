@@ -56,7 +56,7 @@ class ExtrasCacher:
         if not self._available:
             return {}
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM extras WHERE id_igdb = ?", (igdb_id,))
                 row = cursor.fetchone()
@@ -71,7 +71,7 @@ class ExtrasCacher:
         if duration_hours is None:
             return
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 conn.execute("""
                     INSERT INTO extras (id_igdb, duration_hours)
                     VALUES (?, ?)
