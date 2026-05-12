@@ -23,7 +23,6 @@ class IGDBService:
         client_id: str | None = None,
         client_secret: str | None = None,
         cache_dir: str | Path | None = None,
-        schema_version: int = 1,
     ) -> None:
         """ Motor de acceso a IGDB usando igdbpy.
          Gestiona el token y expone un wrapper autenticado. """
@@ -33,8 +32,6 @@ class IGDBService:
 
         db_path = Path(cache_dir) / "igdb.sqlite" if cache_dir else Path("cache/igdb.sqlite")
         self.cacher = IGDBCacher(db_path)
-
-        self.schema_version = schema_version
          
         self.token = self._load_or_generate_token()
         self.wrapper = igdbpy.IgdbWrapper(
@@ -144,7 +141,6 @@ class IGDBService:
     
     def _cachear_list(self, query: list[dict]) -> None:
         for r in query:
-            r["_schema_version"] = self.schema_version
             try:
                 self.cacher.save_game(r)
             except Exception as e:
@@ -167,7 +163,7 @@ class IGDBService:
         # Intentar caché
         if not refresh:
             data = self.cacher.get_game(igdb_id)
-            if data and data.get("_schema_version") == self.schema_version:
+            if data:
                 return data
 
         # Consultar IGDB
