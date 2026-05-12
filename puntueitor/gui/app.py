@@ -94,10 +94,6 @@ class PuntueitorApp(App):
                 game_list.populate_games(self.current_library)
                 game_list.select_first()
 
-                old_path = "cache/library.json"
-                if os.path.exists(old_path):
-                    os.remove(old_path)
-
             self.call_later(on_done)
         except Exception as e:
             error_msg = str(e)

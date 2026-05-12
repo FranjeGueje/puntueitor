@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
@@ -103,17 +102,3 @@ class Game:
             duration_hours=data.get("duration_hours"),
             stores=stores,
         )
-
-    def to_disk(self, path: str | Path) -> None:
-        path = Path(path)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-
-    @classmethod
-    def from_disk(cls, path: str | Path) -> Game:
-        path = Path(path)
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            raise ValueError("Invalid Game file")
-        return cls.from_dict(data)
