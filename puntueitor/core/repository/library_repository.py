@@ -10,6 +10,7 @@ from puntueitor.core.cachers.igdb_cacher import IGDBCacher
 from puntueitor.core.cachers.extras_cacher import ExtrasCacher
 from puntueitor.core.cachers.resolvers_cacher import ResolversCacher
 from puntueitor.core.cachers.steam_user_cacher import SteamUserCacher
+from puntueitor.core.heroics.loader import HeroicsLoader
 
 logger = logging.getLogger(__name__)
 
@@ -45,42 +46,85 @@ class LibraryRepository:
     def load(self, path: str | Path | None = None) -> Library:
         """
         Reconstruye la biblioteca realizando un join entre las bases de datos.
+        Carga juegos de Steam y de Heroic (GOG, Epic, Amazon).
         """
         config = ConfigManager().get
         steam_id = config.steam_user_id
-        if not steam_id:
+
+        # Si no hay Steam ID ni Heroic activo, retornar vacío
+        if not steam_id and not config.heroic_is_active:
             return Library.from_iterable(())
 
-        # 1. Obtener apps del usuario desde su DB de Steam (ubicada en ~/.cache/puntueitor)
-        steam_cacher = SteamUserCacher(steam_id)
-        steam_apps = steam_cacher.get_all_games()
-        if not steam_apps:
-            return Library.from_iterable(())
+        # Obtener TODOS los mappings de resolvers.sqlite (1 solo query)
+        all_mappings = self.resolvers_cacher.get_all_mappings()
 
-        # 2. Mapear AppIDs a IGDB IDs usando resolvers.sqlite
-        # Recogemos también la relación inversa para reconstruir el objeto Game
-        igdb_to_stores = {} # {igdb_id: {Stores.STEAM: appid}}
-        
+        # 1. Obtener apps de Steam si está activo
+        steam_apps = []
+        if steam_id and config.steam_is_active:
+            steam_cacher = SteamUserCacher(steam_id)
+            steam_apps = steam_cacher.get_all_games()
+
+        # 2. Obtener juegos de Heroic si está activo
+        heroic_games = []
+        if config.heroic_is_active:
+            heroic_loader = HeroicsLoader()
+            heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)
+            if heroic_path:
+                heroic_games = heroic_loader.get_all_heroic_games(heroic_path)
+            else:
+                logger.warning("Heroic path not found, skipping Heroic games")
+
+        # 3. Construir reverse index para búsquedas rápidas: {(store, store_id): [igdb_id]}
+        store_to_igdb: dict[tuple[str, str], list[int]] = {}
+        for ig_id, stores in all_mappings.items():
+            for store, store_id in stores.items():
+                key = (store.value, store_id)
+                if key not in store_to_igdb:
+                    store_to_igdb[key] = []
+                store_to_igdb[key].append(ig_id)
+
+        # 4. Construir mapping igdb_id -> stores
+        igdb_to_stores: dict[int, dict[Stores, str]] = {}
+
+        # Procesar Steam apps usando el índice
         for app in steam_apps:
             appid = str(app["appid"])
-            ig_ids = self.resolvers_cacher.get_igdb_ids("steam", appid)
-            if ig_ids:
-                for ig_id in ig_ids:
+            key = ("steam", appid)
+            if key in store_to_igdb:
+                for ig_id in store_to_igdb[key]:
                     if ig_id not in igdb_to_stores:
                         igdb_to_stores[ig_id] = {}
                     igdb_to_stores[ig_id][Stores.STEAM] = appid
 
-        # 3. Cargar detalles canónicos de igdb.sqlite y extras de extras.sqlite
+        # Procesar juegos de Heroic usando el índice
+        for store_name, games in heroic_games.items():
+            store_key = store_name.lower()
+            store_enum = Stores(store_key)
+            for game_data in games:
+                store_id = game_data.get("app_name") or game_data.get("id", "")
+                if not store_id:
+                    continue
+
+                key = (store_key, str(store_id))
+                if key in store_to_igdb:
+                    for ig_id in store_to_igdb[key]:
+                        if ig_id not in igdb_to_stores:
+                            igdb_to_stores[ig_id] = {}
+                        igdb_to_stores[ig_id][store_enum] = str(store_id)
+
+        # Si no hay juegos mapeados, retornar vacío
+        if not igdb_to_stores:
+            logger.info("No games found in library")
+            return Library.from_iterable(())
+
+        # 4. Cargar detalles canónicos de igdb.sqlite y extras de extras.sqlite
         games = []
         for igdb_id, stores in igdb_to_stores.items():
             raw = self.igdb_cacher.get_game(igdb_id)
             if not raw:
                 logger.warning(f"IGDB data not found for resolved game {igdb_id}, skipping")
                 continue
-            
-            # Mapeo respetando nombres de IGDB en la BBDD
-            # BBDD: id, name, aggregated_rating, rating, storyline, first_release_date, cover, genres
-            
+
             release_date = None
             ts = raw.get("first_release_date")
             if ts:
@@ -101,7 +145,7 @@ class LibraryRepository:
                 for g in genres_json:
                     if isinstance(g, dict) and "name" in g:
                         genres.append(g["name"])
-            
+
             extras = self.extras_cacher.get_extras(igdb_id)
             duration_hours = extras.get("duration_hours")
 

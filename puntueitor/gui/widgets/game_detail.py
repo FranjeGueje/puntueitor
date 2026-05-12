@@ -16,7 +16,8 @@ class GameDetail(VerticalScroll):
         user_score = f"{game.user_score:.0f}/100" if game.user_score is not None else "N/A"
         critic_score = f"{game.critic_score:.0f}/100" if game.critic_score is not None else "N/A"
         storyline = game.storyline if game.storyline else "Sin descripción disponible."
-        
+        stores_list = ", ".join(game.stores.keys()) if game.stores else "Ninguna"
+
         content = f"""# {game.title}
 
 **Géneros:** {genres}
@@ -26,6 +27,8 @@ class GameDetail(VerticalScroll):
 **Puntuación Usuario:** {user_score}
 
 **Puntuación Crítica:** {critic_score}
+
+**Tiendas:** {stores_list}
 
 ---
 

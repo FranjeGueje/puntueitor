@@ -77,17 +77,36 @@ class PuntueitorApp(App):
         try:
             self.repo = LibraryRepository()
             self.library_service = LibraryService(self.repo)
-            self.full_library = self.library_service.load()
-            self.current_library = self.full_library
-            game_list.populate_games(self.current_library)
-            game_list.select_first()
-
-            old_path = "cache/library.json"
-            if os.path.exists(old_path):
-                os.remove(old_path)
+            self._load_library_worker()
         except Exception as e:
             game_list.populate_games(Library.from_iterable(()))
             self.notify(f"Error cargando librería: {e}", severity="error")
+
+    @work(exclusive=True, thread=True)
+    def _load_library_worker(self):
+        try:
+            library = self.library_service.load()
+
+            def on_done():
+                self.full_library = library
+                self.current_library = self.full_library
+                game_list = self.query_one(GameList)
+                game_list.populate_games(self.current_library)
+                game_list.select_first()
+
+                old_path = "cache/library.json"
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+
+            self.call_later(on_done)
+        except Exception as e:
+            error_msg = str(e)
+            def on_error():
+                game_list = self.query_one(GameList)
+                game_list.populate_games(Library.from_iterable(()))
+                self.notify(f"Error cargando librería: {error_msg}", severity="error")
+
+            self.call_later(on_error)
 
     def on_game_list_game_selected(self, message: GameList.GameSelected) -> None:
         detail = self.query_one(GameDetail)
