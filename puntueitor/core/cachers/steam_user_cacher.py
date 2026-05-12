@@ -36,7 +36,7 @@ class SteamUserCacher:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS owned_games (
                     appid                       INTEGER PRIMARY KEY,
@@ -56,7 +56,7 @@ class SteamUserCacher:
             conn.commit()
 
     def get_all_games(self) -> list[dict] | None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("SELECT * FROM owned_games")
             rows = cursor.fetchall()
@@ -103,7 +103,7 @@ class SteamUserCacher:
             logger.warning("No valid games to save")
             return
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("DELETE FROM owned_games")
             conn.executemany("""
                 INSERT INTO owned_games (

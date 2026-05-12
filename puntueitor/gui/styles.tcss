@@ -26,6 +26,11 @@ GameList {
     color: $text;
 }
 
+#game-options DataTableColumn {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 DataTable > .datatable--header {
     text-style: bold;
     color: $accent;

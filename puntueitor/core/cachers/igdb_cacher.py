@@ -24,7 +24,7 @@ class IGDBCacher:
             self._available = False
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS games (
                     id INTEGER PRIMARY KEY,
@@ -50,7 +50,7 @@ class IGDBCacher:
         if not self._available:
             return None
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM games WHERE id = ?", (igdb_id,))
                 row = cursor.fetchone()
@@ -76,7 +76,7 @@ class IGDBCacher:
         if not self._available:
             return
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 data = {
                     "id": game_dict.get("id"),
                     "aggregated_rating": game_dict.get("aggregated_rating"),
@@ -117,7 +117,7 @@ class IGDBCacher:
         if not self._available:
             return []
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 cursor = conn.execute("SELECT id FROM games")
                 return [row[0] for row in cursor.fetchall()]
         except Exception as e:
@@ -128,7 +128,7 @@ class IGDBCacher:
         if not self._available:
             return []
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 cursor = conn.execute("SELECT genres FROM games WHERE genres IS NOT NULL")
                 all_genres: set[str] = set()
                 for row in cursor.fetchall():
