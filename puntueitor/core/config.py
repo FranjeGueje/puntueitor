@@ -32,6 +32,9 @@ class Config:
 
     steam_is_active: bool = True
     heroic_is_active: bool = False
+    gog_is_active: bool = False
+    epic_is_active: bool = False
+    amazon_is_active: bool = False
     heroic_path: str = ""
 
 class ConfigManager:
@@ -69,7 +72,7 @@ class ConfigManager:
                 config_data = {k: v for k, v in data.items() if hasattr(Config, k)}
 
                 self.config = Config(**config_data)
-                logger.info(f"Config loaded: steam_is_active={getattr(self.config, 'steam_is_active', True)}, heroic_is_active={getattr(self.config, 'heroic_is_active', False)}")
+                logger.info(f"Config loaded: steam_is_active={self.config.steam_is_active}, gog_is_active={self.config.gog_is_active}, epic_is_active={self.config.epic_is_active}, amazon_is_active={self.config.amazon_is_active}")
             except (json.JSONDecodeError, OSError) as e:
                 logger.error(f"Error loading config: {e}")
                 self.config = Config()
