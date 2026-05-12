@@ -27,7 +27,7 @@ class GameList(Vertical):
 
     def on_mount(self):
         table = self.query_one(DataTable)
-        table.add_column("Título", key="title")
+        table.add_column("Título", key="title", width=70)
         table.add_column("U", key="user")
         table.add_column("C", key="critic")
         table.add_column("Dur", key="duration")
@@ -51,7 +51,7 @@ class GameList(Vertical):
         elif scores is None and has_score_col:
             # Recreamos columnas sin score para limpiar
             table.clear(columns=True)
-            table.add_column("Título", key="title")
+            table.add_column("Título", key="title", width=70)
             table.add_column("U", key="user")
             table.add_column("C", key="critic")
             table.add_column("Dur", key="duration")
@@ -68,15 +68,12 @@ class GameList(Vertical):
             row_key = str(game.igdb_id)
             self.games_map[row_key] = game
 
-            # Truncar título si es muy largo
-            title = game.title[:37] + "..." if len(game.title) > 40 else game.title
-
             # Formatear métricas
             u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
             d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
 
-            row_data = [title, u, c, d]
+            row_data = [game.title, u, c, d]
             if scores is not None:
                 s = scores.get(game.igdb_id, 0.0)
                 # Si el rango es 0-1, lo mostramos como porcentaje o 0.xx
