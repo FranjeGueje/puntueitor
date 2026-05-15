@@ -39,6 +39,10 @@ class AmazonHeroicResolver(BaseResolver):
             logger.warning(f"Amazon game missing ID, skipping: {title}")
             return []
 
+        if self.unknown_cacher.is_unknown("amazon", amazon_id):
+            logger.debug(f"Skipping known unknown Amazon game: {title}")
+            return []
+
         igdb_ids: list[int] | None = None
 
         if not refresh and self.cacher:

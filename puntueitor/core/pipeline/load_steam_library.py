@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 
@@ -70,7 +71,8 @@ def load_library(
     api_key = api_key or config.steam_api_key
     user = user or config.steam_user_id
 
-    CACHE_RESOLVERS = "cache/resolvers.sqlite"
+    base_path = Path(__file__).parent.parent.parent
+    CACHE_RESOLVERS = base_path / "cache" / "resolvers.sqlite"
     steam_selector = SteamSelector()
 
 
@@ -185,8 +187,7 @@ def load_library(
                         games_loaded.append(result)
                         yield result
 
-    if executor:
-        executor.shutdown(wait=False)
+    yield executor
 
 
 def load_steam_library(
