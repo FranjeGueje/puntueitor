@@ -1,15 +1,11 @@
 import logging
-import sqlite3
 from pathlib import Path
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from puntueitor.core.models import Library, Game, Stores
-from puntueitor.core.config import ConfigManager
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
 from puntueitor.core.cachers.extras_cacher import ExtrasCacher
 from puntueitor.core.cachers.resolvers_cacher import ResolversCacher
-from puntueitor.core.cachers.steam_user_cacher import SteamUserCacher
-from puntueitor.core.heroics.loader import HeroicsLoader
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +19,7 @@ class LibraryRepository:
 
     def __init__(self, cache_dir: str | Path | None = None):
         if cache_dir is None:
-            base_path = Path(__file__).parent.parent.parent
+            base_path = Path(__file__).resolve().parents[3]
             cache_dir = base_path / "cache"
         self.cache_dir = Path(cache_dir).resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -47,108 +43,22 @@ class LibraryRepository:
 
     def load(self, path: str | Path | None = None) -> Library:
         """
-        Reconstruye la biblioteca realizando un join entre las bases de datos.
-        Carga juegos de Steam y de Heroic (GOG, Epic, Amazon).
+        Reconstruye la biblioteca directamente desde las 3 bases de datos SQLite:
+        - resolvers.sqlite: mappings {igdb_id: {Stores: store_id}}
+        - igdb.sqlite: detalles canónicos de cada juego
+        - extras.sqlite: duraciones HLTB
         """
-        config = ConfigManager().get
-        steam_id = config.steam_user_id
-
-        # Si no hay Steam ID ni Heroic activo, retornar vacío
-        if not steam_id and not config.heroic_is_active:
-            logger.info("No Steam ID nor Heroic active, returning empty library")
-            return Library.from_iterable(())
-
-        # Obtener TODOS los mappings de resolvers.sqlite (1 solo query)
         all_mappings = self.resolvers_cacher.get_all_mappings()
-        logger.info(f"Total mappings in resolvers.sqlite: {len(all_mappings)}")
-        for store_name, store_ids in all_mappings.items():
-            logger.info(f"  - {store_name}: {len(store_ids)} IGDB IDs")
-
-        # 1. Obtener apps de Steam si está activo
-        steam_apps = []
-        if steam_id and config.steam_is_active:
-            steam_cacher = SteamUserCacher(steam_id)
-            steam_apps = steam_cacher.get_all_games()
-            logger.info(f"Steam apps loaded: {len(steam_apps)}")
-
-        # 2. Obtener juegos de Heroic si está activo
-        heroic_games = []
-        if config.heroic_is_active:
-            heroic_loader = HeroicsLoader()
-            heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)
-            if heroic_path:
-                heroic_games = heroic_loader.get_all_heroic_games(heroic_path)
-                logger.info(f"Heroic games loaded: {sum(len(g) for g in heroic_games.values())}")
-                for store, games in heroic_games.items():
-                    logger.info(f"  - {store}: {len(games)} games")
-            else:
-                logger.warning("Heroic path not found, skipping Heroic games")
-
-        # 3. Construir reverse index para búsquedas rápidas: {(store, store_id): [igdb_id]}
-        store_to_igdb: dict[tuple[str, str], list[int]] = {}
-        for ig_id, stores in all_mappings.items():
-            for store, store_id in stores.items():
-                key = (store.value, store_id)
-                if key not in store_to_igdb:
-                    store_to_igdb[key] = []
-                store_to_igdb[key].append(ig_id)
-
-        # 4. Construir mapping igdb_id -> stores
-        igdb_to_stores: dict[int, dict[Stores, str]] = {}
-
-        steam_matched = 0
-        steam_not_found = 0
-
-        # Procesar Steam apps usando el índice
-        for app in steam_apps:
-            appid = str(app["appid"])
-            key = ("steam", appid)
-            if key in store_to_igdb:
-                steam_matched += 1
-                for ig_id in store_to_igdb[key]:
-                    if ig_id not in igdb_to_stores:
-                        igdb_to_stores[ig_id] = {}
-                    igdb_to_stores[ig_id][Stores.STEAM] = appid
-            else:
-                steam_not_found += 1
-
-        logger.info(f"Steam matching: {steam_matched} matched, {steam_not_found} not found in cache")
-
-        # Procesar juegos de Heroic usando el índice
-        heroics_matched = 0
-        heroics_not_found = 0
-
-        for store_name, games in heroic_games.items():
-            store_key = store_name.lower()
-            store_enum = Stores(store_key)
-            for game_data in games:
-                store_id = game_data.get("app_name") or game_data.get("id", "")
-                if not store_id:
-                    continue
-
-                key = (store_key, str(store_id))
-                if key in store_to_igdb:
-                    heroics_matched += 1
-                    for ig_id in store_to_igdb[key]:
-                        if ig_id not in igdb_to_stores:
-                            igdb_to_stores[ig_id] = {}
-                        igdb_to_stores[ig_id][store_enum] = str(store_id)
-                else:
-                    heroics_not_found += 1
-
-        logger.info(f"Heroic matching: {heroics_matched} matched, {heroics_not_found} not found in cache")
-
-        # Si no hay juegos mapeados, retornar vacío
-        if not igdb_to_stores:
-            logger.info("No games found in library")
+        if not all_mappings:
+            logger.info("No mappings in resolvers.sqlite, library empty")
             return Library.from_iterable(())
 
-        # 4. Cargar detalles canónicos de igdb.sqlite y extras de extras.sqlite
+        logger.info(f"Loading {len(all_mappings)} games from cache")
+
         games = []
-        for igdb_id, stores in igdb_to_stores.items():
+        for igdb_id, stores in all_mappings.items():
             raw = self.igdb_cacher.get_game(igdb_id)
             if not raw:
-                logger.warning(f"IGDB data not found for resolved game {igdb_id}, skipping")
                 continue
 
             release_date = None
@@ -189,4 +99,5 @@ class LibraryRepository:
             )
             games.append(game)
 
+        logger.info(f"Built {len(games)} games from cache")
         return Library.from_iterable(games)
