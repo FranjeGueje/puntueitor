@@ -1,6 +1,9 @@
 import os
 import glob
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar
 from textual.containers import Horizontal, Center, Middle, Vertical, Container
@@ -82,10 +85,13 @@ class PuntueitorApp(App):
             game_list.populate_games(Library.from_iterable(()))
             self.notify(f"Error cargando librería: {e}", severity="error")
 
+    def on_unmount(self) -> None:
+        self.workers.cancel_all()
+
     @work(exclusive=True, thread=True)
     def _load_library_worker(self):
         try:
-            library = self.library_service.load()
+            library = self.repo.load()
 
             def on_done():
                 self.full_library = library
@@ -94,15 +100,16 @@ class PuntueitorApp(App):
                 game_list.populate_games(self.current_library)
                 game_list.select_first()
 
-            self.call_later(on_done)
+            self.call_from_thread(on_done)
         except Exception as e:
             error_msg = str(e)
+
             def on_error():
                 game_list = self.query_one(GameList)
                 game_list.populate_games(Library.from_iterable(()))
                 self.notify(f"Error cargando librería: {error_msg}", severity="error")
 
-            self.call_later(on_error)
+            self.call_from_thread(on_error)
 
     def on_game_list_game_selected(self, message: GameList.GameSelected) -> None:
         detail = self.query_one(GameDetail)
@@ -232,16 +239,20 @@ class PuntueitorApp(App):
 
     def _on_game_enriched(self, game: Game) -> None:
         """Actualiza un juego en la memoria y en la tabla."""
-        # 1. Actualizar en full_library
+        # 1. Guardar los extras del juego enriquecido en el repositorio (guardado progresivo)
+        if game.duration_hours is not None:
+            self.repo.save_game(game)
+
+        # 2. Actualizar en full_library
         new_games = [g if g.igdb_id != game.igdb_id else game for g in self.full_library.games]
         self.full_library = Library.from_iterable(new_games)
-        
-        # 2. Actualizar en current_library (si está presente)
+
+        # 3. Actualizar en current_library (si está presente)
         if self.current_library.contains_igdb_id(game.igdb_id):
             new_curr = [g if g.igdb_id != game.igdb_id else game for g in self.current_library.games]
             self.current_library = Library.from_iterable(new_curr)
-            
-            # 3. Actualizar la fila en la DataTable a través de GameList
+
+            # 4. Actualizar la fila en la DataTable a través de GameList
             game_list = self.query_one(GameList)
             game_list.update_game(game)
 
@@ -368,10 +379,28 @@ class PuntueitorApp(App):
             )
 
             loaded_games = []
-            for game in game_generator:
-                loaded_games.append(game)
-                self.call_from_thread(self._on_game_loaded, game)
-            
+            executor = None
+
+            for item in game_generator:
+                # El último item puede ser el executor (ThreadPoolExecutor o None)
+                if hasattr(item, 'duration_hours'):
+                    # Es un juego
+                    loaded_games.append(item)
+                    # Guardado progresivo: guardar juego inmediatamente si tiene duration
+                    if item.duration_hours is not None:
+                        self.repo.save_game(item)
+                    self.call_from_thread(self._on_game_loaded, item)
+                else:
+                    # Es el executor
+                    executor = item
+
+            # Cerrar el executor inmediatamente (sin esperar a que terminen los enrichers)
+            if executor:
+                try:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                except Exception as e:
+                    logger.warning(f"Error shutting down executor: {e}")
+
             new_library = Library.from_iterable(loaded_games)
             self.repo.save(new_library)
             self.call_from_thread(self._finish_reload, refresh)

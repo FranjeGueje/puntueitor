@@ -70,6 +70,10 @@ class EpicHeroicResolver(BaseResolver):
             logger.warning(f"Epic game missing app_name, skipping: {title}")
             return []
 
+        if self.unknown_cacher.is_unknown("epic", epic_id):
+            logger.debug(f"Skipping known unknown Epic game: {title}")
+            return []
+
         igdb_ids: list[int] | None = None
 
         if not refresh and self.cacher:
