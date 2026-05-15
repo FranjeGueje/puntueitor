@@ -215,4 +215,20 @@ class IGDBService:
             self._cachear_list(results)
         return results
 
+    def search_by_slug(
+        self,
+        slug: str,
+        cache_results: bool = True
+    ) -> list[dict]:
+        """Busca un juego en IGDB por su slug (URL-friendly identifier)."""
+        query = (
+            f"{self.FIELDS}"
+            f'where slug = "{slug}";'
+            "limit 1;"
+        )
+        results = self._query_games(query)
+        if cache_results:
+            self._cachear_list(results)
+        return results
+
     
