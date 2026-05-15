@@ -123,6 +123,8 @@ def load_library(
                     games_loaded.append(result)
                     yield result
 
+    heroic_path = None
+
     # Cargar GOG desde Heroic
     if "gog" in stores and heroic_loader:
         heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)

@@ -6,17 +6,18 @@ from puntueitor.core.resolvers.base_resolver import BaseResolver
 from puntueitor.core.igdb import IGDBService
 from puntueitor.core.mappers import IGMapperGame
 from puntueitor.core.models import Game, Stores
+from puntueitor.core.models.util import similarity
 
 from puntueitor.core.cachers.resolvers_cacher import ResolversCacher
 from puntueitor.core.cachers.desconocidos_cacher import DesconocidosCacher
 
 logger = logging.getLogger(__name__)
 
+EPIC_STORE_URL_PREFIX = "https://www.epicgames.com/store/product/"
+
 
 class EpicHeroicResolver(BaseResolver):
     """Resuelve juegos de Epic (via Heroic) contra IGDB."""
-
-    EPIC_SOURCE_ID = 26
 
     def __init__(
         self,
@@ -27,13 +28,43 @@ class EpicHeroicResolver(BaseResolver):
         self.cacher = ResolversCacher(cache_file) if cache_file else None
         self.unknown_cacher = DesconocidosCacher()
 
+    def _extract_slug(self, store_url: str | None) -> str | None:
+        """Extrae el slug de la URL de Epic."""
+        if not store_url:
+            return None
+        if store_url.startswith(EPIC_STORE_URL_PREFIX):
+            return store_url[len(EPIC_STORE_URL_PREFIX):].strip()
+        return None
+
+    def _find_best_match(self, title: str, results: list[dict]) -> dict | None:
+        """Encuentra el mejor match usando similarity."""
+        if not results:
+            return None
+        if len(results) == 1:
+            return results[0]
+
+        normalized_title = title.lower().strip()
+        best_match = None
+        best_score = 0.0
+
+        for r in results:
+            igdb_title = r.get("name", "")
+            score = similarity(normalized_title, igdb_title.lower())
+            if score > best_score:
+                best_score = score
+                best_match = r
+
+        logger.debug(f"Best match for '{title}': '{best_match.get('name')}' (score: {best_score:.2f})")
+        return best_match
+
     def resolve(self, raw: dict, refresh: bool = False) -> Sequence[Game]:
         """
-        raw: dict de Epic (de Heroic/legendary) con 'app_name' y 'title'
+        raw: dict de Epic (de Heroic/legendary) con 'app_name', 'title', 'store_url'
         refresh: fuerza refresco de los datos de IGDB para este juego
         """
         epic_id = str(raw.get("app_name", raw.get("id", "")))
         title = raw.get("title", "")
+        store_url = raw.get("store_url", "")
 
         if not epic_id:
             logger.warning(f"Epic game missing app_name, skipping: {title}")
@@ -45,18 +76,22 @@ class EpicHeroicResolver(BaseResolver):
             igdb_ids = self.cacher.get_igdb_ids("epic", epic_id)
 
         if not igdb_ids:
-            results = self.igdb.search_by_external_game(
-                source_id=self.EPIC_SOURCE_ID,
-                external_uid=epic_id,
-                cache_results=True
-            )
+            results = []
+
+            slug = self._extract_slug(store_url)
+            if slug:
+                logger.debug(f"Searching Epic game by slug: {slug}")
+                results = self.igdb.search_by_slug(slug, cache_results=True)
 
             if not results:
                 cleaned_name = title.strip()
                 if cleaned_name and len(cleaned_name) >= 2:
                     search_name = cleaned_name[:50]
                     logger.debug(f"Fallback search for Epic game {epic_id} using title: {search_name}")
-                    results = self.igdb.search_by_title(search_name, cache_results=True)
+                    title_results = self.igdb.search_by_title(search_name, cache_results=True)
+                    best_match = self._find_best_match(title, title_results)
+                    if best_match:
+                        results = [best_match]
                 else:
                     logger.warning(f"Skipping fallback search for Epic game {epic_id}: invalid title '{title}'")
 
