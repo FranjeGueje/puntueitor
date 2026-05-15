@@ -31,7 +31,7 @@ class IGDBService:
         self.client_secret = client_secret or config.igdb_client_secret
 
         if cache_dir is None:
-            base_path = Path(__file__).parent.parent.parent
+            base_path = Path(__file__).resolve().parents[3]
             cache_dir = base_path / "cache"
         db_path = Path(cache_dir) / "igdb.sqlite" if cache_dir else Path("cache/igdb.sqlite")
         self.cacher = IGDBCacher(db_path)
