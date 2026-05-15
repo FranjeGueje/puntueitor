@@ -21,7 +21,10 @@ class LibraryRepository:
     La biblioteca se reconstruye uniendo los datos de las tiendas, resolvers y extras.
     """
 
-    def __init__(self, cache_dir: str | Path = "cache"):
+    def __init__(self, cache_dir: str | Path | None = None):
+        if cache_dir is None:
+            base_path = Path(__file__).parent.parent.parent
+            cache_dir = base_path / "cache"
         self.cache_dir = Path(cache_dir).resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.igdb_cacher = IGDBCacher(self.cache_dir / "igdb.sqlite")
@@ -52,16 +55,21 @@ class LibraryRepository:
 
         # Si no hay Steam ID ni Heroic activo, retornar vacío
         if not steam_id and not config.heroic_is_active:
+            logger.info("No Steam ID nor Heroic active, returning empty library")
             return Library.from_iterable(())
 
         # Obtener TODOS los mappings de resolvers.sqlite (1 solo query)
         all_mappings = self.resolvers_cacher.get_all_mappings()
+        logger.info(f"Total mappings in resolvers.sqlite: {len(all_mappings)}")
+        for store_name, store_ids in all_mappings.items():
+            logger.info(f"  - {store_name}: {len(store_ids)} IGDB IDs")
 
         # 1. Obtener apps de Steam si está activo
         steam_apps = []
         if steam_id and config.steam_is_active:
             steam_cacher = SteamUserCacher(steam_id)
             steam_apps = steam_cacher.get_all_games()
+            logger.info(f"Steam apps loaded: {len(steam_apps)}")
 
         # 2. Obtener juegos de Heroic si está activo
         heroic_games = []
@@ -70,6 +78,9 @@ class LibraryRepository:
             heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)
             if heroic_path:
                 heroic_games = heroic_loader.get_all_heroic_games(heroic_path)
+                logger.info(f"Heroic games loaded: {sum(len(g) for g in heroic_games.values())}")
+                for store, games in heroic_games.items():
+                    logger.info(f"  - {store}: {len(games)} games")
             else:
                 logger.warning("Heroic path not found, skipping Heroic games")
 
@@ -85,17 +96,28 @@ class LibraryRepository:
         # 4. Construir mapping igdb_id -> stores
         igdb_to_stores: dict[int, dict[Stores, str]] = {}
 
+        steam_matched = 0
+        steam_not_found = 0
+
         # Procesar Steam apps usando el índice
         for app in steam_apps:
             appid = str(app["appid"])
             key = ("steam", appid)
             if key in store_to_igdb:
+                steam_matched += 1
                 for ig_id in store_to_igdb[key]:
                     if ig_id not in igdb_to_stores:
                         igdb_to_stores[ig_id] = {}
                     igdb_to_stores[ig_id][Stores.STEAM] = appid
+            else:
+                steam_not_found += 1
+
+        logger.info(f"Steam matching: {steam_matched} matched, {steam_not_found} not found in cache")
 
         # Procesar juegos de Heroic usando el índice
+        heroics_matched = 0
+        heroics_not_found = 0
+
         for store_name, games in heroic_games.items():
             store_key = store_name.lower()
             store_enum = Stores(store_key)
@@ -106,10 +128,15 @@ class LibraryRepository:
 
                 key = (store_key, str(store_id))
                 if key in store_to_igdb:
+                    heroics_matched += 1
                     for ig_id in store_to_igdb[key]:
                         if ig_id not in igdb_to_stores:
                             igdb_to_stores[ig_id] = {}
                         igdb_to_stores[ig_id][store_enum] = str(store_id)
+                else:
+                    heroics_not_found += 1
+
+        logger.info(f"Heroic matching: {heroics_matched} matched, {heroics_not_found} not found in cache")
 
         # Si no hay juegos mapeados, retornar vacío
         if not igdb_to_stores:

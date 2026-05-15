@@ -37,6 +37,15 @@ class DesconocidosCacher:
         except Exception as e:
             logger.warning(f"Failed to save unknown game {store}/{game_id}: {e}")
 
+    def is_unknown(self, store: str, game_id: str) -> bool:
+        """Verifica si un juego ya está en la lista de desconocidos."""
+        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM unknown_games WHERE store = ? AND id = ?",
+                (store, game_id)
+            )
+            return cursor.fetchone() is not None
+
     def get_all(self) -> list[dict]:
         """Obtiene todos los juegos desconocidos."""
         with sqlite3.connect(self.db_path, check_same_thread=False) as conn:

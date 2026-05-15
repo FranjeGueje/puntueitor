@@ -34,6 +34,11 @@ class SteamIGDBResolver(BaseResolver):
         appid = str(raw["appid"])
         name = raw.get("name", "")
 
+        # Si el juego está en la lista de desconocidos, no buscar en IGDB
+        if self.unknown_cacher.is_unknown("steam", appid):
+            logger.debug(f"Skipping known unknown Steam game: {name}")
+            return []
+
         igdb_ids: list[int] | None = None
 
         # Intentar usar caché si no estamos forzando recarga
