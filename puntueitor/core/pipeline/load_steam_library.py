@@ -62,7 +62,7 @@ def load_library(
     api_key = api_key or config.steam_api_key
     user = user or config.steam_user_id
 
-    base_path = Path(__file__).parent.parent.parent
+    base_path = Path(__file__).resolve().parents[3]
     CACHE_RESOLVERS = base_path / "cache" / "resolvers.sqlite"
     steam_selector = SteamSelector()
 
