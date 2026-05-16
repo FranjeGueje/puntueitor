@@ -548,7 +548,7 @@ class PuntueitorApp(App):
             # Cerrar el executor inmediatamente (sin esperar a que terminen los enrichers)
             if executor:
                 try:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    executor.shutdown(wait=False)
                 except Exception as e:
                     logger.warning(f"Error shutting down executor: {e}")
 
