@@ -5,7 +5,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar, DataTable
+from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar
 from textual.containers import Horizontal, Center, Middle, Vertical, Container
 from textual import work
 
@@ -88,7 +88,6 @@ class PuntueitorApp(App):
     def _initial_load_worker(self):
         try:
             library = self.repo.load()
-            self.call_from_thread(self.notify, f"repo.load() = {len(library)} games in worker")
             self.call_from_thread(self._on_initial_loaded, library)
         except Exception as e:
             self.call_from_thread(self.notify, f"Error cargando librería: {e}", severity="error")
@@ -97,7 +96,6 @@ class PuntueitorApp(App):
         self.full_library = library
         self.current_library = library
         games = list(library.games)
-        self.notify(f"Library: {len(games)} games")
         self.call_after_refresh(self._populate_batch, games, 0, 100)
 
     def _populate_batch(self, games, start, batch_size):
@@ -108,8 +106,6 @@ class PuntueitorApp(App):
         if end < len(games):
             self.call_after_refresh(self._populate_batch, games, end, batch_size)
         else:
-            rows = game_list.query_one("#game-options", DataTable).row_count
-            self.notify(f"Done: Table rows={rows}, Library={len(games)}")
             game_list.select_first()
 
     def on_unmount(self) -> None:
