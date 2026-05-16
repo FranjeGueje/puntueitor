@@ -12,7 +12,7 @@ class GameDetail(VerticalScroll):
         md = self.query_one("#game-info", Markdown)
         
         genres = ", ".join(game.genres) if game.genres else "Desconocido"
-        duration = f"{game.duration_hours}h" if game.duration_hours is not None else "N/A"
+        duration = f"{game.duration_hours}h" if game.duration_hours is not None and game.duration_hours > 0 else "N/A"
         user_score = f"{game.user_score:.0f}/100" if game.user_score is not None else "N/A"
         critic_score = f"{game.critic_score:.0f}/100" if game.critic_score is not None else "N/A"
         storyline = game.storyline if game.storyline else "Sin descripción disponible."
