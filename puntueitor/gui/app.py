@@ -1,5 +1,6 @@
 import os
 import glob
+import threading
 import logging
 from pathlib import Path
 
@@ -126,6 +127,9 @@ class PuntueitorApp(App):
     def action_request_quit(self) -> None:
         def check_quit(should_quit: bool) -> None:
             if should_quit:
+                self.is_enriching = False
+                self.is_reloading = False
+                self.workers.cancel_all()
                 self.exit()
         
         self.push_screen(QuitConfirmation(), check_quit)
@@ -189,6 +193,12 @@ class PuntueitorApp(App):
         
         self._start_enrichment()
 
+    def _call_from_thread_safe(self, method, *args):
+        try:
+            self.call_from_thread(method, *args)
+        except RuntimeError:
+            pass
+
     def action_regenerate_enrichers(self) -> None:
         if self.is_reloading:
             self.notify("No se puede regenerar mientras se recarga la biblioteca", severity="warning")
@@ -231,7 +241,8 @@ class PuntueitorApp(App):
         self.query_one("#status-message", Label).update("Enriqueciendo biblioteca...")
         self.query_one("#status-bar").add_class("active")
         self.query_one("#status-progress", ProgressBar).progress = 0
-        self.run_worker(self._enrich_worker, thread=True)
+        t = threading.Thread(target=self._enrich_worker, daemon=True)
+        t.start()
 
     def _enrich_worker(self):
         try:
@@ -243,23 +254,25 @@ class PuntueitorApp(App):
             
             games = list(self.full_library.games)
             total = len(games)
-            self.call_from_thread(self._setup_progress, total)
-            
+            self._call_from_thread_safe(self._setup_progress, total)
+
             for i, game in enumerate(games, 1):
-                self.call_from_thread(self._update_loading_counter, i, total, game.title)
+                if not self.is_enriching:
+                    break
+                self._call_from_thread_safe(self._update_loading_counter, i, total, game.title)
                 if game.duration_hours is not None:
                     continue
                 enriched_game = enricher.enrich(game)
-                
+
                 if enriched_game.duration_hours is not None:
                     self.repo.save_game(enriched_game)
-                    self.call_from_thread(self._on_game_enriched, enriched_game)
-            
-            self.call_from_thread(self._finish_enrich)
+                    self._call_from_thread_safe(self._on_game_enriched, enriched_game)
+
+            self._call_from_thread_safe(self._finish_enrich)
         except Exception as e:
             self.is_enriching = False
-            self.call_from_thread(self.notify, f"Error enriqueciendo: {e}", severity="error")
-            self.call_from_thread(self._hide_loading)
+            self._call_from_thread_safe(self.notify, f"Error enriqueciendo: {e}", severity="error")
+            self._call_from_thread_safe(self._hide_loading)
 
     def _on_game_enriched(self, game: Game) -> None:
         """Actualiza un juego en la memoria y en la tabla."""
