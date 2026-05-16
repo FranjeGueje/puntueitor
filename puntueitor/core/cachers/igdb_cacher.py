@@ -1,6 +1,5 @@
 import sqlite3
 import json
-import time
 import logging
 from pathlib import Path
 from typing import Any
@@ -9,11 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 class IGDBCacher:
-    DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60
 
-    def __init__(self, db_path: str | Path, ttl_seconds: int | None = None):
+    def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        self.ttl_seconds = ttl_seconds or self.DEFAULT_TTL_SECONDS
         self._available = False
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -35,16 +32,10 @@ class IGDBCacher:
                     name TEXT,
                     rating REAL,
                     storyline TEXT,
-                    total_rating REAL,
-                    cached_at INTEGER
+                    total_rating REAL
                 )
             """)
             conn.commit()
-
-    def _is_cache_valid(self, cached_at: int | None) -> bool:
-        if cached_at is None:
-            return True  # Cache sin timestamp = válida (legacy compatibility)
-        return (time.time() - cached_at) < self.ttl_seconds
 
     def get_game(self, igdb_id: int) -> dict | None:
         if not self._available:
@@ -56,11 +47,6 @@ class IGDBCacher:
                 row = cursor.fetchone()
                 if row:
                     res = dict(row)
-                    cached_at = res.get("cached_at")
-
-                    if not self._is_cache_valid(cached_at):
-                        logger.debug(f"Cache expired for game {igdb_id}")
-                        return None
 
                     if res.get("cover"):
                         res["cover"] = json.loads(res["cover"])
@@ -86,17 +72,16 @@ class IGDBCacher:
                     "name": game_dict.get("name"),
                     "rating": game_dict.get("rating"),
                     "storyline": game_dict.get("storyline"),
-                    "total_rating": game_dict.get("total_rating"),
-                    "cached_at": int(time.time())
+                    "total_rating": game_dict.get("total_rating")
                 }
 
                 conn.execute("""
                     INSERT INTO games (
                         id, aggregated_rating, cover, first_release_date,
-                        genres, name, rating, storyline, total_rating, cached_at
+                        genres, name, rating, storyline, total_rating
                     ) VALUES (
                         :id, :aggregated_rating, :cover, :first_release_date,
-                        :genres, :name, :rating, :storyline, :total_rating, :cached_at
+                        :genres, :name, :rating, :storyline, :total_rating
                     )
                     ON CONFLICT(id) DO UPDATE SET
                         aggregated_rating=excluded.aggregated_rating,
@@ -106,8 +91,7 @@ class IGDBCacher:
                         name=excluded.name,
                         rating=excluded.rating,
                         storyline=excluded.storyline,
-                        total_rating=excluded.total_rating,
-                        cached_at=excluded.cached_at
+                        total_rating=excluded.total_rating
                 """, data)
                 conn.commit()
         except Exception as e:
