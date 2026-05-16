@@ -1,5 +1,6 @@
 import os
 import glob
+import threading
 import logging
 from pathlib import Path
 
@@ -288,6 +289,12 @@ class PuntueitorApp(App):
         
         self._start_enrichment()
 
+    def _call_from_thread_safe(self, method, *args):
+        try:
+            self.call_from_thread(method, *args)
+        except RuntimeError:
+            pass
+
     def action_regenerate_enrichers(self) -> None:
         if self.is_reloading:
             self.notify("No se puede regenerar mientras se recarga la biblioteca", severity="warning")
@@ -346,7 +353,9 @@ class PuntueitorApp(App):
             self._call_from_thread_safe(self._setup_progress, total)
 
             for i, game in enumerate(games, 1):
-                self.call_from_thread(self._update_loading_counter, i, total, game.title)
+                if not self.is_enriching:
+                    break
+                self._call_from_thread_safe(self._update_loading_counter, i, total, game.title)
                 if game.duration_hours is not None:
                     continue
                 enriched_game = enricher.enrich(game)
