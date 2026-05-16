@@ -56,8 +56,6 @@ def load_library(
         stores.append("epic")
     if config.amazon_is_active:
         stores.append("amazon")
-    if config.heroic_is_active and not (config.gog_is_active or config.epic_is_active or config.amazon_is_active):
-        stores.extend(["gog", "epic", "amazon"])
 
     api_key = api_key or config.steam_api_key
     user = user or config.steam_user_id

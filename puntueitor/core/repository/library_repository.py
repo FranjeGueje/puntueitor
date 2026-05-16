@@ -42,20 +42,23 @@ class LibraryRepository:
             self.extras_cacher.save_extras(game.igdb_id, game.duration_hours)
 
     def load(self, path: str | Path | None = None) -> Library:
-        """Reconstruye la biblioteca desde igdb.sqlite (autoritativo)."""
-        all_raw = self.igdb_cacher.get_all_games()
-        if not all_raw:
-            logger.info("No games in igdb.sqlite, library empty")
+        """Reconstruye la biblioteca desde resolvers.sqlite (autoritativo) con datos de igdb.sqlite."""
+        all_mappings = self.resolvers_cacher.get_all_mappings()
+        if not all_mappings:
+            logger.info("No games in resolvers.sqlite, library empty")
             return Library.from_iterable(())
 
-        all_mappings = self.resolvers_cacher.get_all_mappings()
+        all_games = {g["id"]: g for g in self.igdb_cacher.get_all_games()}
         all_extras = self.extras_cacher.get_all_extras()
 
-        logger.info(f"Loading {len(all_raw)} games from igdb.sqlite")
+        logger.info(f"Loading {len(all_mappings)} games from resolvers.sqlite")
 
         games = []
-        for raw in all_raw:
-            igdb_id = raw["id"]
+        for igdb_id, stores in all_mappings.items():
+            raw = all_games.get(igdb_id)
+            if not raw:
+                logger.warning(f"Game {igdb_id} in resolvers but not in igdb cache, skipping")
+                continue
 
             release_date = None
             ts = raw.get("first_release_date")
@@ -80,8 +83,6 @@ class LibraryRepository:
 
             extras = all_extras.get(igdb_id, {})
             duration_hours = extras.get("duration_hours")
-
-            stores = all_mappings.get(igdb_id, {})
 
             game = Game(
                 igdb_id=igdb_id,
