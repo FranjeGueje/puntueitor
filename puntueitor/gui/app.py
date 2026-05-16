@@ -5,7 +5,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar
+from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar, DataTable
 from textual.containers import Horizontal, Center, Middle, Vertical, Container
 from textual import work
 
@@ -80,29 +80,40 @@ class PuntueitorApp(App):
         try:
             self.repo = LibraryRepository()
             self.library_service = LibraryService(self.repo)
-            self._fill_library()
+            self.run_worker(self._initial_load_worker, thread=True)
         except Exception as e:
             game_list.populate_games(Library.from_iterable(()))
             self.notify(f"Error cargando librería: {e}", severity="error")
 
-    def on_unmount(self) -> None:
-        self.workers.cancel_all()
-
-    @work(thread=True)
-    def _fill_library(self):
+    def _initial_load_worker(self):
         try:
             library = self.repo.load()
-            games = list(library.games)
-            batch_size = 20
-            for i in range(0, len(games), batch_size):
-                batch = games[i:i+batch_size]
-                def add_batch(b=batch):
-                    for game in b:
-                        self._on_game_loaded(game)
-                self.call_from_thread(add_batch)
-            self.call_from_thread(self.query_one(GameList).select_first)
+            self.call_from_thread(self.notify, f"repo.load() = {len(library)} games in worker")
+            self.call_from_thread(self._on_initial_loaded, library)
         except Exception as e:
             self.call_from_thread(self.notify, f"Error cargando librería: {e}", severity="error")
+
+    def _on_initial_loaded(self, library):
+        self.full_library = library
+        self.current_library = library
+        games = list(library.games)
+        self.notify(f"Library: {len(games)} games")
+        self.call_after_refresh(self._populate_batch, games, 0, 100)
+
+    def _populate_batch(self, games, start, batch_size):
+        end = min(start + batch_size, len(games))
+        game_list = self.query_one(GameList)
+        for game in games[start:end]:
+            game_list.add_game_to_table(game)
+        if end < len(games):
+            self.call_after_refresh(self._populate_batch, games, end, batch_size)
+        else:
+            rows = game_list.query_one("#game-options", DataTable).row_count
+            self.notify(f"Done: Table rows={rows}, Library={len(games)}")
+            game_list.select_first()
+
+    def on_unmount(self) -> None:
+        self.workers.cancel_all()
 
     def on_game_list_game_selected(self, message: GameList.GameSelected) -> None:
         detail = self.query_one(GameDetail)
