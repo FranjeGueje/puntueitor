@@ -46,18 +46,18 @@ class HLTBEnricher(GameEnricher):
 
         if not entry:
             logger.debug(f"No HLTB entry found for {game.title}")
-            return game
-            
+            return replace(game, duration_hours=0)
+
         if entry.similarity < self.min_similarity:
             logger.debug(f"HLTB similarity too low for {game.title}: {entry.similarity} < {self.min_similarity}")
-            return game
+            return replace(game, duration_hours=0)
 
         # Priorizar main_story, luego main_extra
         duration = entry.main_story if entry.main_story else entry.main_extra
         
         if duration is None or duration <= 0:
             logger.debug(f"HLTB duration not found for {game.title}")
-            return game
+            return replace(game, duration_hours=0)
 
         logger.info(f"Enriched {game.title} with {duration}h from HLTB")
         return replace(game, duration_hours=duration)

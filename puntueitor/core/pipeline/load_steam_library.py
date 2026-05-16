@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 
 logger = logging.getLogger(__name__)
 from puntueitor.core.igdb.service import IGDBService
@@ -22,8 +23,15 @@ def _run_enrichment(
     game: Game,
     enrichers: Sequence[GameEnricher],
     completed_callback: Callable[[Game], None],
+    extras_cache: dict[int, dict] | None = None,
 ) -> None:
     """Ejecuta el enrichment en background y llama al callback cuando termina."""
+    if extras_cache and game.igdb_id in extras_cache:
+        cached = extras_cache[game.igdb_id]
+        if cached.get("duration_hours") is not None:
+            enriched = replace(game, duration_hours=cached["duration_hours"])
+            completed_callback(enriched)
+            return
     result = game
     for enricher in enrichers:
         try:
@@ -43,6 +51,7 @@ def load_library(
     progress_callback: Callable[[int, int, str], None] | None = None,
     enrichers: Sequence[GameEnricher] | None = None,
     enrichment_callback: Callable[[Game], None] | None = None,
+    extras_cache: dict[int, dict] | None = None,
 ) -> Generator[Game, None, None]:
     """Carga juegos de múltiples tiendas (Steam, GOG, Epic, Amazon)."""
     config = ConfigManager().get
@@ -88,7 +97,8 @@ def load_library(
                     _run_enrichment,
                     game,
                     enrichers,
-                    enrichment_callback
+                    enrichment_callback,
+                    extras_cache,
                 )
             return game
         return None

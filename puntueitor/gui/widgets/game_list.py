@@ -71,7 +71,7 @@ class GameList(Vertical):
             # Formatear métricas
             u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
-            d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
+            d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None and game.duration_hours > 0 else "--"
 
             row_data = [game.title, u, c, d]
             if scores is not None:
@@ -120,7 +120,7 @@ class GameList(Vertical):
         self.games_map[row_key] = game
         
         table = self.query_one(DataTable)
-        duration_str = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
+        duration_str = f"{game.duration_hours:.0f}h" if game.duration_hours is not None and game.duration_hours > 0 else "--"
         
         try:
             table.update_cell(row_key, "duration", duration_str)
