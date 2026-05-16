@@ -27,6 +27,18 @@ class ExtrasCacher:
             """)
             conn.commit()
 
+    def get_all_extras(self) -> dict[int, dict]:
+        if not self._available:
+            return {}
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("SELECT * FROM extras")
+                return {row["id_igdb"]: dict(row) for row in cursor.fetchall()}
+        except Exception as e:
+            logger.warning(f"Error getting all extras: {e}")
+            return {}
+
     def get_extras(self, igdb_id: int) -> dict:
         if not self._available:
             return {}
