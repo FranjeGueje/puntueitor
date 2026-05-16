@@ -86,7 +86,7 @@ class PuntueitorApp(App):
         try:
             self.repo = LibraryRepository()
             self.library_service = LibraryService(self.repo)
-            self._load_library_worker()
+            self._fill_library()
         except Exception as e:
             game_list.populate_games(Library.from_iterable(()))
             self.notify(f"Error cargando librería: {e}", severity="error")
@@ -94,28 +94,21 @@ class PuntueitorApp(App):
     def on_unmount(self) -> None:
         self.workers.cancel_all()
 
-    @work(exclusive=True, thread=True)
-    def _load_library_worker(self):
+    @work(thread=True)
+    def _fill_library(self):
         try:
             library = self.repo.load()
-
-            def on_done():
-                self.full_library = library
-                self.current_library = self.full_library
-                game_list = self.query_one(GameList)
-                game_list.populate_games(self.current_library)
-                game_list.select_first()
-
-            self.call_from_thread(on_done)
+            games = list(library.games)
+            batch_size = 20
+            for i in range(0, len(games), batch_size):
+                batch = games[i:i+batch_size]
+                def add_batch(b=batch):
+                    for game in b:
+                        self._on_game_loaded(game)
+                self.call_from_thread(add_batch)
+            self.call_from_thread(self.query_one(GameList).select_first)
         except Exception as e:
-            error_msg = str(e)
-
-            def on_error():
-                game_list = self.query_one(GameList)
-                game_list.populate_games(Library.from_iterable(()))
-                self.notify(f"Error cargando librería: {error_msg}", severity="error")
-
-            self.call_from_thread(on_error)
+            self.call_from_thread(self.notify, f"Error cargando librería: {e}", severity="error")
 
     def on_game_list_game_selected(self, message: GameList.GameSelected) -> None:
         game = message.game
