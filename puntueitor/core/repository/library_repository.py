@@ -46,20 +46,19 @@ class LibraryRepository:
 
     def load(self, path: str | Path | None = None) -> Library:
         """Reconstruye la biblioteca desde igdb.sqlite (autoritativo)."""
-        all_ids = self.igdb_cacher.get_all_cached_ids()
-        if not all_ids:
+        all_raw = self.igdb_cacher.get_all_games()
+        if not all_raw:
             logger.info("No games in igdb.sqlite, library empty")
             return Library.from_iterable(())
 
         all_mappings = self.resolvers_cacher.get_all_mappings()
+        all_extras = self.extras_cacher.get_all_extras()
 
-        logger.info(f"Loading {len(all_ids)} games from igdb.sqlite")
+        logger.info(f"Loading {len(all_raw)} games from igdb.sqlite")
 
         games = []
-        for igdb_id in all_ids:
-            raw = self.igdb_cacher.get_game(igdb_id)
-            if not raw:
-                continue
+        for raw in all_raw:
+            igdb_id = raw["id"]
 
 
             release_date = None
@@ -83,7 +82,7 @@ class LibraryRepository:
                     if isinstance(g, dict) and "name" in g:
                         genres.append(g["name"])
 
-            extras = self.extras_cacher.get_extras(igdb_id)
+            extras = all_extras.get(igdb_id, {})
             duration_hours = extras.get("duration_hours")
 
             stores = all_mappings.get(igdb_id, {})

@@ -44,7 +44,6 @@ class ExtrasCacher:
             return {}
         try:
             with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-                conn.execute("CREATE TABLE IF NOT EXISTS extras (id_igdb INTEGER PRIMARY KEY, duration_hours REAL)")
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM extras")
                 return {row["id_igdb"]: dict(row) for row in cursor.fetchall()}

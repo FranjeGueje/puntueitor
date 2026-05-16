@@ -97,6 +97,26 @@ class IGDBCacher:
         except Exception as e:
             logger.warning(f"Error saving game: {e}")
 
+    def get_all_games(self) -> list[dict]:
+        if not self._available:
+            return []
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("SELECT * FROM games")
+                results = []
+                for row in cursor.fetchall():
+                    res = dict(row)
+                    if res.get("cover"):
+                        res["cover"] = json.loads(res["cover"])
+                    if res.get("genres"):
+                        res["genres"] = json.loads(res["genres"])
+                    results.append(res)
+                return results
+        except Exception as e:
+            logger.warning(f"Error getting all games: {e}")
+            return []
+
     def get_all_cached_ids(self) -> list[int]:
         if not self._available:
             return []
