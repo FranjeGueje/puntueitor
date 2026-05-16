@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 
 logger = logging.getLogger(__name__)
 from puntueitor.core.igdb.service import IGDBService
@@ -104,7 +105,8 @@ def load_library(
                     _run_enrichment,
                     game,
                     enrichers,
-                    enrichment_callback
+                    enrichment_callback,
+                    extras_cache,
                 )
             return game
         return None

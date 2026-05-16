@@ -39,7 +39,6 @@ class PuntueitorApp(App):
         ("f", "filter_library", "Filtrar"),
         ("e", "enrich_library", "Enriquecedores"),
         ("E", "regenerate_enrichers", "Regenerar enriquecedores"),
-        ("u", "toggle_unknowns", "Desconocidos"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
         ("q", "request_quit", "Salir"),
@@ -289,16 +288,7 @@ class PuntueitorApp(App):
         
         self._start_enrichment()
 
-    def _call_from_thread_safe(self, method, *args):
-        try:
-            self.call_from_thread(method, *args)
-        except RuntimeError:
-            pass
-
     def action_regenerate_enrichers(self) -> None:
-        if getattr(self, '_showing_unknowns', False):
-            self.notify("No disponible en modo desconocidos", severity="warning")
-            return
         if self.is_reloading:
             self.notify("No se puede regenerar mientras se recarga la biblioteca", severity="warning")
             return
@@ -306,7 +296,7 @@ class PuntueitorApp(App):
             self.notify("Ya hay un proceso de enriquecimiento en curso", severity="warning")
             return
 
-        extras_path = Path.home() / ".cache" / "puntueitor" / "extras.sqlite"
+        extras_path = Path("cache/extras.sqlite")
         if extras_path.exists():
             extras_path.unlink()
         self.notify("Caché de enriquecedores borrada. Recargando biblioteca...")
@@ -356,9 +346,7 @@ class PuntueitorApp(App):
             self._call_from_thread_safe(self._setup_progress, total)
 
             for i, game in enumerate(games, 1):
-                if not self.is_enriching:
-                    break
-                self._call_from_thread_safe(self._update_loading_counter, i, total, game.title)
+                self.call_from_thread(self._update_loading_counter, i, total, game.title)
                 if game.duration_hours is not None:
                     continue
                 enriched_game = enricher.enrich(game)
@@ -513,6 +501,8 @@ class PuntueitorApp(App):
             if getattr(config, 'heroic_is_active', False):
                 heroic_loader = HeroicsLoader()
 
+            extras_cache = self.repo.extras_cacher.get_all_extras()
+
             enrichers = []
             try:
                 hltb_resolver = HLTBResolver()
@@ -530,6 +520,7 @@ class PuntueitorApp(App):
                 progress_callback=progress,
                 enrichers=enrichers if enrichers else None,
                 enrichment_callback=on_enriched if enrichers else None,
+                extras_cache=extras_cache if extras_cache else None,
                 extras_cache=extras_cache if extras_cache else None,
             )
 

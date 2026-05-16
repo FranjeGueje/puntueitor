@@ -44,6 +44,7 @@ class ExtrasCacher:
             return {}
         try:
             with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS extras (id_igdb INTEGER PRIMARY KEY, duration_hours REAL)")
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM extras")
                 return {row["id_igdb"]: dict(row) for row in cursor.fetchall()}
@@ -56,6 +57,7 @@ class ExtrasCacher:
             return {}
         try:
             with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS extras (id_igdb INTEGER PRIMARY KEY, duration_hours REAL)")
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM extras WHERE id_igdb = ?", (igdb_id,))
                 row = cursor.fetchone()
@@ -67,10 +69,10 @@ class ExtrasCacher:
     def save_extras(self, igdb_id: int, duration_hours: float | None) -> None:
         if not self._available:
             return
-        if duration_hours is None:
-            return
+
         try:
             with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS extras (id_igdb INTEGER PRIMARY KEY, duration_hours REAL)")
                 conn.execute("""
                     INSERT INTO extras (id_igdb, duration_hours)
                     VALUES (?, ?)
