@@ -3,6 +3,7 @@ from textual.screen import ModalScreen
 from textual.containers import Vertical, Container, ScrollableContainer, Horizontal
 from textual.widgets import Label, Input, Button, Checkbox, Footer
 from textual import on
+from pathlib import Path
 
 from puntueitor.core.config import ConfigManager, DEFAULT_MIXED_WEIGHTS, DEFAULT_WEIGHTED_WEIGHTS, DEFAULT_AVAILABLE_HOURS
 
@@ -100,7 +101,7 @@ class ScoringConfigScreen(ModalScreen[dict]):
         from puntueitor.core.cachers.igdb_cacher import IGDBCacher
         import re
 
-        cacher = IGDBCacher("cache/igdb.sqlite")
+        cacher = IGDBCacher(Path.home() / ".cache" / "puntueitor" / "igdb.sqlite")
         genres = cacher.get_all_genres()
         preferred = set(config.scoring_preferred_genres or [])
 
