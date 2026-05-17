@@ -12,8 +12,12 @@ class DesconocidosCacher:
         if db_path is None:
             db_path = Path.home() / ".cache" / "puntueitor" / "desconocidos.sqlite"
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
+        except Exception as e:
+            logger.error(f"Failed to init DesconocidosCacher at {self.db_path}: {e}")
+            raise
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
