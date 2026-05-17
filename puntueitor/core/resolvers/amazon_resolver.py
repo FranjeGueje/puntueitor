@@ -49,20 +49,18 @@ class AmazonHeroicResolver(BaseResolver):
             igdb_ids = self.cacher.get_igdb_ids("amazon", amazon_id)
 
         if not igdb_ids:
-            results = self.igdb.search_by_external_game(
-                source_id=self.AMAZON_SOURCE_ID,
-                external_uid=amazon_id,
-                cache_results=True
-            )
+            if self.cacher and not self.cacher._available:
+                logger.warning(f"Amazon: skipping '{title}' — resolver cache unavailable")
+                return []
 
-            if not results:
-                cleaned_name = title.strip()
-                if cleaned_name and len(cleaned_name) >= 2:
-                    search_name = cleaned_name[:50]
-                    logger.debug(f"Fallback search for Amazon game {amazon_id} using title: {search_name}")
-                    results = self.igdb.search_by_title(search_name, cache_results=True)
-                else:
-                    logger.warning(f"Skipping fallback search for Amazon game {amazon_id}: invalid title '{title}'")
+            cleaned_name = title.strip()
+            if cleaned_name and len(cleaned_name) >= 2:
+                search_name = cleaned_name[:50]
+                logger.debug(f"Searching Amazon game by title: {search_name}")
+                results = self.igdb.search_by_title(search_name, limit=10, cache_results=True)
+
+                target_ts = self._parse_date(raw)
+                best = self._find_best_match_by_date(results, target_ts)
 
             igdb_ids = [r["id"] for r in results] if results else []
 

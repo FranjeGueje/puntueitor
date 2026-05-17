@@ -33,12 +33,13 @@ class SteamUserCacher:
             except Exception:
                 pass # Si falla el movimiento, se creará una nueva DB
 
+        self._available = False
         try:
             base_dir.mkdir(parents=True, exist_ok=True)
             self._init_db()
+            self._available = True
         except Exception as e:
             logger.error(f"Failed to init SteamUserCacher at {self.db_path}: {e}")
-            raise
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
@@ -62,6 +63,8 @@ class SteamUserCacher:
             conn.commit()
 
     def get_all_games(self) -> list[dict] | None:
+        if not self._available:
+            return None
         with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("SELECT * FROM owned_games")

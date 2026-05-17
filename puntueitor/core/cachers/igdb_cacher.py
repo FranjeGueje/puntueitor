@@ -56,6 +56,7 @@ class IGDBCacher:
                 return None
         except Exception as e:
             logger.warning(f"Error getting game {igdb_id}: {e}")
+            self._available = False
             return None
 
     def save_game(self, game_dict: dict) -> None:
@@ -115,17 +116,6 @@ class IGDBCacher:
                 return results
         except Exception as e:
             logger.warning(f"Error getting all games: {e}")
-            return []
-
-    def get_all_cached_ids(self) -> list[int]:
-        if not self._available:
-            return []
-        try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-                cursor = conn.execute("SELECT id FROM games")
-                return [row[0] for row in cursor.fetchall()]
-        except Exception as e:
-            logger.warning(f"Error getting all cached ids: {e}")
             return []
 
     def get_all_genres(self) -> list[str]:

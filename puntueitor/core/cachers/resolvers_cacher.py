@@ -61,6 +61,7 @@ class ResolversCacher:
                 return None
         except Exception as e:
             logger.warning(f"Error getting igdb ids: {e}")
+            self._available = False
             return None
 
     def set_igdb_ids(self, store: str, id_store: str, igdb_ids: Sequence[int]) -> None:

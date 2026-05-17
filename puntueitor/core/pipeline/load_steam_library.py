@@ -93,7 +93,8 @@ def load_library(
             selected = steam_selector.select(games, SelectionContext(title=str(title)))
             return selected
         except Exception as e:
-            logger.warning(f"Error processing game from {store_name}: {e}")
+            title = raw_item.get("title") or raw_item.get("name", "Unknown")
+            logger.warning(f"Error processing game from {store_name}: {e} for '{title}'", exc_info=True)
             return None
 
     def yield_or_store(game: Game) -> Game | None:
@@ -112,85 +113,97 @@ def load_library(
 
     # Cargar Steam
     if "steam" in stores and api_key and user:
-        steam_resolver = SteamIGDBResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-        steam = SteamApi()
-        use_steam_cache = not (refresh or force_store_refresh)
-        steam_games = steam.owned_games(api_key, user, use_cache=use_steam_cache)
+        try:
+            steam_resolver = SteamIGDBResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
+            steam = SteamApi()
+            use_steam_cache = not (refresh or force_store_refresh)
+            steam_games = steam.owned_games(api_key, user, use_cache=use_steam_cache)
 
-        if steam_games:
-            total = len(steam_games)
-            for i, item in enumerate(steam_games):
-                title = str(item.get("name"))
-                if progress_callback:
-                    progress_callback(i + 1, total, f"[Steam] {title}")
+            if steam_games:
+                total = len(steam_games)
+                for i, item in enumerate(steam_games):
+                    title = str(item.get("name"))
+                    if progress_callback:
+                        progress_callback(i + 1, total, f"[Steam] {title}")
 
-                game = process_game(item, steam_resolver, "steam")
-                result = yield_or_store(game)
-                if result:
-                    games_loaded.append(result)
-                    yield result
+                    game = process_game(item, steam_resolver, "steam")
+                    result = yield_or_store(game)
+                    if result:
+                        games_loaded.append(result)
+                        yield result
+        except Exception as e:
+            logger.warning(f"Error loading games from Steam: {e}")
 
     heroic_path = None
 
     # Cargar GOG desde Heroic
     if "gog" in stores and heroic_loader:
-        heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)
-        if heroic_path:
-            gog_resolver = GOGHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-            gog_games = heroic_loader.get_gog_games(heroic_path)
+        try:
+            heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)
+            if heroic_path:
+                gog_resolver = GOGHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
+                gog_games = heroic_loader.get_gog_games(heroic_path)
 
-            if gog_games:
-                total = len(gog_games)
-                for i, item in enumerate(gog_games):
-                    title = item.get("title", "Unknown")
-                    if progress_callback:
-                        progress_callback(i + 1, total, f"[GOG] {title}")
+                if gog_games:
+                    total = len(gog_games)
+                    for i, item in enumerate(gog_games):
+                        title = item.get("title", "Unknown")
+                        if progress_callback:
+                            progress_callback(i + 1, total, f"[GOG] {title}")
 
-                    game = process_game(item, gog_resolver, "gog")
-                    result = yield_or_store(game)
-                    if result:
-                        games_loaded.append(result)
-                        yield result
+                        game = process_game(item, gog_resolver, "gog")
+                        result = yield_or_store(game)
+                        if result:
+                            games_loaded.append(result)
+                            yield result
+        except Exception as e:
+            logger.warning(f"Error loading games from GOG: {e}")
 
     # Cargar Epic desde Heroic
     if "epic" in stores and heroic_loader:
-        heroic_path = heroic_path or heroic_loader.find_heroic_path(config.heroic_path or None)
-        if heroic_path:
-            epic_resolver = EpicHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-            epic_games = heroic_loader.get_epic_games(heroic_path)
+        try:
+            heroic_path = heroic_path or heroic_loader.find_heroic_path(config.heroic_path or None)
+            if heroic_path:
+                epic_resolver = EpicHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
+                epic_games = heroic_loader.get_epic_games(heroic_path)
 
-            if epic_games:
-                total = len(epic_games)
-                for i, item in enumerate(epic_games):
-                    title = item.get("title", "Unknown")
-                    if progress_callback:
-                        progress_callback(i + 1, total, f"[Epic] {title}")
+                if epic_games:
+                    total = len(epic_games)
+                    for i, item in enumerate(epic_games):
+                        title = item.get("title", "Unknown")
+                        if progress_callback:
+                            progress_callback(i + 1, total, f"[Epic] {title}")
 
-                    game = process_game(item, epic_resolver, "epic")
-                    result = yield_or_store(game)
-                    if result:
-                        games_loaded.append(result)
-                        yield result
+                        game = process_game(item, epic_resolver, "epic")
+                        result = yield_or_store(game)
+                        if result:
+                            games_loaded.append(result)
+                            yield result
+        except Exception as e:
+            logger.warning(f"Error loading games from Epic: {e}")
 
     # Cargar Amazon desde Heroic
     if "amazon" in stores and heroic_loader:
-        heroic_path = heroic_path or heroic_loader.find_heroic_path(config.heroic_path or None)
-        if heroic_path:
-            amazon_resolver = AmazonHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-            amazon_games = heroic_loader.get_amazon_games(heroic_path)
+        try:
+            heroic_path = heroic_path or heroic_loader.find_heroic_path(config.heroic_path or None)
+            if heroic_path:
+                amazon_resolver = AmazonHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
+                amazon_games = heroic_loader.get_amazon_games(heroic_path)
 
-            if amazon_games:
-                total = len(amazon_games)
-                for i, item in enumerate(amazon_games):
-                    title = item.get("title", "Unknown")
-                    if progress_callback:
-                        progress_callback(i + 1, total, f"[Amazon] {title}")
+                if amazon_games:
+                    total = len(amazon_games)
+                    for i, item in enumerate(amazon_games):
+                        title = item.get("title", "Unknown")
+                        if progress_callback:
+                            progress_callback(i + 1, total, f"[Amazon] {title}")
 
-                    game = process_game(item, amazon_resolver, "amazon")
-                    result = yield_or_store(game)
-                    if result:
-                        games_loaded.append(result)
-                        yield result
+                        game = process_game(item, amazon_resolver, "amazon")
+                        result = yield_or_store(game)
+                        if result:
+                            games_loaded.append(result)
+                            yield result
+        except Exception as e:
+            logger.warning(f"Error loading games from Amazon: {e}")
 
     yield executor
 
