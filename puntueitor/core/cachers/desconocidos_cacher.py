@@ -8,7 +8,9 @@ logger = logging.getLogger(__name__)
 class DesconocidosCacher:
     """Caché para juegos no encontrados en IGDB."""
 
-    def __init__(self, db_path: str | Path = "cache/desconocidos.sqlite"):
+    def __init__(self, db_path: str | Path | None = None):
+        if db_path is None:
+            db_path = Path.home() / ".cache" / "puntueitor" / "desconocidos.sqlite"
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()

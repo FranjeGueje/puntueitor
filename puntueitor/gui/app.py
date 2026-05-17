@@ -1,5 +1,4 @@
 import os
-import glob
 import threading
 import logging
 from pathlib import Path
@@ -207,7 +206,7 @@ class PuntueitorApp(App):
             self.notify("Ya hay un proceso de enriquecimiento en curso", severity="warning")
             return
 
-        extras_path = Path("cache/extras.sqlite")
+        extras_path = Path.home() / ".cache" / "puntueitor" / "extras.sqlite"
         if extras_path.exists():
             extras_path.unlink()
         self.notify("Caché de enriquecedores borrada. Recargando biblioteca...")
@@ -379,7 +378,8 @@ class PuntueitorApp(App):
 
         try:
             if refresh:
-                for db_file in glob.glob("cache/*.sqlite"):
+                cache_dir = Path.home() / ".cache" / "puntueitor"
+                for db_file in cache_dir.glob("*.sqlite"):
                     try: os.remove(db_file)
                     except: pass
 
