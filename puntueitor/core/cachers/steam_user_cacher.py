@@ -21,6 +21,7 @@ class SteamUserCacher:
         else:
             base_dir = new_default_dir
         
+        
         self.db_path = base_dir / f"{steam_user_id}.sqlite"
 
         # Migración: Si no existe en la nueva ruta pero sí en la antigua default (./cache)
@@ -32,13 +33,12 @@ class SteamUserCacher:
             except Exception:
                 pass # Si falla el movimiento, se creará una nueva DB
 
-        self._available = False
         try:
             base_dir.mkdir(parents=True, exist_ok=True)
             self._init_db()
-            self._available = True
         except Exception as e:
             logger.error(f"Failed to init SteamUserCacher at {self.db_path}: {e}")
+            raise
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path, check_same_thread=False) as conn:

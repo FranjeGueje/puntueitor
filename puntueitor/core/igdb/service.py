@@ -33,6 +33,7 @@ class IGDBService:
         if cache_dir is None:
             cache_dir = Path.home() / ".cache" / "puntueitor"
         db_path = Path(cache_dir) / "igdb.sqlite"
+        logger.info(f"IGDBService: IGDBCacher at {db_path}")
         self.cacher = IGDBCacher(db_path)
          
         self.token = self._load_or_generate_token()
