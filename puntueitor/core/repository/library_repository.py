@@ -20,8 +20,7 @@ class LibraryRepository:
 
     def __init__(self, cache_dir: str | Path | None = None):
         if cache_dir is None:
-            base_path = Path(__file__).resolve().parents[3]
-            cache_dir = base_path / "cache"
+            cache_dir = Path.home() / ".cache" / "puntueitor"
         self.cache_dir = Path(cache_dir).resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.igdb_cacher = IGDBCacher(self.cache_dir / "igdb.sqlite")
