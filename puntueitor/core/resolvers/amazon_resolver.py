@@ -91,6 +91,10 @@ class AmazonHeroicResolver(BaseResolver):
             igdb_ids = self.cacher.get_igdb_ids("amazon", amazon_id)
 
         if not igdb_ids:
+            if self.cacher and not self.cacher._available:
+                logger.warning(f"Amazon: skipping '{title}' — resolver cache unavailable")
+                return []
+
             cleaned_name = title.strip()
             if cleaned_name and len(cleaned_name) >= 2:
                 search_name = cleaned_name[:50]

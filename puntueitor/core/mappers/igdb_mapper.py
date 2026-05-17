@@ -13,7 +13,7 @@ class IGMapperGame:
         igdb_id = raw["id"]
         title = raw["name"]
 
-        genres_raw = raw.get("genres", [])
+        genres_raw = raw.get("genres") or []
         genres = tuple(
             g["name"] for g in genres_raw
             if isinstance(g, dict) and "name" in g

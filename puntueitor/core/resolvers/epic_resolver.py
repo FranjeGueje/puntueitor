@@ -80,6 +80,10 @@ class EpicHeroicResolver(BaseResolver):
             igdb_ids = self.cacher.get_igdb_ids("epic", epic_id)
 
         if not igdb_ids:
+            if self.cacher and not self.cacher._available:
+                logger.warning(f"Epic: skipping '{title}' — resolver cache unavailable")
+                return []
+
             results = []
 
             slug = self._extract_slug(store_url)

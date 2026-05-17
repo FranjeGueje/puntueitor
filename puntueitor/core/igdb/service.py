@@ -35,55 +35,47 @@ class IGDBService:
         db_path = Path(cache_dir) / "igdb.sqlite"
         logger.info(f"IGDBService: IGDBCacher at {db_path}")
         self.cacher = IGDBCacher(db_path)
-         
-        self.token = self._load_or_generate_token()
-        self.wrapper = igdbpy.IgdbWrapper(
-            client_id=self.client_id,
-            access_token=self.token["access_token"],
-        )
+
+        self.token = self._load_token_from_disk()
+        self.wrapper = None
     
     # ---------------------------
     # TOKEN MANAGEMENT
     # ---------------------------
 
-    def _load_or_generate_token(self) -> dict:
-        """Carga token desde disco si no ha expirado; si no, genera uno nuevo."""
-        token = self._load_token_from_disk()
-        if token is not None and not self._is_token_expired(token):
-            return token
-        
-        # Token inexistente o expirado → generar uno nuevo
-        raw_token = igdbpy.utils.generate_api_key(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-        )
-
-        now = int(time.time())
-        token_dict = {
-            "access_token": raw_token.access_token,
-            "expires_in": raw_token.expires_in,
-            "token_type": raw_token.token_type,
-            "expires_at": now + int(raw_token.expires_in),
-            # guardamos el instante de caducidad absoluto
-        }
-
-        self._save_token_to_disk(token_dict)
-        return token_dict
-    
     def _is_token_expired(self, token: dict) -> bool:
         return int(time.time()) >= token["expires_at"]
     
     def _ensure_token(self) -> None:
-        if self._is_token_expired(self.token):
-            try:
-                self.token = self._load_or_generate_token()
-                self.wrapper = igdbpy.IgdbWrapper(
-                    client_id=self.client_id,
-                    access_token=self.token["access_token"],
-                )
-            except Exception as e:
-                logger.error(f"Token renewal failed: {e}")
-                raise RuntimeError(f"IGDB token renewal failed: {e}") from e
+        if self.token is not None and not self._is_token_expired(self.token):
+            if self.wrapper is not None:
+                return
+            self.wrapper = igdbpy.IgdbWrapper(
+                client_id=self.client_id,
+                access_token=self.token["access_token"],
+            )
+            return
+
+        try:
+            raw_token = igdbpy.utils.generate_api_key(
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+            )
+            now = int(time.time())
+            self.token = {
+                "access_token": raw_token.access_token,
+                "expires_in": raw_token.expires_in,
+                "token_type": raw_token.token_type,
+                "expires_at": now + int(raw_token.expires_in),
+            }
+            self._save_token_to_disk(self.token)
+            self.wrapper = igdbpy.IgdbWrapper(
+                client_id=self.client_id,
+                access_token=self.token["access_token"],
+            )
+        except Exception as e:
+            logger.error(f"Token renewal failed: {e}")
+            raise RuntimeError(f"IGDB token renewal failed: {e}") from e
     
     def _load_token_from_disk(self) -> dict | None:
         if not self.TOKEN_PATH.exists():
@@ -126,6 +118,8 @@ class IGDBService:
                     endpoint="games",
                     field_query=query,
                 )
+            except TypeError:
+                return []
             except Exception as e:
                 last_error = e
                 if attempt < self.MAX_RETRIES - 1 and self._is_retryable_error(e):
@@ -168,6 +162,8 @@ class IGDBService:
             data = self.cacher.get_game(igdb_id)
             if data:
                 return data
+            if not self.cacher._available:
+                raise ValueError(f"IGDB cache unavailable for game {igdb_id}")
 
         # Consultar IGDB
         query = (
@@ -206,7 +202,6 @@ class IGDBService:
         limit: int = 5,
         cache_results: bool = True
     ) -> list[dict]:
-        self._ensure_token()
         query = (
             f"{self.FIELDS}"
             f"where external_games.external_game_source = {source_id} "

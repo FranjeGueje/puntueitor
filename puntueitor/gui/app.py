@@ -486,11 +486,13 @@ class PuntueitorApp(App):
         bar.progress = current
 
 if __name__ == "__main__":
+    LOG_DIR = Path.home() / ".cache" / "puntueitor"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
-        filename="log.txt",
+        filename=str(LOG_DIR / "puntueitor.log"),
         filemode="w",
     )
     app = PuntueitorApp()
