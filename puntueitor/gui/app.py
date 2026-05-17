@@ -390,6 +390,7 @@ class PuntueitorApp(App):
             from puntueitor.core.heroics import HeroicsLoader
             from puntueitor.core.config import ConfigManager
 
+            logger.info("do_reload: creating IGDBService...")
             config = ConfigManager().get
             igdb_service = IGDBService()
 
@@ -397,6 +398,7 @@ class PuntueitorApp(App):
             if getattr(config, 'heroic_is_active', False):
                 heroic_loader = HeroicsLoader()
 
+            logger.info("do_reload: loading extras cache...")
             extras_cache = self.repo.extras_cacher.get_all_extras()
 
             enrichers = []
@@ -407,6 +409,7 @@ class PuntueitorApp(App):
             except Exception as e:
                 self.call_from_thread(self.notify, f"Warning: No se pudo inicializar HLTB: {e}", severity="warning")
 
+            logger.info("do_reload: calling load_library...")
             game_generator = load_library(
                 engine=igdb_service,
                 heroic_loader=heroic_loader,
@@ -421,6 +424,7 @@ class PuntueitorApp(App):
             loaded_games = []
             executor = None
 
+            logger.info("do_reload: iterating games...")
             for item in game_generator:
                 # El último item puede ser el executor (ThreadPoolExecutor o None)
                 if hasattr(item, 'duration_hours'):
@@ -442,10 +446,13 @@ class PuntueitorApp(App):
                     logger.warning(f"Error shutting down executor: {e}")
 
             new_library = Library.from_iterable(loaded_games)
+            logger.info("do_reload: saving library...")
             self.repo.save(new_library)
+            logger.info("do_reload: finished successfully")
             self.call_from_thread(self._finish_reload, refresh)
 
         except Exception as e:
+            logger.exception("do_reload FAILED")
             self.is_reloading = False
             self.call_from_thread(self._handle_reload_error, str(e))
 
@@ -479,5 +486,12 @@ class PuntueitorApp(App):
         bar.progress = current
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        filename="log.txt",
+        filemode="w",
+    )
     app = PuntueitorApp()
     app.run()
