@@ -171,6 +171,9 @@ class PuntueitorApp(App):
                     FilterInputScreen("Duración máxima (horas)", "Ej: 20"),
                     lambda val: self.apply_filter("duration", val) if val is not None else None
                 )
+            elif filter_type in ("finished", "not_finished", "backlog", "not_backlog",
+                                "favorite", "not_favorite", "hidden", "not_hidden"):
+                self.apply_filter(filter_type)
 
         self.push_screen(FilteringScreen(), handle_filter_type)
 
@@ -193,6 +196,31 @@ class PuntueitorApp(App):
             except ValueError:
                 self.notify("Error: La duración debe ser un número", severity="error")
                 return
+
+        elif filter_type == "finished":
+            self.current_library = self.library_service.filter_by_finished(self.current_library)
+            self.notify("Filtro: solo terminados")
+        elif filter_type == "not_finished":
+            self.current_library = self.library_service.filter_by_not_finished(self.current_library)
+            self.notify("Filtro: no terminados")
+        elif filter_type == "backlog":
+            self.current_library = self.library_service.filter_by_backlog(self.current_library)
+            self.notify("Filtro: solo backlog")
+        elif filter_type == "not_backlog":
+            self.current_library = self.library_service.filter_by_not_backlog(self.current_library)
+            self.notify("Filtro: no backlog")
+        elif filter_type == "favorite":
+            self.current_library = self.library_service.filter_by_favorite(self.current_library)
+            self.notify("Filtro: solo favoritos")
+        elif filter_type == "not_favorite":
+            self.current_library = self.library_service.filter_by_not_favorite(self.current_library)
+            self.notify("Filtro: no favoritos")
+        elif filter_type == "hidden":
+            self.current_library = self.library_service.filter_by_hidden(self.current_library)
+            self.notify("Filtro: solo ocultos")
+        elif filter_type == "not_hidden":
+            self.current_library = self.library_service.filter_by_not_hidden(self.current_library)
+            self.notify("Filtro: no ocultos")
 
         game_list = self.query_one(GameList)
         game_list.populate_games(self.current_library)

@@ -43,6 +43,30 @@ class LibraryService:
     def clear_filters(self, full_library: Library) -> Library:
         return full_library
 
+    def filter_by_finished(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if g.finished)
+
+    def filter_by_not_finished(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if not g.finished)
+
+    def filter_by_backlog(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if g.backlog)
+
+    def filter_by_not_backlog(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if not g.backlog)
+
+    def filter_by_favorite(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if g.favorite)
+
+    def filter_by_not_favorite(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if not g.favorite)
+
+    def filter_by_hidden(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if g.hidden)
+
+    def filter_by_not_hidden(self, library: Library) -> Library:
+        return Library.from_iterable(g for g in library.games if not g.hidden)
+
     def sort(
         self,
         library: Library,
