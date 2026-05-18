@@ -20,6 +20,7 @@ class GameList(Vertical):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.games_map: dict[str, Game] = {}
+        self.show_hidden = False
 
     def compose(self):
         yield Static("Biblioteca: 0 juegos", id="game-count")
@@ -31,6 +32,9 @@ class GameList(Vertical):
         table.add_column("U", key="user")
         table.add_column("C", key="critic")
         table.add_column("Dur", key="duration")
+        table.add_column("Fin", key="finished", width=3)
+        table.add_column("Bkl", key="backlog", width=3)
+        table.add_column("Fav", key="favorite", width=3)
 
     def populate_games(self, library: Library, scores: dict[int, float] | None = None):
         table = self.query_one("#game-options", DataTable)
@@ -55,20 +59,32 @@ class GameList(Vertical):
             table.add_column("U", key="user")
             table.add_column("C", key="critic")
             table.add_column("Dur", key="duration")
+            table.add_column("Fin", key="finished", width=3)
+            table.add_column("Bkl", key="backlog", width=3)
+            table.add_column("Fav", key="favorite", width=3)
 
         self.games_map.clear()
- 
-        count = len(library.games)
-        count_label.update(f"Biblioteca: {count} juegos")
- 
+
+        if self.show_hidden:
+            visible_games = list(library.games)
+            count = len(visible_games)
+            count_label.update(f"Biblioteca: {count} juegos (mostrando ocultos)")
+        else:
+            visible_games = [g for g in library.games if not g.hidden]
+            count = len(visible_games)
+            hidden_count = len(library.games) - count
+            count_text = f"Biblioteca: {count} juegos"
+            if hidden_count:
+                count_text += f" ({hidden_count} ocultos)"
+            count_label.update(count_text)
+
         if count == 0:
             return
 
-        for game in library.games:
+        for game in visible_games:
             row_key = str(game.igdb_id)
             self.games_map[row_key] = game
 
-            # Formatear métricas
             u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
             d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None and game.duration_hours > 0 else "--"
@@ -76,11 +92,14 @@ class GameList(Vertical):
             row_data = [game.title, u, c, d]
             if scores is not None:
                 s = scores.get(game.igdb_id, 0.0)
-                # Si el rango es 0-1, lo mostramos como porcentaje o 0.xx
-                # Pero como MixedScore era 0-100 y ahora lo estandarizamos,
-                # mostramos 0-100 para que sea legible.
                 row_data.append(f"{s*100:.1f}")
-            
+
+            row_data.extend([
+                "✓" if game.finished else "",
+                "✓" if game.backlog else "",
+                "✓" if game.favorite else "",
+            ])
+
             table.add_row(*row_data, key=row_key)
         
         if table.row_count > current_row:
@@ -103,16 +122,6 @@ class GameList(Vertical):
         if table.row_count > 0:
             table.move_cursor(row=0)
             table.focus()
-            
-            # Si hay un juego real, disparamos la selección
-            # Nota: move_cursor no dispara RowSelected automáticamente en algunas versiones
-            row_key = table.get_row_at(0) # Esto no es correcto para obtener la key
-            # En Textual, table.rows es un dict de RowKey: Row
-            row_keys = list(table.rows.keys())
-            if row_keys:
-                first_key = row_keys[0].value
-                if first_key in self.games_map:
-                    self.post_message(self.GameSelected(self.games_map[first_key]))
 
     def update_game(self, game: Game):
         """Actualiza la información de un juego en la lista sin recargarla entera."""
@@ -125,11 +134,16 @@ class GameList(Vertical):
         try:
             table.update_cell(row_key, "duration", duration_str)
         except Exception:
-            # Si falla por clave, intentamos por índice (col 3)
             table.update_cell(row_key, 3, duration_str)
+
+        table.update_cell(row_key, "finished", "✓" if game.finished else "")
+        table.update_cell(row_key, "backlog", "✓" if game.backlog else "")
+        table.update_cell(row_key, "favorite", "✓" if game.favorite else "")
 
     def add_game_to_table(self, game: Game):
         """Añade un solo juego a la tabla sin limpiarla."""
+        if not self.show_hidden and game.hidden:
+            return
         table = self.query_one("#game-options", DataTable)
         row_key = str(game.igdb_id)
         self.games_map[row_key] = game
@@ -138,7 +152,11 @@ class GameList(Vertical):
         c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
         d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
         
-        table.add_row(game.title, u, c, d, key=row_key)
+        table.add_row(game.title, u, c, d,
+            "✓" if game.finished else "",
+            "✓" if game.backlog else "",
+            "✓" if game.favorite else "",
+            key=row_key)
         
         # Actualizar contador
         count_label = self.query_one("#game-count", Static)

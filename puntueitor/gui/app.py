@@ -18,6 +18,7 @@ from puntueitor.gui.screens.filtering import FilteringScreen
 from puntueitor.gui.screens.filter_input import FilterInputScreen
 from puntueitor.gui.screens.reload_confirmation import ReloadConfirmationScreen
 from puntueitor.gui.screens.scoring import ScoringScreen
+from puntueitor.gui.screens.game_options import GameOptionsScreen
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library, Game
 
@@ -35,6 +36,7 @@ class PuntueitorApp(App):
         ("f", "filter_library", "Filtrar"),
         ("e", "enrich_library", "Enriquecedores"),
         ("E", "regenerate_enrichers", "Regenerar enriquecedores"),
+        ("o", "toggle_hidden", "Ocultos"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
         ("q", "request_quit", "Salir"),
@@ -113,8 +115,22 @@ class PuntueitorApp(App):
         self.workers.cancel_all()
 
     def on_game_list_game_selected(self, message: GameList.GameSelected) -> None:
-        detail = self.query_one(GameDetail)
-        detail.show_game(message.game)
+        game = message.game
+
+        def handle_options(result: dict | None) -> None:
+            if result is None:
+                return
+            game.finished = result["finished"]
+            game.hidden = result["hidden"]
+            game.backlog = result["backlog"]
+            game.favorite = result["favorite"]
+            self.repo.library_cacher.set_status(game.igdb_id, **result)
+            game_list = self.query_one(GameList)
+            game_list.populate_games(self.current_library if self.current_library else self.full_library)
+            self.query_one(GameDetail).show_game(game)
+            self.notify("Estado actualizado")
+
+        self.push_screen(GameOptionsScreen(game), handle_options)
 
     def on_game_list_game_highlighted(self, message: GameList.GameHighlighted) -> None:
         detail = self.query_one(GameDetail)
@@ -218,6 +234,14 @@ class PuntueitorApp(App):
         self.query_one(GameList).select_first()
 
         self._start_enrichment()
+
+    def action_toggle_hidden(self) -> None:
+        game_list = self.query_one(GameList)
+        game_list.show_hidden = not game_list.show_hidden
+        game_list.populate_games(self.current_library if self.current_library else self.full_library)
+        self.notify(
+            "Mostrando juegos ocultos" if game_list.show_hidden else "Ocultando juegos ocultos"
+        )
 
     def action_select_scoring(self) -> None:
         def handle_scoring(scoring_type: str | None) -> None:
