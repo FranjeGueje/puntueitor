@@ -39,6 +39,7 @@ class PuntueitorApp(App):
         ("f", "filter_library", "Filtrar"),
         ("e", "enrich_library", "Enriquecedores"),
         ("E", "regenerate_enrichers", "Regenerar enriquecedores"),
+        ("o", "toggle_hidden", "Ocultos"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
         ("q", "request_quit", "Salir"),
@@ -314,6 +315,14 @@ class PuntueitorApp(App):
         self.query_one(GameList).select_first()
 
         self._start_enrichment()
+
+    def action_toggle_hidden(self) -> None:
+        game_list = self.query_one(GameList)
+        game_list.show_hidden = not game_list.show_hidden
+        game_list.populate_games(self.current_library if self.current_library else self.full_library)
+        self.notify(
+            "Mostrando juegos ocultos" if game_list.show_hidden else "Ocultando juegos ocultos"
+        )
 
     def action_select_scoring(self) -> None:
         def handle_scoring(scoring_type: str | None) -> None:

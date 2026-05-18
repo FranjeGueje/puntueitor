@@ -7,6 +7,7 @@ from puntueitor.core.models import Library, Game, Stores
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
 from puntueitor.core.cachers.extras_cacher import ExtrasCacher
 from puntueitor.core.cachers.resolvers_cacher import ResolversCacher
+from puntueitor.core.cachers.library_cacher import LibraryCacher
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,6 @@ class LibraryRepository:
         self.extras_cacher = ExtrasCacher(self.cache_dir / "extras.sqlite")
         self.resolvers_cacher = ResolversCacher(self.cache_dir / "resolvers.sqlite")
         self.library_cacher = LibraryCacher()
-        self.unknown_cacher = DesconocidosCacher()
 
     def save(self, library: Library, path: str | Path | None = None) -> None:
         """
@@ -54,6 +54,8 @@ class LibraryRepository:
         all_extras = self.extras_cacher.get_all_extras()
 
         logger.info(f"Loading {len(all_mappings)} games from resolvers.sqlite")
+
+        all_user_flags = self.library_cacher.get_all_statuses()
 
         games = []
         for igdb_id, stores in all_mappings.items():
@@ -86,6 +88,8 @@ class LibraryRepository:
 
             extras = all_extras.get(igdb_id, {})
             duration_hours = extras.get("duration_hours")
+
+            user_flags = all_user_flags.get(igdb_id, {})
 
             game = Game(
                 igdb_id=igdb_id,
