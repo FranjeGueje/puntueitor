@@ -41,6 +41,12 @@ class Game:
     # 🔗 Metadatos externos
     stores: StoreMap = field(default_factory=dict)
 
+    # 🏷️ Estados de usuario
+    finished: bool = False
+    hidden: bool = False
+    backlog: bool = False
+    favorite: bool = False
+
     def __post_init__(self) -> None:
         self.title_normalized = normalize_title(self.title)
 
@@ -73,6 +79,10 @@ class Game:
             "user_score": self.user_score,
             "duration_hours": self.duration_hours,
             "stores": {k.value: v for k, v in self.stores.items()},
+            "finished": self.finished,
+            "hidden": self.hidden,
+            "backlog": self.backlog,
+            "favorite": self.favorite,
         }
 
     @classmethod
@@ -101,4 +111,8 @@ class Game:
             user_score=data.get("user_score"),
             duration_hours=data.get("duration_hours"),
             stores=stores,
+            finished=data.get("finished", False),
+            hidden=data.get("hidden", False),
+            backlog=data.get("backlog", False),
+            favorite=data.get("favorite", False),
         )

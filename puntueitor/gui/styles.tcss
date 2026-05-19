@@ -106,6 +106,38 @@ ConfigurationScreen {
     background: $surface;
 }
 
+/* Game Options Screen Styles */
+GameOptionsScreen {
+    align: center middle;
+    background: $foreground 10%;
+}
+
+#game-options-dialog {
+    width: 50;
+    height: auto;
+    background: $surface;
+    border: thick $primary;
+    padding: 1 2;
+}
+
+#game-options-title {
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#game-options-buttons {
+    align: center middle;
+    height: auto;
+    margin-top: 1;
+}
+
+#game-options-buttons Button {
+    margin: 0 1;
+}
+
 /* Quit Confirmation Styles */
 #quit-dialog {
     width: 40;

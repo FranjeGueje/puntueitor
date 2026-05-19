@@ -6,6 +6,8 @@ from puntueitor.core.models import Library, Game, Stores
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
 from puntueitor.core.cachers.extras_cacher import ExtrasCacher
 from puntueitor.core.cachers.resolvers_cacher import ResolversCacher
+from puntueitor.core.cachers.library_cacher import LibraryCacher
+from puntueitor.core.cachers.desconocidos_cacher import DesconocidosCacher
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,8 @@ class LibraryRepository:
         self.igdb_cacher = IGDBCacher(self.cache_dir / "igdb.sqlite")
         self.extras_cacher = ExtrasCacher(self.cache_dir / "extras.sqlite")
         self.resolvers_cacher = ResolversCacher(self.cache_dir / "resolvers.sqlite")
+        self.library_cacher = LibraryCacher()
+        self.unknown_cacher = DesconocidosCacher()
 
     def save(self, library: Library, path: str | Path | None = None) -> None:
         """
