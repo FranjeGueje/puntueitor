@@ -21,7 +21,6 @@ class SteamUserCacher:
         else:
             base_dir = new_default_dir
         
-        
         self.db_path = base_dir / f"{steam_user_id}.sqlite"
 
         # Migración: Si no existe en la nueva ruta pero sí en la antigua default (./cache)
@@ -42,7 +41,6 @@ class SteamUserCacher:
             logger.error(f"Failed to init SteamUserCacher at {self.db_path}: {e}")
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
         with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS owned_games (
@@ -114,7 +112,6 @@ class SteamUserCacher:
             logger.warning("No valid games to save")
             return
 
-        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
         with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
             conn.execute("DELETE FROM owned_games")
             conn.executemany("""

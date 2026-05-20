@@ -1,10 +1,6 @@
 import sqlite3
 import logging
-import logging
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
-
 
 logger = logging.getLogger(__name__)
 
@@ -12,14 +8,6 @@ logger = logging.getLogger(__name__)
 class ExtrasCacher:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        self._available = False
-        try:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._init_db()
-            self._available = True
-        except Exception as e:
-            logger.warning(f"Failed to initialize ExtrasCacher at {self.db_path}: {e}")
-            self._available = False
         self._available = False
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)

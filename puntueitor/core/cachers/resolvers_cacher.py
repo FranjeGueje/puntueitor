@@ -1,13 +1,7 @@
 import sqlite3
 import logging
-import logging
 from pathlib import Path
 from typing import Sequence
-
-from puntueitor.core.models import Stores
-
-logger = logging.getLogger(__name__)
-
 
 from puntueitor.core.models import Stores
 
@@ -17,14 +11,6 @@ logger = logging.getLogger(__name__)
 class ResolversCacher:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        self._available = False
-        try:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._init_db()
-            self._available = True
-        except Exception as e:
-            logger.warning(f"Failed to initialize ResolversCacher at {self.db_path}: {e}")
-            self._available = False
         self._available = False
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)

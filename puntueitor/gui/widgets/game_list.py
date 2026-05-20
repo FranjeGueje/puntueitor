@@ -29,7 +29,6 @@ class GameList(Vertical):
     def on_mount(self):
         table = self.query_one(DataTable)
         table.add_column("Título", key="title", width=70)
-        table.add_column("Título", key="title", width=70)
         table.add_column("U", key="user")
         table.add_column("C", key="critic")
         table.add_column("Dur", key="duration")
@@ -46,22 +45,16 @@ class GameList(Vertical):
         except:
             current_row = 0
 
-        table.clear()
-        
-        # Manejo de la columna Score
-        has_score_col = any(col.key.value == "score" for col in table.columns.values())
-        if scores is not None and not has_score_col:
+        table.clear(columns=True)
+        table.add_column("Título", key="title", width=70)
+        table.add_column("U", key="user")
+        table.add_column("C", key="critic")
+        table.add_column("Dur", key="duration")
+        table.add_column("Fin", key="finished", width=3)
+        table.add_column("Bkl", key="backlog", width=3)
+        table.add_column("Fav", key="favorite", width=3)
+        if scores is not None:
             table.add_column("Puntos", key="score")
-        elif scores is None and has_score_col:
-            # Recreamos columnas sin score para limpiar
-            table.clear(columns=True)
-            table.add_column("Título", key="title", width=70)
-            table.add_column("U", key="user")
-            table.add_column("C", key="critic")
-            table.add_column("Dur", key="duration")
-            table.add_column("Fin", key="finished", width=3)
-            table.add_column("Bkl", key="backlog", width=3)
-            table.add_column("Fav", key="favorite", width=3)
 
         self.games_map.clear()
 
@@ -85,6 +78,7 @@ class GameList(Vertical):
             row_key = str(game.igdb_id)
             self.games_map[row_key] = game
 
+            # Formatear métricas
             u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
             d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None and game.duration_hours > 0 else "--"

@@ -161,7 +161,6 @@ class IGDBService:
         if not refresh:
             data = self.cacher.get_game(igdb_id)
             if data:
-            if data:
                 return data
             if not self.cacher._available:
                 raise ValueError(f"IGDB cache unavailable for game {igdb_id}")

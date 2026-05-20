@@ -4,10 +4,8 @@ import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-logger = logging.getLogger(__name__)
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar, DataTable
+from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar
 from textual.containers import Horizontal, Center, Middle, Vertical, Container
 from textual import work
 
@@ -39,7 +37,7 @@ class PuntueitorApp(App):
         ("f", "filter_library", "Filtrar"),
         ("e", "enrich_library", "Enriquecedores"),
         ("E", "regenerate_enrichers", "Regenerar enriquecedores"),
-        ("o", "toggle_hidden", "Ocultos"),
+        ("u", "toggle_unknowns", "Desconocidos"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
         ("q", "request_quit", "Salir"),
@@ -94,7 +92,6 @@ class PuntueitorApp(App):
     def _initial_load_worker(self):
         try:
             library = self.repo.load()
-            self.call_from_thread(self.notify, f"repo.load() = {len(library)} games in worker")
             self.call_from_thread(self._on_initial_loaded, library)
         except Exception as e:
             self.call_from_thread(self.notify, f"Error cargando librería: {e}", severity="error")
@@ -103,7 +100,6 @@ class PuntueitorApp(App):
         self.full_library = library
         self.current_library = library
         games = list(library.games)
-        self.notify(f"Library: {len(games)} games")
         self.call_after_refresh(self._populate_batch, games, 0, 100)
 
     def _populate_batch(self, games, start, batch_size):
@@ -114,8 +110,6 @@ class PuntueitorApp(App):
         if end < len(games):
             self.call_after_refresh(self._populate_batch, games, end, batch_size)
         else:
-            rows = game_list.query_one("#game-options", DataTable).row_count
-            self.notify(f"Done: Table rows={rows}, Library={len(games)}")
             game_list.select_first()
 
     def on_unmount(self) -> None:
@@ -221,9 +215,6 @@ class PuntueitorApp(App):
                     FilterInputScreen("Duración máxima (horas)", "Ej: 20"),
                     lambda val: self.apply_filter("duration", val) if val is not None else None
                 )
-            elif filter_type in ("finished", "not_finished", "backlog", "not_backlog",
-                                "favorite", "not_favorite", "hidden", "not_hidden"):
-                self.apply_filter(filter_type)
 
         self.push_screen(FilteringScreen(), handle_filter_type)
 
@@ -246,31 +237,6 @@ class PuntueitorApp(App):
             except ValueError:
                 self.notify("Error: La duración debe ser un número", severity="error")
                 return
-
-        elif filter_type == "finished":
-            self.current_library = self.library_service.filter_by_finished(self.current_library)
-            self.notify("Filtro: solo terminados")
-        elif filter_type == "not_finished":
-            self.current_library = self.library_service.filter_by_not_finished(self.current_library)
-            self.notify("Filtro: no terminados")
-        elif filter_type == "backlog":
-            self.current_library = self.library_service.filter_by_backlog(self.current_library)
-            self.notify("Filtro: solo backlog")
-        elif filter_type == "not_backlog":
-            self.current_library = self.library_service.filter_by_not_backlog(self.current_library)
-            self.notify("Filtro: no backlog")
-        elif filter_type == "favorite":
-            self.current_library = self.library_service.filter_by_favorite(self.current_library)
-            self.notify("Filtro: solo favoritos")
-        elif filter_type == "not_favorite":
-            self.current_library = self.library_service.filter_by_not_favorite(self.current_library)
-            self.notify("Filtro: no favoritos")
-        elif filter_type == "hidden":
-            self.current_library = self.library_service.filter_by_hidden(self.current_library)
-            self.notify("Filtro: solo ocultos")
-        elif filter_type == "not_hidden":
-            self.current_library = self.library_service.filter_by_not_hidden(self.current_library)
-            self.notify("Filtro: no ocultos")
 
         game_list = self.query_one(GameList)
         game_list.populate_games(self.current_library)
@@ -296,6 +262,9 @@ class PuntueitorApp(App):
             pass
 
     def action_regenerate_enrichers(self) -> None:
+        if getattr(self, '_showing_unknowns', False):
+            self.notify("No disponible en modo desconocidos", severity="warning")
+            return
         if self.is_reloading:
             self.notify("No se puede regenerar mientras se recarga la biblioteca", severity="warning")
             return
@@ -315,14 +284,6 @@ class PuntueitorApp(App):
         self.query_one(GameList).select_first()
 
         self._start_enrichment()
-
-    def action_toggle_hidden(self) -> None:
-        game_list = self.query_one(GameList)
-        game_list.show_hidden = not game_list.show_hidden
-        game_list.populate_games(self.current_library if self.current_library else self.full_library)
-        self.notify(
-            "Mostrando juegos ocultos" if game_list.show_hidden else "Ocultando juegos ocultos"
-        )
 
     def action_select_scoring(self) -> None:
         def handle_scoring(scoring_type: str | None) -> None:
@@ -385,22 +346,13 @@ class PuntueitorApp(App):
             self.repo.save_game(game)
 
         # 2. Actualizar en full_library
-        # 1. Guardar los extras del juego enriquecido en el repositorio (guardado progresivo)
-        if game.duration_hours is not None:
-            self.repo.save_game(game)
-
-        # 2. Actualizar en full_library
         new_games = [g if g.igdb_id != game.igdb_id else game for g in self.full_library.games]
         self.full_library = Library.from_iterable(new_games)
-
-        # 3. Actualizar en current_library (si está presente)
 
         # 3. Actualizar en current_library (si está presente)
         if self.current_library.contains_igdb_id(game.igdb_id):
             new_curr = [g if g.igdb_id != game.igdb_id else game for g in self.current_library.games]
             self.current_library = Library.from_iterable(new_curr)
-
-            # 4. Actualizar la fila en la DataTable a través de GameList
 
             # 4. Actualizar la fila en la DataTable a través de GameList
             game_list = self.query_one(GameList)
@@ -505,7 +457,6 @@ class PuntueitorApp(App):
 
             from puntueitor.core.igdb.service import IGDBService
             from puntueitor.core.pipeline.load_steam_library import load_library
-            from puntueitor.core.pipeline.load_steam_library import load_library
             from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
             from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
             from puntueitor.core.heroics import HeroicsLoader
@@ -534,13 +485,11 @@ class PuntueitorApp(App):
             game_generator = load_library(
                 engine=igdb_service,
                 heroic_loader=heroic_loader,
-                heroic_loader=heroic_loader,
                 refresh=refresh,
                 force_store_refresh=force_store_refresh,
                 progress_callback=progress,
                 enrichers=enrichers if enrichers else None,
                 enrichment_callback=on_enriched if enrichers else None,
-                extras_cache=extras_cache if extras_cache else None,
                 extras_cache=extras_cache if extras_cache else None,
             )
 
@@ -570,14 +519,11 @@ class PuntueitorApp(App):
 
             new_library = Library.from_iterable(loaded_games)
             logger.info("do_reload: saving library...")
-            logger.info("do_reload: saving library...")
             self.repo.save(new_library)
-            logger.info("do_reload: finished successfully")
             logger.info("do_reload: finished successfully")
             self.call_from_thread(self._finish_reload, refresh)
 
         except Exception as e:
-            logger.exception("do_reload FAILED")
             logger.exception("do_reload FAILED")
             self.is_reloading = False
             self.call_from_thread(self._handle_reload_error, str(e))

@@ -39,7 +39,7 @@ class HeroicsLoader:
         try:
             with open(library_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                games = data.get("games", [])
+                games = data.get("games") or data.get("library") or []
                 logger.info(f"Loaded {len(games)} games from {library_file.name}")
                 return games
         except json.JSONDecodeError as e:

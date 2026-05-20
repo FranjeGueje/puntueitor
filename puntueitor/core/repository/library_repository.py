@@ -1,13 +1,13 @@
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-from datetime import datetime, timezone
 
 from puntueitor.core.models import Library, Game, Stores
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
 from puntueitor.core.cachers.extras_cacher import ExtrasCacher
 from puntueitor.core.cachers.resolvers_cacher import ResolversCacher
 from puntueitor.core.cachers.library_cacher import LibraryCacher
+from puntueitor.core.cachers.desconocidos_cacher import DesconocidosCacher
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class LibraryRepository:
         self.extras_cacher = ExtrasCacher(self.cache_dir / "extras.sqlite")
         self.resolvers_cacher = ResolversCacher(self.cache_dir / "resolvers.sqlite")
         self.library_cacher = LibraryCacher()
+        self.unknown_cacher = DesconocidosCacher()
 
     def save(self, library: Library, path: str | Path | None = None) -> None:
         """
@@ -55,15 +56,12 @@ class LibraryRepository:
 
         logger.info(f"Loading {len(all_mappings)} games from resolvers.sqlite")
 
-        all_user_flags = self.library_cacher.get_all_statuses()
-
         games = []
         for igdb_id, stores in all_mappings.items():
             raw = all_games.get(igdb_id)
             if not raw:
                 logger.warning(f"Game {igdb_id} in resolvers but not in igdb cache, skipping")
                 continue
-
 
             release_date = None
             ts = raw.get("first_release_date")
@@ -89,8 +87,6 @@ class LibraryRepository:
             extras = all_extras.get(igdb_id, {})
             duration_hours = extras.get("duration_hours")
 
-            user_flags = all_user_flags.get(igdb_id, {})
-
             game = Game(
                 igdb_id=igdb_id,
                 title=raw["name"],
@@ -101,14 +97,9 @@ class LibraryRepository:
                 release_date=release_date,
                 cover_url=cover_url,
                 duration_hours=duration_hours,
-                stores=stores,
-                finished=user_flags.get("finished", False),
-                hidden=user_flags.get("hidden", False),
-                backlog=user_flags.get("backlog", False),
-                favorite=user_flags.get("favorite", False),
+                stores=stores
             )
             games.append(game)
 
-        logger.info(f"Built {len(games)} games from cache")
         logger.info(f"Built {len(games)} games from cache")
         return Library.from_iterable(games)

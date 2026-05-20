@@ -13,13 +13,9 @@ from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
 from puntueitor.core.resolvers.gog_resolver import GOGHeroicResolver
 from puntueitor.core.resolvers.epic_resolver import EpicHeroicResolver
 from puntueitor.core.resolvers.amazon_resolver import AmazonHeroicResolver
-from puntueitor.core.resolvers.gog_resolver import GOGHeroicResolver
-from puntueitor.core.resolvers.epic_resolver import EpicHeroicResolver
-from puntueitor.core.resolvers.amazon_resolver import AmazonHeroicResolver
 from puntueitor.core.selector.steam_selector import SteamSelector
 from steampy.api.steam_api import SteamApi
 from puntueitor.core.config import ConfigManager
-from puntueitor.core.heroics import HeroicsLoader
 from puntueitor.core.heroics import HeroicsLoader
 
 
@@ -46,9 +42,7 @@ def _run_enrichment(
 
 
 def load_library(
-def load_library(
     engine: IGDBService,
-    heroic_loader: HeroicsLoader | None = None,
     heroic_loader: HeroicsLoader | None = None,
     api_key: str | None = None,
     user: int | None = None,
@@ -59,7 +53,6 @@ def load_library(
     enrichment_callback: Callable[[Game], None] | None = None,
     extras_cache: dict[int, dict] | None = None,
 ) -> Generator[Game, None, None]:
-    """Carga juegos de múltiples tiendas (Steam, GOG, Epic, Amazon)."""
     """Carga juegos de múltiples tiendas (Steam, GOG, Epic, Amazon)."""
     config = ConfigManager().get
     # Build stores list from new config fields
@@ -78,7 +71,6 @@ def load_library(
 
     CACHE_RESOLVERS = Path.home() / ".cache" / "puntueitor" / "resolvers.sqlite"
     steam_selector = SteamSelector()
-
 
     executor = ThreadPoolExecutor(max_workers=4) if enrichers else None
     games_loaded = []
