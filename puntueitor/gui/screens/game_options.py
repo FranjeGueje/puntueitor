@@ -24,6 +24,7 @@ class GameOptionsScreen(ModalScreen[dict | None]):
                     with Horizontal(id="game-options-buttons"):
                         yield Button("Guardar", variant="primary", id="save")
                         yield Button("Cancelar", variant="default", id="cancel")
+                        yield Button("Eliminar", variant="error", id="delete")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":
@@ -33,5 +34,7 @@ class GameOptionsScreen(ModalScreen[dict | None]):
                 "backlog": self.query_one("#cb-backlog", Checkbox).value,
                 "favorite": self.query_one("#cb-favorite", Checkbox).value,
             })
+        elif event.button.id == "delete":
+            self.dismiss({"__delete__": True})
         else:
             self.dismiss(None)

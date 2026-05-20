@@ -103,6 +103,20 @@ class DesconocidosCacher:
             logger.warning(f"Error counting unknown games: {e}")
             return 0
 
+    def remove_unknown(self, store: str, game_id: str) -> None:
+        """Elimina un juego de la lista de desconocidos."""
+        if not self._available:
+            return
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute(
+                    "DELETE FROM unknown_games WHERE store = ? AND id = ?",
+                    (store, str(game_id))
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Error removing unknown game {store}/{game_id}: {e}")
+
     def clear(self) -> None:
         """Borra todos los juegos desconocidos."""
         if not self._available:

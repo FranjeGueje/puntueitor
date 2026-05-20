@@ -19,11 +19,14 @@ from puntueitor.gui.screens.filter_input import FilterInputScreen
 from puntueitor.gui.screens.reload_confirmation import ReloadConfirmationScreen
 from puntueitor.gui.screens.scoring import ScoringScreen
 from puntueitor.gui.screens.game_options import GameOptionsScreen
+from puntueitor.gui.screens.unknown_menu import UnknownMenuScreen
+from puntueitor.gui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library, Game
 
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.igdb.service import IGDBService
+from puntueitor.core.mappers import IGMapperGame
 from puntueitor.core.pipeline.load_steam_library import load_steam_library
 from puntueitor.core.services.library_service import LibraryService
 
@@ -62,6 +65,7 @@ class PuntueitorApp(App):
         self.current_library = Library.from_iterable(())
         self.is_reloading = False
         self.is_enriching = False
+        self._library_changed = False
         game_list = self.query_one(GameList)
 
         config = ConfigManager().get
@@ -121,6 +125,9 @@ class PuntueitorApp(App):
         def handle_options(result: dict | None) -> None:
             if result is None:
                 return
+            if result.get("__delete__"):
+                self._delete_game(game)
+                return
             game.finished = result["finished"]
             game.hidden = result["hidden"]
             game.backlog = result["backlog"]
@@ -133,10 +140,138 @@ class PuntueitorApp(App):
 
         self.push_screen(GameOptionsScreen(game), handle_options)
 
+    def _delete_game(self, game: Game) -> None:
+        igdb_id = game.igdb_id
+        stores = self.repo.resolvers_cacher.get_stores_for_igdb_id(igdb_id)
+        self.repo.resolvers_cacher.remove_igdb_id(igdb_id)
+        if stores:
+            for store_name, store_id in stores.items():
+                self.repo.unknown_cacher.save_unknown(store_name, game.title, str(store_id))
+        self.full_library = Library.from_iterable(
+            g for g in self.full_library.games if g.igdb_id != igdb_id
+        )
+        self.current_library = self.full_library
+        game_list = self.query_one(GameList)
+        game_list.populate_games(self.current_library)
+        from textual.widgets import Markdown
+        self.query_one(GameDetail).query_one("#game-info", Markdown).update(
+            "Selecciona un juego de la lista para ver sus detalles."
+        )
+        self.notify(f"Eliminado: {game.title}")
+
     def on_game_list_game_highlighted(self, message: GameList.GameHighlighted) -> None:
         detail = self.query_one(GameDetail)
         detail.show_game(message.game)
-    
+
+    def on_game_list_unknown_selected(self, message: GameList.UnknownSelected) -> None:
+        unknown = message.unknown
+
+        def handle_menu(choice: str | None) -> None:
+            if choice == "search_title":
+                self._search_unknown_by_title(unknown)
+            elif choice == "search_store":
+                self._resolve_unknown_by_store(unknown)
+
+        self.push_screen(UnknownMenuScreen(), handle_menu)
+
+    def _search_unknown_by_title(self, unknown: dict) -> None:
+        def handle_input(text: str | None) -> None:
+            if text and text.strip():
+                self._do_igdb_search(text.strip(), unknown)
+
+        self.push_screen(
+            FilterInputScreen(
+                "Buscar en IGDB",
+                "Título del juego...",
+                default=unknown["title"],
+            ),
+            handle_input,
+        )
+
+    def _do_igdb_search(self, query: str, unknown: dict) -> None:
+        try:
+            igdb = IGDBService()
+            results = igdb.search_by_title(query, limit=15)
+            if not results:
+                self.notify("Sin resultados en IGDB", severity="warning")
+                return
+
+            def handle_result(raw: dict | None) -> None:
+                if raw:
+                    self._add_igdb_result(unknown, raw["id"], raw)
+
+            self.push_screen(IGDBSearchResults(results), handle_result)
+        except Exception as e:
+            self.notify(f"Error en búsqueda IGDB: {e}", severity="error")
+
+    def _add_igdb_result(self, unknown: dict, igdb_id: int, raw: dict) -> None:
+        store = unknown["store"]
+        store_id = unknown["id"]
+        self.repo.resolvers_cacher.set_igdb_ids(store, store_id, [igdb_id])
+        self.repo.unknown_cacher.remove_unknown(store, store_id)
+        game = IGMapperGame.map_to_game(raw)
+        from puntueitor.core.models import Stores
+        game.set_store(Stores(store), store_id)
+        self._finish_add_game(game)
+
+    def _resolve_unknown_by_store(self, unknown: dict) -> None:
+        store = unknown["store"]
+        store_id = unknown["id"]
+        title = unknown["title"]
+        self.repo.unknown_cacher.remove_unknown(store, store_id)
+        igdb = IGDBService()
+        cache_path = self.repo.cache_dir / "resolvers.sqlite"
+
+        try:
+            if store == "steam":
+                from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
+                resolver = SteamIGDBResolver(igdb, cache_path)
+                raw = {"appid": int(store_id), "name": title}
+            elif store == "epic":
+                from puntueitor.core.resolvers.epic_resolver import EpicHeroicResolver
+                resolver = EpicHeroicResolver(igdb, cache_path)
+                raw = {"app_name": store_id, "title": title}
+            elif store == "gog":
+                from puntueitor.core.resolvers.gog_resolver import GOGHeroicResolver
+                resolver = GOGHeroicResolver(igdb, cache_path)
+                raw = {"app_name": store_id, "title": title}
+            else:
+                self.repo.unknown_cacher.save_unknown(store, title, store_id)
+                self.notify(f"Tienda no soportada: {store}", severity="error")
+                return
+
+            games = resolver.resolve(raw, refresh=True)
+            if not games:
+                self.repo.unknown_cacher.save_unknown(store, title, store_id)
+                self.notify(f"No se encontró en IGDB para {store}", severity="warning")
+                return
+
+            self._finish_add_game(games[0])
+
+        except Exception as e:
+            self.repo.unknown_cacher.save_unknown(store, title, store_id)
+            self.notify(f"Error resolviendo {store}: {e}", severity="error")
+
+    def _finish_add_game(self, game: Game) -> None:
+        try:
+            from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+            from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
+            resolver = HLTBResolver()
+            enricher = HLTBEnricher(client=resolver)
+            enriched = enricher.enrich(game)
+            if enriched.duration_hours is not None:
+                game = enriched
+                self.repo.save_game(game)
+        except Exception:
+            pass
+        new_games = list(self.full_library.games) + [game]
+        self.full_library = Library.from_iterable(new_games)
+        self.current_library = self.full_library
+        self._library_changed = True
+        unknowns = self.repo.unknown_cacher.get_all()
+        self.query_one(GameList).populate_unknowns(unknowns)
+        self.notify(f"Añadido: {game.title}")
+
     def action_configure(self) -> None:
         self.push_screen(ConfigurationScreen())
 
@@ -168,7 +303,12 @@ class PuntueitorApp(App):
             self._showing_unknowns = True
             self.notify(f"Mostrando {len(unknowns)} desconocidos")
         else:
-            self.current_library = self._saved_library
+            if getattr(self, '_library_changed', False):
+                self.full_library = self.repo.load()
+                self.current_library = self.full_library
+                self._library_changed = False
+            else:
+                self.current_library = self._saved_library
             game_list.populate_games(self.current_library)
             self._showing_unknowns = False
             self.notify("Volviendo a biblioteca")

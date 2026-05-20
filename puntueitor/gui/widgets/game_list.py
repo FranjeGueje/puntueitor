@@ -17,9 +17,15 @@ class GameList(Vertical):
             self.game = game
             super().__init__()
 
+    class UnknownSelected(Message):
+        def __init__(self, unknown: dict):
+            self.unknown = unknown
+            super().__init__()
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.games_map: dict[str, Game] = {}
+        self.current_unknowns: list[dict] = []
         self.show_hidden = False
 
     def compose(self):
@@ -104,6 +110,10 @@ class GameList(Vertical):
         row_key = event.row_key.value
         if row_key and row_key in self.games_map:
             self.post_message(self.GameSelected(self.games_map[row_key]))
+        elif row_key and row_key.startswith("unknown_"):
+            idx = int(row_key.split("_")[1])
+            if idx < len(self.current_unknowns):
+                self.post_message(self.UnknownSelected(self.current_unknowns[idx]))
 
     @on(DataTable.RowHighlighted, "#game-options")
     def on_game_highlighted(self, event: DataTable.RowHighlighted):
@@ -165,6 +175,7 @@ class GameList(Vertical):
         table.add_column("ID", key="id", width=10)
 
         self.games_map.clear()
+        self.current_unknowns = unknowns
         count_label.update(f"Desconocidos: {len(unknowns)} juegos")
 
         for i, u in enumerate(unknowns):

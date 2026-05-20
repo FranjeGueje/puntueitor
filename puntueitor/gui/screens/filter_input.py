@@ -6,9 +6,10 @@ from textual.widgets import Label, Input, Footer
 class FilterInputScreen(ModalScreen[str]):
     """Pantalla modal con un campo de entrada para el filtro."""
     
-    def __init__(self, title: str, placeholder: str = "", **kwargs):
+    def __init__(self, title: str, placeholder: str = "", default: str = "", **kwargs):
         self.dialog_title = title
         self.placeholder = placeholder
+        self.default = default
         super().__init__(**kwargs)
 
     BINDINGS = [
@@ -21,7 +22,7 @@ class FilterInputScreen(ModalScreen[str]):
             with Middle():
                 with Vertical(id="input-dialog"):
                     yield Label(self.dialog_title, id="input-title")
-                    yield Input(placeholder=self.placeholder, id="filter-input")
+                    yield Input(placeholder=self.placeholder, value=self.default, id="filter-input")
                     yield Label("ENTER para aplicar | ESC para cancelar", id="input-hint")
         yield Footer()
 

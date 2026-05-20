@@ -113,7 +113,7 @@ GameOptionsScreen {
 }
 
 #game-options-dialog {
-    width: 50;
+    width: 62;
     height: auto;
     background: $surface;
     border: thick $primary;
@@ -203,6 +203,56 @@ GameOptionsScreen {
 #filter-input {
     margin: 1 0;
     border: tall $accent;
+}
+
+#unknown-menu-list {
+    width: 100%;
+    height: auto;
+    border: none;
+    background: transparent;
+    margin: 1 0;
+}
+
+#unknown-menu-list > ListItem {
+    padding: 1 2;
+}
+
+#unknown-menu-list > ListItem.--highlight {
+    background: $accent;
+    color: $text;
+}
+
+/* IGDB Search Results Styles */
+#igdb-results-dialog {
+    width: 90;
+    height: 24;
+    background: $surface;
+    border: thick $primary;
+    padding: 1 2;
+    align: center middle;
+}
+
+#igdb-results-title {
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#igdb-results-table {
+    height: 1fr;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: $text;
+}
+
+#igdb-results-hint {
+    width: 100%;
+    text-align: center;
+    margin-top: 1;
+    color: $text-muted;
 }
 
 /* Reload Confirmation Styles */

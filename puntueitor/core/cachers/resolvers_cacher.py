@@ -86,3 +86,35 @@ class ResolversCacher:
         except Exception as e:
             logger.warning(f"Error getting all mappings: {e}")
         return result
+
+    def get_stores_for_igdb_id(self, igdb_id: int) -> dict[str, str] | None:
+        """Devuelve {store: id_store} para un IGDB ID, o None."""
+        if not self._available:
+            return None
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                cursor = conn.execute(
+                    "SELECT store, id_store FROM resolvers WHERE id_igdb = ?",
+                    (igdb_id,)
+                )
+                rows = cursor.fetchall()
+                if rows:
+                    return {store: id_store for store, id_store in rows}
+                return None
+        except Exception as e:
+            logger.warning(f"Error getting stores for igdb_id {igdb_id}: {e}")
+            return None
+
+    def remove_igdb_id(self, igdb_id: int) -> None:
+        """Borra todas las filas de resolvers para un IGDB ID."""
+        if not self._available:
+            return
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute(
+                    "DELETE FROM resolvers WHERE id_igdb = ?",
+                    (igdb_id,)
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Error removing igdb_id {igdb_id}: {e}")
