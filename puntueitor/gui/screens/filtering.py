@@ -7,16 +7,17 @@ class FilteringScreen(ModalScreen[str]):
     """Pantalla modal para seleccionar el tipo de filtro."""
     
     BINDINGS = [
-        ("n", "select('name')", "n Nombre"),
-        ("d", "select('duration')", "d Duración"),
-        ("t", "select('finished:true')", "t Terminados"),
-        ("T", "select('finished:false')", "T No terminados"),
-        ("f", "select('favorite:true')", "f Favoritos"),
-        ("F", "select('favorite:false')", "F No favoritos"),
-        ("b", "select('backlog:true')", "b Backlog"),
-        ("B", "select('backlog:false')", "B No backlog"),
-        ("x", "select('clear')", "x Limpiar Filtros"),
-        ("escape", "cancel", "ESC Volver"),
+        ("n", "select('name')", "Nombre"),
+        ("d", "select('duration')", "Duración"),
+        ("t", "select('finished:true')", "Terminados"),
+        ("T", "select('finished:false')", "No terminados"),
+        ("f", "select('favorite:true')", "Favoritos"),
+        ("F", "select('favorite:false')", "No favoritos"),
+        ("b", "select('backlog:true')", "Backlog"),
+        ("B", "select('backlog:false')", "No backlog"),
+        ("o", "select('hidden:true')", "Ocultos"),
+        ("x", "select('clear')", "Limpiar Filtros"),
+        ("escape", "cancel", "Volver"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -32,6 +33,7 @@ class FilteringScreen(ModalScreen[str]):
                     yield Static("No favoritos", classes="filter-option")
                     yield Static("Backlog", classes="filter-option")
                     yield Static("No backlog", classes="filter-option")
+                    yield Static("Ocultos", classes="filter-option")
                     yield Static("Limpiar Filtros", classes="filter-option")
                     yield Label("Pulse una tecla para filtrar", id="filtering-hint")
         yield Footer()

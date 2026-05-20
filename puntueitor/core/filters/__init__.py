@@ -3,6 +3,7 @@ from .duration_filter import DurationFilter
 from .favorite_filter import FavoriteFilter
 from .finished_filter import FinishedFilter
 from .genre_filter import GenreFilter
+from .hidden_filter import HiddenFilter
 from .name_filter import NameFilter
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "FavoriteFilter",
     "FinishedFilter",
     "GenreFilter",
+    "HiddenFilter",
     "NameFilter",
 ]

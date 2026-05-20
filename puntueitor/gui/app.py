@@ -221,12 +221,16 @@ class PuntueitorApp(App):
                 self.apply_filter("favorite", filter_type.split(":")[1])
             elif filter_type in ("backlog:true", "backlog:false"):
                 self.apply_filter("backlog", filter_type.split(":")[1])
+            elif filter_type == "hidden:true":
+                self.apply_filter("hidden", "true")
 
         self.push_screen(FilteringScreen(), handle_filter_type)
 
     def apply_filter(self, filter_type: str | None, value: str | None = None) -> None:
+        game_list = self.query_one(GameList)
         if filter_type is None:
             self.current_library = self.library_service.clear_filters(self.full_library)
+            game_list.show_hidden = False
             self.notify("Filtros limpiados")
         elif filter_type == "name" and value:
             self.current_library = self.library_service.filter_by_name(
@@ -261,8 +265,15 @@ class PuntueitorApp(App):
                 self.current_library, flag
             )
             self.notify(f"Filtro: {'backlog' if flag else 'no backlog'}")
+        elif filter_type == "hidden":
+            flag = value == "true"
+            self.current_library = self.library_service.filter_by_hidden(
+                self.current_library, flag
+            )
+            if flag:
+                game_list.show_hidden = True
+            self.notify(f"Filtro: ocultos")
 
-        game_list = self.query_one(GameList)
         game_list.populate_games(self.current_library)
         game_list.select_first()
 
