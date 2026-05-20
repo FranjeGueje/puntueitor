@@ -53,6 +53,7 @@ class LibraryRepository:
 
         all_games = {g["id"]: g for g in self.igdb_cacher.get_all_games()}
         all_extras = self.extras_cacher.get_all_extras()
+        all_statuses = self.library_cacher.get_all_statuses()
 
         logger.info(f"Loading {len(all_mappings)} games from resolvers.sqlite")
 
@@ -99,6 +100,11 @@ class LibraryRepository:
                 duration_hours=duration_hours,
                 stores=stores
             )
+            status = all_statuses.get(igdb_id, {})
+            game.finished = status.get("finished", False)
+            game.hidden = status.get("hidden", False)
+            game.backlog = status.get("backlog", False)
+            game.favorite = status.get("favorite", False)
             games.append(game)
 
         logger.info(f"Built {len(games)} games from cache")
