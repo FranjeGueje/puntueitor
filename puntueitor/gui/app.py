@@ -215,6 +215,12 @@ class PuntueitorApp(App):
                     FilterInputScreen("Duración máxima (horas)", "Ej: 20"),
                     lambda val: self.apply_filter("duration", val) if val is not None else None
                 )
+            elif filter_type in ("finished:true", "finished:false"):
+                self.apply_filter("finished", filter_type.split(":")[1])
+            elif filter_type in ("favorite:true", "favorite:false"):
+                self.apply_filter("favorite", filter_type.split(":")[1])
+            elif filter_type in ("backlog:true", "backlog:false"):
+                self.apply_filter("backlog", filter_type.split(":")[1])
 
         self.push_screen(FilteringScreen(), handle_filter_type)
 
@@ -237,6 +243,24 @@ class PuntueitorApp(App):
             except ValueError:
                 self.notify("Error: La duración debe ser un número", severity="error")
                 return
+        elif filter_type == "finished":
+            flag = value == "true"
+            self.current_library = self.library_service.filter_by_finished(
+                self.current_library, flag
+            )
+            self.notify(f"Filtro: {'terminados' if flag else 'no terminados'}")
+        elif filter_type == "favorite":
+            flag = value == "true"
+            self.current_library = self.library_service.filter_by_favorite(
+                self.current_library, flag
+            )
+            self.notify(f"Filtro: {'favoritos' if flag else 'no favoritos'}")
+        elif filter_type == "backlog":
+            flag = value == "true"
+            self.current_library = self.library_service.filter_by_backlog(
+                self.current_library, flag
+            )
+            self.notify(f"Filtro: {'backlog' if flag else 'no backlog'}")
 
         game_list = self.query_one(GameList)
         game_list.populate_games(self.current_library)

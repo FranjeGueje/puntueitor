@@ -4,7 +4,7 @@ from collections.abc import Callable
 from puntueitor.core.models import Game, Library, ScoringContext
 from puntueitor.core.protocols import GameScorer, GameSorter
 from puntueitor.core.repository.library_repository import LibraryRepository
-from puntueitor.core.filters import NameFilter, DurationFilter
+from puntueitor.core.filters import NameFilter, DurationFilter, FinishedFilter, FavoriteFilter, BacklogFilter
 from puntueitor.core.scoring import MixedScore
 from puntueitor.core.scoring.atomic import (
     GenreScorer,
@@ -37,6 +37,21 @@ class LibraryService:
 
     def filter_by_duration(self, library: Library, max_hours: float) -> Library:
         f = DurationFilter(max_hours)
+        filtered = [g for g in library.games if f.matches(g)]
+        return Library.from_iterable(filtered)
+
+    def filter_by_finished(self, library: Library, finished: bool) -> Library:
+        f = FinishedFilter(finished)
+        filtered = [g for g in library.games if f.matches(g)]
+        return Library.from_iterable(filtered)
+
+    def filter_by_favorite(self, library: Library, favorite: bool) -> Library:
+        f = FavoriteFilter(favorite)
+        filtered = [g for g in library.games if f.matches(g)]
+        return Library.from_iterable(filtered)
+
+    def filter_by_backlog(self, library: Library, backlog: bool) -> Library:
+        f = BacklogFilter(backlog)
         filtered = [g for g in library.games if f.matches(g)]
         return Library.from_iterable(filtered)
 
