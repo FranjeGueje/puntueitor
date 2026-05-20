@@ -40,28 +40,21 @@ class GameList(Vertical):
         table = self.query_one("#game-options", DataTable)
         count_label = self.query_one("#game-count", Static)
         
-        # Guardar posición actual
         try:
             current_row = table.cursor_row
         except:
             current_row = 0
 
-        table.clear()
-        
-        # Manejo de la columna Score
-        has_score_col = any(col.key.value == "score" for col in table.columns.values())
-        if scores is not None and not has_score_col:
+        table.clear(columns=True)
+        table.add_column("Título", key="title", width=70)
+        table.add_column("U", key="user")
+        table.add_column("C", key="critic")
+        table.add_column("Dur", key="duration")
+        table.add_column("Fin", key="finished", width=3)
+        table.add_column("Bkl", key="backlog", width=3)
+        table.add_column("Fav", key="favorite", width=3)
+        if scores is not None:
             table.add_column("Puntos", key="score")
-        elif scores is None and has_score_col:
-            # Recreamos columnas sin score para limpiar
-            table.clear(columns=True)
-            table.add_column("Título", key="title", width=70)
-            table.add_column("U", key="user")
-            table.add_column("C", key="critic")
-            table.add_column("Dur", key="duration")
-            table.add_column("Fin", key="finished", width=3)
-            table.add_column("Bkl", key="backlog", width=3)
-            table.add_column("Fav", key="favorite", width=3)
 
         self.games_map.clear()
 
@@ -85,6 +78,7 @@ class GameList(Vertical):
             row_key = str(game.igdb_id)
             self.games_map[row_key] = game
 
+            # Formatear métricas
             u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
             d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None and game.duration_hours > 0 else "--"
@@ -158,8 +152,22 @@ class GameList(Vertical):
             "✓" if game.favorite else "",
             key=row_key)
         
-        # Actualizar contador
         count_label = self.query_one("#game-count", Static)
         count_label.update(f"Biblioteca: {len(self.games_map)} juegos")
+
+    def populate_unknowns(self, unknowns: list[dict]):
+        table = self.query_one("#game-options", DataTable)
+        count_label = self.query_one("#game-count", Static)
+
+        table.clear(columns=True)
+        table.add_column("Título", key="title", width=70)
+        table.add_column("Tienda", key="store", width=10)
+        table.add_column("ID", key="id", width=10)
+
+        self.games_map.clear()
+        count_label.update(f"Desconocidos: {len(unknowns)} juegos")
+
+        for i, u in enumerate(unknowns):
+            table.add_row(u["title"], u["store"], u["id"], key=f"unknown_{i}")
 
 

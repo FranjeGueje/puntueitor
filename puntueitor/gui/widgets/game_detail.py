@@ -18,17 +18,6 @@ class GameDetail(VerticalScroll):
         storyline = game.storyline if game.storyline else "Sin descripción disponible."
         stores_list = ", ".join(game.stores.keys()) if game.stores else "Ninguna"
 
-        flags = []
-        if game.finished:
-            flags.append("✓ Terminado")
-        if game.backlog:
-            flags.append("⟳ Pendiente")
-        if game.favorite:
-            flags.append("★ Favorito")
-        if game.hidden:
-            flags.append("⊙ Oculto")
-        flags_line = " | ".join(flags) if flags else "—"
-
         content = f"""# {game.title}
 
 **Géneros:** {genres}
@@ -40,8 +29,6 @@ class GameDetail(VerticalScroll):
 **Puntuación Crítica:** {critic_score}
 
 **Tiendas:** {stores_list}
-
-**Estado:** {flags_line}
 
 ---
 
