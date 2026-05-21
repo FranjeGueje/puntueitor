@@ -56,11 +56,11 @@ class GameList(Vertical):
         table.add_column("U", key="user")
         table.add_column("C", key="critic")
         table.add_column("Dur", key="duration")
+        if scores is not None:
+            table.add_column("Puntos", key="score")
         table.add_column("Fin", key="finished", width=3)
         table.add_column("Bkl", key="backlog", width=3)
         table.add_column("Fav", key="favorite", width=3)
-        if scores is not None:
-            table.add_column("Puntos", key="score")
 
         self.games_map.clear()
 
