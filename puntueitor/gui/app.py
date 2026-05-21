@@ -43,6 +43,9 @@ class PuntueitorApp(App):
         ("u", "toggle_unknowns", "Desconocidos"),
         ("r", "soft_reload", "Actualizar"),
         ("R", "reload_library", "Regenerar TODO"),
+        ("f1", "toggle_finished", "Terminado"),
+        ("f2", "toggle_backlog", "Backlog"),
+        ("f3", "toggle_favorite", "Favorito"),
         ("q", "request_quit", "Salir"),
     ]
 
@@ -314,6 +317,31 @@ class PuntueitorApp(App):
         self.notify(
             "Mostrando juegos ocultos" if game_list.show_hidden else "Ocultando juegos ocultos"
         )
+
+    def _toggle_game_flag(self, flag: str) -> None:
+        game_list = self.query_one(GameList)
+        game = game_list.get_current_game()
+        if game is None:
+            return
+        setattr(game, flag, not getattr(game, flag))
+        self.repo.library_cacher.set_status(
+            game.igdb_id,
+            finished=game.finished,
+            hidden=game.hidden,
+            backlog=game.backlog,
+            favorite=game.favorite,
+        )
+        game_list.update_game(game)
+        self.query_one(GameDetail).show_game(game)
+
+    def action_toggle_finished(self) -> None:
+        self._toggle_game_flag("finished")
+
+    def action_toggle_backlog(self) -> None:
+        self._toggle_game_flag("backlog")
+
+    def action_toggle_favorite(self) -> None:
+        self._toggle_game_flag("favorite")
 
     def check_action(self, action: str, namespace: str) -> bool | None:
         if getattr(self, '_showing_unknowns', False):

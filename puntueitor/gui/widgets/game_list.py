@@ -127,6 +127,13 @@ class GameList(Vertical):
             table.move_cursor(row=0)
             table.focus()
 
+    def get_current_game(self) -> Game | None:
+        table = self.query_one("#game-options", DataTable)
+        if table.cursor_row is None or table.row_count == 0:
+            return None
+        row = table.ordered_rows[table.cursor_row]
+        return self.games_map.get(str(row.key.value))
+
     def update_game(self, game: Game):
         """Actualiza la información de un juego en la lista sin recargarla entera."""
         row_key = str(game.igdb_id)
