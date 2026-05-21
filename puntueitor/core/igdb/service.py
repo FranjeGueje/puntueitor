@@ -32,7 +32,7 @@ class IGDBService:
 
         if cache_dir is None:
             cache_dir = Path.home() / ".cache" / "puntueitor"
-        db_path = Path(cache_dir) / "igdb.sqlite"
+        db_path = Path(cache_dir) / "puntueitor.db"
         logger.info(f"IGDBService: IGDBCacher at {db_path}")
         self.cacher = IGDBCacher(db_path)
 

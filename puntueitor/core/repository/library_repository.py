@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class LibraryRepository:
     """
     Repositorio para gestionar la persistencia de la biblioteca de juegos.
-    Cumple la REGLA DE ORO: igdb.sqlite solo contiene datos canónicos.
+    Cumple la REGLA DE ORO: puntueitor.db (tabla games) solo contiene datos canónicos.
     La biblioteca se reconstruye uniendo los datos de las tiendas, resolvers y extras.
     """
 
@@ -24,17 +24,17 @@ class LibraryRepository:
             cache_dir = Path.home() / ".cache" / "puntueitor"
         self.cache_dir = Path(cache_dir).resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.igdb_cacher = IGDBCacher(self.cache_dir / "igdb.sqlite")
-        self.extras_cacher = ExtrasCacher(self.cache_dir / "extras.sqlite")
-        self.resolvers_cacher = ResolversCacher(self.cache_dir / "resolvers.sqlite")
+        self.igdb_cacher = IGDBCacher(self.cache_dir / "puntueitor.db")
+        self.extras_cacher = ExtrasCacher(self.cache_dir / "puntueitor.db")
+        self.resolvers_cacher = ResolversCacher(self.cache_dir / "puntueitor.db")
         self.library_cacher = LibraryCacher()
         self.unknown_cacher = DesconocidosCacher()
 
     def save(self, library: Library, path: str | Path | None = None) -> None:
         """
-        Guarda los campos no canónicos (extras) en extras.sqlite.
-        Los datos canónicos ya se guardan en igdb.sqlite durante el pipeline.
-        Las relaciones se guardan en resolvers.sqlite durante el pipeline.
+        Guarda los campos no canónicos (extras) en puntueitor.db (tabla extras).
+        Los datos canónicos ya se guardan en puntueitor.db (tabla games) durante el pipeline.
+        Las relaciones se guardan en puntueitor.db (tabla resolvers) durante el pipeline.
         """
         for game in library:
             self.save_game(game)
@@ -45,17 +45,17 @@ class LibraryRepository:
             self.extras_cacher.save_extras(game.igdb_id, game.duration_hours)
 
     def load(self, path: str | Path | None = None) -> Library:
-        """Reconstruye la biblioteca desde resolvers.sqlite (autoritativo) con datos de igdb.sqlite."""
+        """Reconstruye la biblioteca desde puntueitor.db (tabla resolvers, autoritativo) con datos de puntueitor.db (tabla games)."""
         all_mappings = self.resolvers_cacher.get_all_mappings()
         if not all_mappings:
-            logger.info("No games in resolvers.sqlite, library empty")
+            logger.info("No games in puntueitor.db resolvers table, library empty")
             return Library.from_iterable(())
 
         all_games = {g["id"]: g for g in self.igdb_cacher.get_all_games()}
         all_extras = self.extras_cacher.get_all_extras()
         all_statuses = self.library_cacher.get_all_statuses()
 
-        logger.info(f"Loading {len(all_mappings)} games from resolvers.sqlite")
+        logger.info(f"Loading {len(all_mappings)} games from resolvers table")
 
         games = []
         for igdb_id, stores in all_mappings.items():

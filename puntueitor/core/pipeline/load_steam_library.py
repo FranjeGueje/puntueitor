@@ -69,7 +69,7 @@ def load_library(
     api_key = api_key or config.steam_api_key
     user = user or config.steam_user_id
 
-    CACHE_RESOLVERS = Path.home() / ".cache" / "puntueitor" / "resolvers.sqlite"
+    CACHE_RESOLVERS = Path.home() / ".cache" / "puntueitor" / "puntueitor.db"
     steam_selector = SteamSelector()
 
     executor = ThreadPoolExecutor(max_workers=4) if enrichers else None

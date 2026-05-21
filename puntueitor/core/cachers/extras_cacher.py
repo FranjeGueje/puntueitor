@@ -6,7 +6,9 @@ logger = logging.getLogger(__name__)
 
 
 class ExtrasCacher:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path | None = None):
+        if db_path is None:
+            db_path = Path.home() / ".cache" / "puntueitor" / "puntueitor.db"
         self.db_path = Path(db_path)
         self._available = False
         try:
@@ -70,3 +72,13 @@ class ExtrasCacher:
                 conn.commit()
         except Exception as e:
             logger.warning(f"Error saving extras: {e}")
+
+    def clear_all(self) -> None:
+        if not self._available:
+            return
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute("DELETE FROM extras")
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Error clearing extras: {e}")

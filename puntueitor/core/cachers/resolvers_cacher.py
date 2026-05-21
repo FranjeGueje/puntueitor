@@ -9,7 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 class ResolversCacher:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path | None = None):
+        if db_path is None:
+            db_path = Path.home() / ".cache" / "puntueitor" / "puntueitor.db"
         self.db_path = Path(db_path)
         self._available = False
         try:

@@ -255,7 +255,7 @@ class PuntueitorApp(App):
         title = unknown["title"]
         self.repo.unknown_cacher.remove_unknown(store, store_id)
         igdb = IGDBService()
-        cache_path = self.repo.cache_dir / "resolvers.sqlite"
+        cache_path = self.repo.cache_dir / "puntueitor.db"
 
         try:
             if store == "steam":
@@ -507,9 +507,7 @@ class PuntueitorApp(App):
             self.notify("Ya hay un proceso de enriquecimiento en curso", severity="warning")
             return
 
-        extras_path = Path.home() / ".cache" / "puntueitor" / "extras.sqlite"
-        if extras_path.exists():
-            extras_path.unlink()
+        self.repo.extras_cacher.clear_all()
         self.notify("Caché de enriquecedores borrada. Recargando biblioteca...")
 
         library = self.repo.load()

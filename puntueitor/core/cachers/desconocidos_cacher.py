@@ -10,7 +10,7 @@ class DesconocidosCacher:
 
     def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
-            db_path = Path.home() / ".cache" / "puntueitor" / "desconocidos.sqlite"
+            db_path = Path.home() / ".cache" / "puntueitor" / "puntueitor.db"
         self.db_path = Path(db_path)
         self._available = False
         try:

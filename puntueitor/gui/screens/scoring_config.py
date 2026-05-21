@@ -101,7 +101,7 @@ class ScoringConfigScreen(ModalScreen[dict]):
         from puntueitor.core.cachers.igdb_cacher import IGDBCacher
         import re
 
-        cacher = IGDBCacher(Path.home() / ".cache" / "puntueitor" / "igdb.sqlite")
+        cacher = IGDBCacher(Path.home() / ".cache" / "puntueitor" / "puntueitor.db")
         genres = cacher.get_all_genres()
         preferred = set(config.scoring_preferred_genres or [])
 
