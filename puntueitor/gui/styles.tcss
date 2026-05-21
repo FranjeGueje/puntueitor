@@ -113,7 +113,7 @@ GameOptionsScreen {
 }
 
 #game-options-dialog {
-    width: 62;
+    width: 78;
     height: auto;
     background: $surface;
     border: thick $primary;

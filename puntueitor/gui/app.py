@@ -128,6 +128,9 @@ class PuntueitorApp(App):
             if result.get("__delete__"):
                 self._delete_game(game)
                 return
+            if result.get("__enrich__"):
+                self._enrich_single_game(game)
+                return
             game.finished = result["finished"]
             game.hidden = result["hidden"]
             game.backlog = result["backlog"]
@@ -139,6 +142,35 @@ class PuntueitorApp(App):
             self.notify("Estado actualizado")
 
         self.push_screen(GameOptionsScreen(game), handle_options)
+
+    def _enrich_single_game(self, game: Game) -> None:
+        def worker():
+            try:
+                from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+                from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
+                resolver = HLTBResolver()
+                enricher = HLTBEnricher(client=resolver, overwrite=True)
+                enriched = enricher.enrich(game)
+                if enriched.duration_hours is not None:
+                    self.repo.save_game(enriched)
+                    self.call_from_thread(self._on_single_enriched, enriched)
+                else:
+                    self.call_from_thread(self.notify, f"No se encontró duración para {game.title}", severity="warning")
+            except Exception as e:
+                self.call_from_thread(self.notify, f"Error enriqueciendo: {e}", severity="error")
+        self.notify(f"Enriqueciendo {game.title}...")
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+    def _on_single_enriched(self, game: Game) -> None:
+        new_full = [g if g.igdb_id != game.igdb_id else game for g in self.full_library.games]
+        self.full_library = Library.from_iterable(new_full)
+        if self.current_library.contains_igdb_id(game.igdb_id):
+            new_curr = [g if g.igdb_id != game.igdb_id else game for g in self.current_library.games]
+            self.current_library = Library.from_iterable(new_curr)
+        self.query_one(GameList).update_game(game)
+        self.query_one(GameDetail).show_game(game)
+        self.notify(f"Enriquecido: {game.title}")
 
     def _delete_game(self, game: Game) -> None:
         igdb_id = game.igdb_id
