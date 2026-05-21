@@ -1,616 +1,270 @@
-# 📦 Puntueitor – Módulos reales para Biblioteca, Filtros y Scoring
+# Arquitectura y Guía de Diseño de Puntueitor 🏗️
 
-Este documento baja el diseño acordado a **módulos Python concretos**, alineados con la arquitectura actual de Puntueitor.
+> [!NOTE]
+> Este documento representa la **fusión corregida, unificada y actualizada** de los antiguos archivos de fase temprana `arquitectura.md` y `LEEME.txt`. Se han enmendado todas las discrepancias y desviaciones respecto al código fuente de producción actual de **Puntueitor** (construido sobre Python 3.14 con arquitectura limpia y DDD).
 
 ---
 
-## 📁 Estructura propuesta
+## 🗺️ Estructura Real de Módulos (Core)
 
-```
+En la fase inicial de diseño se plantearon paquetes planos directos (`puntueitor/models/`, `puntueitor/filters/`, etc.). En el sistema en producción, todo el núcleo de lógica de negocio y dominio se encuentra agrupado bajo el módulo encapsulado `core/`, garantizando una separación limpia de la interfaz de usuario (`gui/`):
+
+```text
 puntueitor/
-├─ models/
-│  ├─ game.py
-│  ├─ library.py
-│  └─ selection_context.py
-│
-├─ filters/
-│  ├─ base.py
-│  ├─ name.py
-│  ├─ genre.py
-│  ├─ duration.py
-│  └─ score.py
-│
-├─ scoring/
-│  ├─ base.py
-│  └─ weighted_score.py
-│
-├─ selector/
-│  └─ score_selector.py
+├── core/
+│   ├── cachers/       # Cachés locales (SQLite) de IGDB, tiendas, estado de librería y HLTB
+│   ├── config.py      # Gestor singleton ConfigManager para ~/.config/puntueitor/config.json
+│   ├── enrichers/     # Complemento de metadatos no canónicos (HLTBEnricher)
+│   ├── filters/       # Predicados booleanos puros de juegos (matches)
+│   ├── heroics/       # Lector de librerías de Heroic Games Launcher (GOG, Epic, Amazon)
+│   ├── igdb/          # Cliente y autenticador de la API IGDB (igdbpy)
+│   ├── index/         # Índices optimizados en memoria para búsquedas fuzzy-match
+│   ├── mappers/       # Conversión stateless de esquemas externos a modelos del dominio
+│   ├── models/        # Entidades inmutables y de dominio (Game, Library, Contexts)
+│   ├── pipeline/      # Orquestación de carga asíncrona concurrente de datos (hilos)
+│   ├── protocols/     # Interfaces y contratos del sistema (PEP 544 Protocols)
+│   ├── raw/           # Estructuras de datos puras de llamadas web (HLTBEntry)
+│   ├── repository/    # Carga y serialización agregada unificando caché y estado de usuario
+│   ├── resolvers/     # Estrategias de correlación por tienda contra IGDB
+│   ├── scoring/       # Algoritmos y coeficientes de recomendación multi-criterio
+│   ├── selector/      # Criterios de desambiguación de candidatos duplicados
+│   ├── services/      # Fachada API para el consumo desde la GUI (LibraryService)
+│   └── sorting/       # Estrategias puras de ordenación
+├── gui/               # Interfaz gráfica TUI basada en Textual (pantallas y widgets)
+└── steampy/           # Submódulo independiente cliente de la API de Steam (rate-limited)
 ```
 
 ---
 
-## 🎮 models/game.py
+## 🎮 1. El Modelo del Dominio (`core/models/`)
 
+El modelo propuesto en fases tempranas planteaba un `GameLibrary` mutable con filtros integrados y una entidad `Game` con IDs en formato `str`. En producción, el modelo se ha depurado bajo principios de inmutabilidad y eficiencia de memoria (`slots=True`):
+
+### Títulos, Identidad y Estados (`game.py`)
 ```python
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
+from enum import StrEnum
 
+class Stores(StrEnum):
+    STEAM = "steam"
+    EPIC = "epic"
+    GOG = "gog"
+    AMAZON = "amazon"
+
+StoreMap = dict[Stores, str]
+
+@dataclass(slots=True)
+class Game:
+    igdb_id: int                         # Identidad canónica unificada (IGDB)
+    title: str                           # Nombre del juego
+    title_normalized: str = field(init=False)
+
+    genres: tuple[str, ...] = field(default_factory=tuple)
+    storyline: str | None = None
+    release_date: date | None = None
+    cover_url: str | None = None
+
+    critic_score: float | None = None    # 0–100 (IGDB Aggregated Rating)
+    user_score: float | None = None      # 0–100 (IGDB Rating)
+    duration_hours: float | None = None  # Enriquecido desde HLTB u otros cachers
+
+    stores: StoreMap = field(default_factory=dict) # Enlaces con IDs en tiendas
+
+    # Estados editables locales del perfil de usuario
+    finished: bool = False
+    hidden: bool = False
+    backlog: bool = False
+    favorite: bool = False
+
+    def __post_init__(self) -> None:
+        from .util import normalize_title
+        self.title_normalized = normalize_title(self.title)
+
+    def set_store(self, store: Stores, store_id: str) -> None:
+        if not store_id:
+            raise ValueError("Store id cannot be empty")
+        self.stores[store] = store_id
+```
+
+### Colección de Biblioteca (`library.py`)
+En lugar de la clase mutable `GameLibrary` de la fase de diseño inicial, la biblioteca en producción (`Library`) es un contenedor **inmutable** y congelado:
+```python
+from dataclasses import dataclass
+from collections.abc import Iterable, Iterator
+from .game import Game
 
 @dataclass(frozen=True)
-class Game:
-    id: str
-    title: str
-    genres: list[str]
+class Library:
+    games: tuple[Game, ...]
 
-    duration_hours: float | None = None
-    user_score: float | None = None      # 0–100
-    critic_score: float | None = None    # 0–100
+    @classmethod
+    def from_iterable(cls, games: Iterable[Game]) -> Library:
+        return cls(tuple(games))
+
+    def __iter__(self) -> Iterator[Game]:
+        return iter(self.games)
+
+    def __len__(self) -> int:
+        return len(self.games)
+
+    def contains_igdb_id(self, igdb_id: int) -> bool:
+        return any(g.igdb_id == igdb_id for g in self.games)
 ```
 
 ---
 
-## 📚 models/library.py
+## 🔌 2. Contratos y Abstracciones (`core/protocols/`)
+
+En el diseño temprano, los filtros utilizaban una interfaz pesada basada en lotes (`apply(self, games: Iterable[Game]) -> Iterable[Game]`). En producción, se ha simplificado a predicados unitarios (`matches`) siguiendo el patrón **Filter**, lo que permite combinar filtros con operadores lógicos AND / OR sencillos en pipelines:
 
 ```python
-from __future__ import annotations
+from typing import Protocol, runtime_checkable
 from collections.abc import Sequence
-from typing import Iterable
-
-from puntueitor.models.game import Game
-from puntueitor.filters.base import GameFilter
-
-
-class GameLibrary:
-    def __init__(self, games: Sequence[Game]):
-        self._games = list(games)
-
-    @property
-    def games(self) -> Sequence[Game]:
-        return tuple(self._games)
-
-    def filter(self, *filters: GameFilter) -> GameLibrary:
-        games: Iterable[Game] = self._games
-        for f in filters:
-            games = f.apply(games)
-        return GameLibrary(list(games))
-```
-
----
-
-## 🎛 models/selection_context.py
-
-```python
-from dataclasses import dataclass
-
-
-@dataclass(slots=True)
-class SelectionContext:
-    weight_user_score: float = 0.4
-    weight_critic_score: float = 0.4
-    weight_duration: float = 0.2
-
-    max_duration: float = 50.0
-    missing_data_penalty: float = 0.3
-```
-
----
-
-## 🔍 filters/base.py
-
-```python
-from collections.abc import Iterable
-from typing import Protocol
-
-from puntueitor.models.game import Game
-
+from puntueitor.core.models import Game, ScoringContext, SelectionContext, Library
 
 class GameFilter(Protocol):
-    def apply(self, games: Iterable[Game]) -> Iterable[Game]: ...
-```
+    """Predicado puro unitario sobre una entidad Game."""
+    def matches(self, game: Game) -> bool: ...
 
----
+class GameScorer(Protocol):
+    """Calcula una valoración numérica flotante para un juego en un contexto."""
+    def score(self, game: Game, ctx: ScoringContext) -> float: ...
 
-## 🔍 filters/name.py
+class GameSelector(Protocol):
+    """Resuelve la ambigüedad eligiendo el mejor juego de una lista de candidatos."""
+    def select(self, candidates: Sequence[Game], ctx: SelectionContext) -> Game | None: ...
 
-```python
-from collections.abc import Iterable
-
-from puntueitor.models.game import Game
-
-
-class NameFilter:
-    def __init__(self, query: str):
-        self.query = query.lower().strip()
-
-    def apply(self, games: Iterable[Game]) -> Iterable[Game]:
-        return (
-            g for g in games
-            if self.query in g.title.lower()
-        )
-```
-
----
-
-## 🔍 filters/genre.py
-
-```python
-from collections.abc import Iterable
-
-from puntueitor.models.game import Game
-
-
-class GenreFilter:
-    def __init__(self, genres: set[str]):
-        self.genres = {g.lower() for g in genres}
-
-    def apply(self, games: Iterable[Game]) -> Iterable[Game]:
-        return (
-            g for g in games
-            if self.genres.intersection({x.lower() for x in g.genres})
-        )
-```
-
----
-
-## 🔍 filters/duration.py
-
-```python
-from collections.abc import Iterable
-
-from puntueitor.models.game import Game
-
-
-class DurationFilter:
-    def __init__(self, max_hours: float):
-        self.max_hours = max_hours
-
-    def apply(self, games: Iterable[Game]) -> Iterable[Game]:
-        return (
-            g for g in games
-            if g.duration_hours is not None and g.duration_hours <= self.max_hours
-        )
-```
-
----
-
-## ⭐ scoring/base.py
-
-```python
-from typing import Protocol
-
-from puntueitor.models.game import Game
-from puntueitor.models.selection_context import SelectionContext
-
-
-class ScoreStrategy(Protocol):
-    def score(self, game: Game, ctx: SelectionContext) -> float: ...
-```
-
----
-
-## ⭐ scoring/weighted_score.py
-
-```python
-from puntueitor.models.game import Game
-from puntueitor.models.selection_context import SelectionContext
-from puntueitor.scoring.base import ScoreStrategy
-
-
-def normalize(value: float, min_: float, max_: float) -> float:
-    if max_ <= min_:
-        return 0.0
-    return max(0.0, min(1.0, (value - min_) / (max_ - min_)))
-
-
-class WeightedScoreStrategy(ScoreStrategy):
-    def score(self, game: Game, ctx: SelectionContext) -> float:
-        score = 0.0
-        weight_sum = 0.0
-
-        if game.user_score is not None:
-            score += ctx.weight_user_score * normalize(game.user_score, 0, 100)
-            weight_sum += ctx.weight_user_score
-        else:
-            score -= ctx.missing_data_penalty
-
-        if game.critic_score is not None:
-            score += ctx.weight_critic_score * normalize(game.critic_score, 0, 100)
-            weight_sum += ctx.weight_critic_score
-        else:
-            score -= ctx.missing_data_penalty
-
-        if game.duration_hours is not None:
-            duration_score = 1 - normalize(game.duration_hours, 0, ctx.max_duration)
-            score += ctx.weight_duration * duration_score
-            weight_sum += ctx.weight_duration
-        else:
-            score -= ctx.missing_data_penalty
-
-        return score / weight_sum if weight_sum > 0 else 0.0
-```
-
----
-
-## 🧠 selector/score_selector.py
-
-```python
-from collections.abc import Sequence
-
-from puntueitor.models.game import Game
-from puntueitor.models.selection_context import SelectionContext
-from puntueitor.scoring.base import ScoreStrategy
-from puntueitor.selector.base_selector import BaseGameSelector
-
-
-class ScoreBasedSelector(BaseGameSelector):
-    def __init__(self, strategy: ScoreStrategy):
-        self.strategy = strategy
-
-    def select(self, games: Sequence[Game], ctx: SelectionContext) -> Sequence[Game]:
-        return sorted(
-            games,
-            key=lambda g: self.strategy.score(g, ctx),
-            reverse=True
-        )
-```
-
----
-
-## ✅ Resultado
-
-Con estos módulos ya puedes:
-
-```python
-library = GameLibrary(games)
-
-filtered = library.filter(
-    NameFilter("hollow"),
-    GenreFilter({"metroidvania"}),
-    DurationFilter(25),
-)
-
-selector = ScoreBasedSelector(WeightedScoreStrategy())
-
-ordered = selector.select(filtered.games, SelectionContext())
-```
-
-➡️ Arquitectura limpia, extensible y totalmente alineada con Puntueitor.
-
----
-
-# 🧩 Enrichers – GameEnricher y HLTB
-
-Este módulo define cómo **fuentes no canónicas** enriquecen un `Game` ya existente, sin crear identidad ni acoplar el dominio a APIs externas.
-
----
-
-## 🎯 Principios
-
-* Un `GameEnricher` **nunca crea** un `Game`
-* **Nunca falla**: si no hay datos, devuelve el juego original
-* Añade **atributos atómicos**, no submodelos
-* Es reemplazable y componible
-
----
-
-## 📁 Estructura
-
-```
-puntueitor/
-├─ enrichers/
-│  ├─ base.py
-│  └─ hltb.py
-│
-├─ raw/
-│  └─ howlongtobeat/
-│     └─ hltb_entry.py
-```
-
----
-
-## 🔌 enrichers/base.py
-
-```python
-from typing import Protocol
-
-from puntueitor.models.game import Game
-
-
+@runtime_checkable
 class GameEnricher(Protocol):
-    def enrich(self, game: Game) -> Game:
-        """
-        Enriches a Game with additional data.
-        Must never raise and must never create a new identity.
-        """
-        ...
+    """Complementa un juego existente. No debe fallar ni crear nuevas identidades."""
+    def enrich(self, game: Game) -> Game: ...
+
+class GameSorter(Protocol):
+    """Ordena una biblioteca de juegos."""
+    def sort(self, library: Library) -> Library: ...
 ```
 
 ---
 
-## 📦 raw/howlongtobeat/hltb_entry.py
+## 🔍 3. Implementaciones de Filtros (`core/filters/`)
 
-```python
-from dataclasses import dataclass
+Todos los filtros del sistema implementan `GameFilter` a nivel unitario (`matches`):
 
-
-@dataclass(slots=True)
-class HLTBEntry:
-    hltb_id: int
-    name: str
-    main_story: float | None
-    completionist: float | None
-    similarity: float  # 0–1
-```
-
----
-
-## ⏱ enrichers/hltb.py
-
-```python
-from dataclasses import replace
-
-from puntueitor.enrichers.base import GameEnricher
-from puntueitor.models.game import Game
-from puntueitor.raw.howlongtobeat.hltb_entry import HLTBEntry
-
-
-class HLTBClient:
-    """
-    Thin wrapper over howlongtobeat API / library.
-    Returns raw HLTBEntry objects.
-    """
-
-    def search(self, title: str) -> HLTBEntry | None:
-        raise NotImplementedError
-
-
-class HLTBEnricher(GameEnricher):
-    def __init__(self, client: HLTBClient, min_similarity: float = 0.7):
-        self.client = client
-        self.min_similarity = min_similarity
-
-    def enrich(self, game: Game) -> Game:
-        try:
-            entry = self.client.search(game.title)
-        except Exception:
-            return game
-
-        if not entry:
-            return game
-
-        if entry.similarity < self.min_similarity:
-            return game
-
-        if entry.main_story is None:
-            return game
-
-        return replace(game, duration_hours=entry.main_story)
-```
+* **`NameFilter` (`name_filter.py`)**:
+  Realiza tres comprobaciones jerárquicas:
+  1. ¿El título normalizado de la query está dentro del título normalizado del juego?
+  2. ¿El título normalizado está dentro del título original (por si acaso)?
+  3. Si falla la subcadena, calcula un ratio tipográfico fuzzy (`core/models/util.py:similarity`) evaluando si supera el umbral configurable (por defecto `0.8`).
+* **`DurationFilter` (`duration_filter.py`)**:
+  Retorna `True` si la duración estimada del juego es menor o igual al límite. Si el juego carece de duración, se le permite pasar por defecto (`True`).
+* **`FinishedFilter` / `FavoriteFilter` / `BacklogFilter` / `HiddenFilter`**:
+  Comprueban directamente si el estado booleano de la clase de dominio `Game` coincide con el valor buscado.
 
 ---
 
-## 🔗 Composición de enrichers
+## ⭐ 4. Motor de Scoring y Selección (`core/scoring/` y `core/selector/`)
 
-```python
-class EnricherPipeline:
-    def __init__(self, *enrichers: GameEnricher):
-        self.enrichers = enrichers
+### Contextos en Producción
+El diseño conceptual inicial integraba la lógica de pesos de puntuación en `SelectionContext`. En producción se han separado dos responsabilidades críticas:
+1. **`SelectionContext` (`core/models/selection_context.py`)**: Lleva identificadores informativos de procedencia de red para desambiguar correlaciones (`steam_appid`, `epic_slug`, `gog_id`, `release_year`).
+2. **`ScoringContext` (`core/models/scoring_context.py`)**: Lleva los parámetros del algoritmo (horas de juego disponibles del usuario, géneros preferidos, géneros odiados, y umbrales de duración).
 
-    def enrich(self, game: Game) -> Game:
-        for enricher in self.enrichers:
-            game = enricher.enrich(game)
-        return game
-```
+### Estrategias de Scoring (`core/scoring/`)
+Todas las estrategias heredan del protocolo `GameScorer`:
+* **`MixedScore`**: Combina tres variables:
+  * Valoración de la crítica (normalizada $0.0 - 1.0$).
+  * Valoración de los usuarios (normalizada $0.0 - 1.0$).
+  * Duración ponderada mediante un decaimiento exponencial: $e^{-\frac{\text{duración}}{\text{escala}}}$.
+* **`WeightedScore`**: Ejecuta una colección configurable de sub-scorers y multiplica sus retornos por pesos definidos en la configuración de usuario.
+* **`AvailableTimeScorer`**: Puntúa de acuerdo a una ventana temporal libre:
+  * Si la duración es menor o igual a las horas disponibles, otorga una puntuación excelente priorizando los juegos que saquen mayor partido a la ventana.
+  * Si sobrepasa la ventana, aplica penalizaciones lineales proporcionales al exceso.
+* **`GenreScorer`**: Suma peso si el juego contiene géneros preferidos por el usuario, y resta drásticamente (`-1.0`) si incluye géneros marcados como intolerables (odiados).
 
----
-
-## ✅ Uso real
-
-```python
-pipeline = EnricherPipeline(
-    HLTBEnricher(hltb_client),
-)
-
-game = pipeline.enrich(game)
-```
+### Selectores y Desambiguación (`core/selector/`)
+* **`SteamSelector`**: Resuelve colisiones de múltiples candidatos devueltos por consultas generales de IGDB. Utiliza una fórmula híbrida que combina el score básico del juego con el grado de completitud de su ficha técnica (si dispone de carátula, sinopsis, horas y notas), eligiendo la ficha más rica.
+* **`HLTBSelector`**: Heurística para escoger el mejor match devuelto por la API de HowLongToBeat.
 
 ---
 
-## 🧠 Resultado arquitectónico
-
-* `Game` sigue siendo limpio
-* HLTB es intercambiable
-* Puedes añadir:
-
-  * Steam playtime enricher
-  * ManualDurationEnricher
-  * MetacriticEnricher
-
-Sin tocar el dominio.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-🔹 Resumen arquitectónico y flujo de tu proyecto
-
-1️⃣ Fuentes externas (Input)
-APIs externas
-├─ Steam → steampy
-├─ Epic → epicpy
-├─ GOG → gogpy
-├─ HLTB → hltbpy
-
-* Cada API devuelve datos crudos (raw)
-* Sin lógica de dominio, solo “fetch + parse”
-
-
-2️⃣ Resolución de identidad (Resolver)
-raw data
-   ↓
-resolvers/
-├─ steam_resolver.SteamIGDBResolver
-├─ epic_resolver.EpicIGDBResolver
-├─ gog_resolver.GogIGDBResolver
-└─ hltb_resolver.HLTBIGDBResolver
-
-* Convierte raw → lista de candidatos Game
-* Se comunica con IGDB (fuente canónica) si es necesario
-* Devuelve siempre list[Game] (posiblemente vacía)
-
-Contrato clave:
-resolve(context: SelectionContext, candidates: Sequence[Game]) -> Game | None
-
-
-3️⃣ Contexto de selección
-puntueitor/domain/context.py
-└─ SelectionContext
-
-* Representa los datos necesarios para decidir el mejor Game
-* Obligatorios: source, title
-* Opcionales: release_year, steam_appid, epic_slug, gog_id, etc.
-* Permite que el selector tenga información relevante para scoring / heurísticas
-
-
-4️⃣ Selección del mejor candidato (Selector)
-puntueitor/domain/selector.py
-├─ BaseGameSelector (abstracto)
-└─ SimpleSelector (implementación inicial)
-
-* Recibe: SelectionContext + list[Game]
-* Devuelve: Game | None
-* Separación de responsabilidades:
-    * Resolver → busca candidatos
-    * Selector → decide cuál es el “mejor”
-
-Futuro:
-* ScoreSelector → scoring más avanzado
-* DebugSelector → logs / validación
-* Extensible a nuevas heurísticas
-
-
-5️⃣ Modelo de dominio (Domain)
-puntueitor/domain/models.py
-└─ Game, HLTBGame, GameCollection
-
-* Representa estado limpio y consistente de un juego
-* Mapper: convierte datos crudos de IGDB → Game
-
-puntueitor/domain/mappers.py
-└─ map_igdb_to_game(raw) → Game
-
-
-6️⃣ Enriquecimiento (Enrichers)
-puntueitor/enrichers/hltb.py
-└─ HLTBIGDBEnricher
-
-* Añade metadatos extra a un Game existente
-* Ej: duración HLTB, críticas, reviews
-* No decide identidad, solo enriquece
-
-
-7️⃣ Pipelines (orquestación)
-puntueitor/pipelines/
-├─ add_igdb_results.py
-├─ enrich_with_hltb.py
-└─ ...otros futuros pipelines
-
-* Orquesta resolvers + selector + enrichers
-* Flujo típico:
-raw_data
-   ↓ resolve()  → [Game, Game, ...]
-   ↓ select(context) → Game
-   ↓ enrichers → Game (enriquecido)
-   ↓ collection.add(game)
-
-Pipelines son funciones puras de orquestación, sin lógica de negocio propia
-
-
-8️⃣ Flujo completo (resumido en mapa visual)
-┌───────────────┐
-│ APIs externas │
-│ Steam/Epic/...│
-└───────┬───────┘
-        │ raw data
-        ▼
-┌───────────────┐
-│   Resolver    │
-│ Steam/Epic/...│
-└───────┬───────┘
-        │ candidates [Game, Game, ...]
-        ▼
-┌───────────────┐
-│   Selector    │
-│ (contextual)  │
-└───────┬───────┘
-        │ Game
-        ▼
-┌───────────────┐
-│  Enrichers    │
-│  HLTB, etc.   │
-└───────┬───────┘
-        │ Game enriquecido
-        ▼
-┌───────────────┐
-│  Collection   │
-│ GameCollection│
-└───────────────┘
-
-┌────────────────────────────────────────────────────┐
-│ -> IGDB funciona como fuente canónica interna      │
-│ -> Todo pasa por modelo limpio (Game)              │
-│ -> Selector y enrichers no hacen I/O → dominio puro│
-│ -> Pipelines solo orquestan                        │
-└────────────────────────────────────────────────────┘
-
-
-9️⃣ Nombres clave y módulos
-Concepto	        Módulo/fichero	            Rol
-─────────────────────────────────────────────────────────────────────────
-Resolver	        resolvers/steam.py, etc.	Raw → candidatos Game
-Contexto	        domain/context.py	        Info necesaria para seleccionar
-Selector	        domain/selector.py	        Elegir mejor Game
-Modelo	            domain/models.py	        Estado limpio Game/HLTBGame
-Mapper	            domain/mappers.py	        Transformar raw IGDB → Game
-Enricher	        enrichers/hltb.py	        Añadir metadatos extra
-Pipeline	        pipelines/*.py	            Orquestar todo
-
-
-
-🔹 Observaciones finales
-* La arquitectura no cambia, solo mejoras de flujo:
-    * Ahora el selector usa contexto
-    * Resolver → candidates
-    * Selector → decisión
-    * Enrichers → metadatos
-    * Pipelines → orquestación
-* Todo está tipado y limpio
-* Fácil de testear: puedes mockear resolvers y selector por separado
+## 🗄️ 5. Arquitectura de Datos Separada (`core/cachers/` y `core/repository/`)
+
+El diseño inicial de `LEEME.txt` ignoraba las colisiones entre datos globales y locales. En producción, la **Capa de Persistencia** sigue una separación estricta para cumplir con la arquitectura offline-first:
+
+```text
+                                  ┌───────────────────────────┐
+                                  │   ~/.cache/puntueitor/    │
+                                  │       puntueitor.db       │
+                                  └─────────────┬─────────────┘
+                                                │
+                               ┌────────────────┼────────────────┐
+                               ▼                ▼                ▼
+                        ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+                        │    games    │  │  resolvers  │  │   extras    │
+                        │ (Canónicos) │  │(Resolución) │  │   (HLTB)    │
+                        └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+                               │                │                │
+                               └────────┐       │       ┌────────┘
+                                        ▼       ▼       ▼
+                                ┌──────────────────────────┐
+                                │    LibraryRepository     │ <─── [Hidrata en memoria]
+                                └───────────▲──────────────┘
+                                            │
+                               ┌────────────┴────────────┐
+                               │  ~/.config/puntueitor/  │
+                               │     library.sqlite      │
+                               │ (Estados: terminado...) │
+                               └─────────────────────────┘
+```
+
+1. **`puntueitor.db`**: SQLite global que centraliza información pesada inmutable.
+   * `games` (`IGDBCacher`): Respuestas JSON nativas de IGDB.
+   * `resolvers` (`ResolversCacher`): Tabla relacional que correlaciona `(store_name, store_game_id)` $\to$ `igdb_id`.
+   * `extras` (`ExtrasCacher`): Duraciones estimadas agregadas (HLTB).
+   * `desconocidos` (`DesconocidosCacher`): Registro de IDs externos que no existen en IGDB para evitar búsquedas repetitivas de red en el inicio.
+2. **`library.sqlite`** (`LibraryCacher`):
+   * Guarda únicamente las columnas editables del usuario (`finished`, `hidden`, `backlog`, `favorite`) indexadas por el `igdb_id` canónico.
+3. **`LibraryRepository.load()`**:
+   * Lee la tabla relacional de resolvers activos.
+   * Carga las especificaciones de juego correspondientes desde la caché global de IGDB.
+   * Inyecta las duraciones estimadas desde la caché de extras HLTB.
+   * Consulta las banderas de usuario en la base de datos de configuración local.
+   * Instancia e hidrata de forma limpia la colección inmutable `Library`.
+
+---
+
+## 🔄 6. Pipelines y Carga Concurrente (`core/pipeline/`)
+
+Las pipelines actúan como casos de uso u orquestadores puros sin estado, encargados de coordinar componentes.
+
+* **`load_library` (`load_steam_library.py`)**:
+  Orquesta la carga general de juegos a través de un pool de hilos de ejecución concurrentes (`ThreadPoolExecutor`):
+  1. Detecta plataformas activas en la configuración.
+  2. Lanza de forma asíncrona la descarga de juegos en propiedad de Steam (mediante `steampy`) y lee las bases de datos de Heroic Games Launcher para Epic, GOG y Amazon.
+  3. Ejecuta la resolución de identidades a través de los `Resolvers` e invoca al `Selector` para filtrar candidatos falsos.
+  4. Envía de forma paralela peticiones al cliente HowLongToBeat para actualizar estimaciones de juego, alimentando la interfaz en tiempo real mediante callbacks de progreso.
+* **`EnrichmentPipeline`**: Aplica de manera segura una lista de `GameEnricher` secuenciales sobre los elementos de una biblioteca.
+
+---
+
+## 🔌 7. Submódulo de API de Steam (`steampy/`)
+
+Ubicado de forma independiente del núcleo de negocio, actúa como cliente HTTP puro para la plataforma de Valve.
+* **Rate Limiting**: Utiliza un búfer temporal (`threading.Lock` y ventanas de tiempo basado en `time.monotonic()`) para evitar sobrepasar los límites de llamadas de la Steam Web API.
+* **Caché Relacional**: Almacena las respuestas de la lista de juegos del usuario (`owned_games`) directamente en `cache/{steam_id}.sqlite` para mitigar el consumo de red en arranques consecutivos.
+
+---
+
+## 🚀 Resumen de Diferencias: Diseño Conceptual vs Implementación Real
+
+| Concepto / Componente | Propuesta en Fase Temprana (`arquitectura.md`/`LEEME.txt`) | Implementación de Producción de Alta Cohesión |
+| :--- | :--- | :--- |
+| **Ubicación del Core** | Módulos planos en la raíz (`puntueitor/models/`, `puntueitor/filters/`) | Encapsulado bajo el módulo coherente `puntueitor/core/` |
+| **Entidad `Game`** | Usaba `id: str` e ignoraba los estados mutables de interacción. | Identidad en `igdb_id: int` canónico, con persistencia aislada de estados del usuario. |
+| **Clase `Library`** | Llamada `GameLibrary`, con lógica interna de filtrado mutable. | `Library` es una `dataclass` inmutable con `tuple[Game]`. Las operaciones se delegan. |
+| **Contrato de Filtros** | Método pesado por lotes `apply(self, games: Iterable[Game])`. | Protocolo unitario `matches(self, game: Game) -> bool` ideal para composición AND/OR. |
+| **Contrato de Scoring** | Método `score(self, game, SelectionContext)` | Protocolo puro `score(self, game, ScoringContext)` desacoplado de IDs de selección. |
+| **Separación de Datos** | Sin estrategia de persistencia (se mezclaban campos locales y externos). | "Golden Rule": Datos de red en base de datos global; estados de usuario en SQLite local. |
+| **Carga de Datos** | Secuencial síncrona en pipelines planos. | Asíncrona con pool de hilos (`ThreadPoolExecutor`) y callbacks dinámicos de progreso. |
