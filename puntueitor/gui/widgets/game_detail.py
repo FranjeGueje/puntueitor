@@ -17,6 +17,8 @@ class GameDetail(VerticalScroll):
         critic_score = f"{game.critic_score:.0f}/100" if game.critic_score is not None else "N/A"
         storyline = game.storyline if game.storyline else "Sin descripción disponible."
         stores_list = ", ".join(game.stores.keys()) if game.stores else "Ninguna"
+        release = game.release_date.strftime("%d/%m/%Y") if game.release_date else "N/A"
+        cover = f"[{game.cover_url}]({game.cover_url})" if game.cover_url else "N/A"
 
         content = f"""# {game.title}
 
@@ -29,6 +31,10 @@ class GameDetail(VerticalScroll):
 **Puntuación Crítica:** {critic_score}
 
 **Tiendas:** {stores_list}
+
+**Lanzamiento:** {release}
+
+**Carátula:** {cover}
 
 ---
 
