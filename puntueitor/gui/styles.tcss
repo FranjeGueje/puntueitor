@@ -164,6 +164,16 @@ GameOptionsScreen {
     margin: 1 2;
 }
 
+#yes {
+    background: $error;
+    color: black;
+}
+
+#no {
+    background: black;
+    color: $text;
+}
+
 #library-count {
     dock: right;
     padding: 0 2;

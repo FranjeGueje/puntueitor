@@ -1,9 +1,8 @@
 from puntueitor.core.protocols import GameScorer
 from puntueitor.core.models import Game, ScoringContext
+from puntueitor.core.scoring.helpers import score_or_steam
 
 
 class CriticScoreScorer(GameScorer):
     def score(self, game: Game, ctx: ScoringContext) -> float:
-        if game.critic_score is None:
-            return 0.0
-        return game.critic_score / 100.0
+        return score_or_steam(game.critic_score, game.steam_score)

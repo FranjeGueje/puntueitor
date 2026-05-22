@@ -2,6 +2,7 @@ import math
 
 from puntueitor.core.protocols import GameScorer
 from puntueitor.core.models import Game, ScoringContext
+from puntueitor.core.scoring.helpers import score_or_steam
 
 
 class MixedScore(GameScorer):
@@ -19,12 +20,10 @@ class MixedScore(GameScorer):
         self.weight_duration = weight_duration
 
     def score(self, game: Game, ctx: ScoringContext) -> float:
-        # Normalizamos a 0-1 (IGDB usa 0-100)
-        critics = (game.critic_score or 0.0) / 100.0
-        users = (game.user_score or 0.0) / 100.0
+        critics = score_or_steam(game.critic_score, game.steam_score)
+        users = score_or_steam(game.user_score, game.steam_score)
 
         if game.duration_hours is not None:
-            # math.exp(-x) ya está en el rango (0, 1]
             duration_norm = math.exp(-game.duration_hours / ctx.duration_scale)
         else:
             duration_norm = ctx.neutral_duration_score

@@ -12,8 +12,8 @@ class QuitConfirmation(ModalScreen[bool]):
                 with Vertical(id="quit-dialog"):
                     yield Label("¿Deseas salir de Puntueitor?", id="quit-message")
                     with Horizontal(id="quit-buttons"):
-                        yield Button("Sí", variant="error", id="yes")
-                        yield Button("No", variant="primary", id="no")
+                        yield Button("Sí", id="yes")
+                        yield Button("No", id="no")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "yes":

@@ -1,6 +1,7 @@
 from textual.widgets import DataTable, Static
 from textual.containers import Vertical
 from textual.message import Message
+from textual.content import Text
 from textual import on
 
 from puntueitor.core.models import Library, Game
@@ -85,7 +86,12 @@ class GameList(Vertical):
             self.games_map[row_key] = game
 
             # Formatear métricas
-            u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
+            if game.user_score is not None and game.user_score > 0:
+                u = f"{game.user_score:.0f}"
+            elif game.steam_score is not None and game.steam_score > 0:
+                u = Text(f"{game.steam_score:.0f}", style="white on red")
+            else:
+                u = "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
             d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
 
@@ -142,6 +148,18 @@ class GameList(Vertical):
         table = self.query_one(DataTable)
         duration_str = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
         
+        if game.user_score is not None and game.user_score > 0:
+            u = f"{game.user_score:.0f}"
+        elif game.steam_score is not None and game.steam_score > 0:
+            u = Text(f"{game.steam_score:.0f}", style="white on red")
+        else:
+            u = "--"
+
+        try:
+            table.update_cell(row_key, "user", u)
+        except Exception:
+            table.update_cell(row_key, 1, u)
+
         try:
             table.update_cell(row_key, "duration", duration_str)
         except Exception:
@@ -159,7 +177,12 @@ class GameList(Vertical):
         row_key = str(game.igdb_id)
         self.games_map[row_key] = game
         
-        u = f"{game.user_score:.0f}" if game.user_score is not None else "--"
+        if game.user_score is not None and game.user_score > 0:
+            u = f"{game.user_score:.0f}"
+        elif game.steam_score is not None and game.steam_score > 0:
+            u = Text(f"{game.steam_score:.0f}", style="white on red")
+        else:
+            u = "--"
         c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
         d = f"{game.duration_hours:.0f}h" if game.duration_hours is not None else "--"
         
