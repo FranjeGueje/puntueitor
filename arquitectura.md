@@ -69,6 +69,8 @@ class Game:
     critic_score: float | None = None    # 0–100 (IGDB Aggregated Rating)
     user_score: float | None = None      # 0–100 (IGDB Rating)
     duration_hours: float | None = None  # Enriquecido desde HLTB u otros cachers
+    steam_score: float | None = None     # 0–100 (Enriquecido desde reseñas de Steam)
+    steam_review: int | None = None      # 0-9 (Categoría de review en Steam)
 
     stores: StoreMap = field(default_factory=dict) # Enlaces con IDs en tiendas
 
@@ -174,10 +176,10 @@ El diseño conceptual inicial integraba la lógica de pesos de puntuación en `S
 ### Estrategias de Scoring (`core/scoring/`)
 Todas las estrategias heredan del protocolo `GameScorer`:
 * **`MixedScore`**: Combina tres variables:
-  * Valoración de la crítica (normalizada $0.0 - 1.0$).
-  * Valoración de los usuarios (normalizada $0.0 - 1.0$).
+  * Valoración de la crítica (normalizada $0.0 - 1.0$ usando fallback a `steam_score` si no hay IGDB).
+  * Valoración de los usuarios (normalizada $0.0 - 1.0$ usando fallback a `steam_score` si no hay IGDB).
   * Duración ponderada mediante un decaimiento exponencial: $e^{-\frac{\text{duración}}{\text{escala}}}$.
-* **`WeightedScore`**: Ejecuta una colección configurable de sub-scorers y multiplica sus retornos por pesos definidos en la configuración de usuario.
+* **`WeightedScore`**: Ejecuta una colección configurable de sub-scorers (`CriticScoreScorer`, `UserScoreScorer`, `DurationScoreScorer` todos con soporte para fallback a Steam a través de la función utilitaria `score_or_steam` de `helpers.py`) y multiplica sus retornos por pesos definidos en la configuración de usuario.
 * **`AvailableTimeScorer`**: Puntúa de acuerdo a una ventana temporal libre:
   * Si la duración es menor o igual a las horas disponibles, otorga una puntuación excelente priorizando los juegos que saquen mayor partido a la ventana.
   * Si sobrepasa la ventana, aplica penalizaciones lineales proporcionales al exceso.
@@ -220,16 +222,16 @@ El diseño inicial de `LEEME.txt` ignoraba las colisiones entre datos globales y
 ```
 
 1. **`puntueitor.db`**: SQLite global que centraliza información pesada inmutable.
-   * `games` (`IGDBCacher`): Respuestas JSON nativas de IGDB.
+   * `games` (`IGDBCacher`): Respuestas JSON nativas de IGDB. Incluye soporte para el almacenamiento persistente de `steam_id` mapeado a partir de la API de IGDB.
    * `resolvers` (`ResolversCacher`): Tabla relacional que correlaciona `(store_name, store_game_id)` $\to$ `igdb_id`.
-   * `extras` (`ExtrasCacher`): Duraciones estimadas agregadas (HLTB).
+   * `extras` (`ExtrasCacher`): Duraciones estimadas de juego (HLTB) y valoraciones de Steam (`steam_score`, `steam_review`).
    * `desconocidos` (`DesconocidosCacher`): Registro de IDs externos que no existen en IGDB para evitar búsquedas repetitivas de red en el inicio.
 2. **`library.sqlite`** (`LibraryCacher`):
    * Guarda únicamente las columnas editables del usuario (`finished`, `hidden`, `backlog`, `favorite`) indexadas por el `igdb_id` canónico.
 3. **`LibraryRepository.load()`**:
    * Lee la tabla relacional de resolvers activos.
    * Carga las especificaciones de juego correspondientes desde la caché global de IGDB.
-   * Inyecta las duraciones estimadas desde la caché de extras HLTB.
+   * Inyecta las duraciones estimadas e información de reseñas de Steam desde la caché de extras.
    * Consulta las banderas de usuario en la base de datos de configuración local.
    * Instancia e hidrata de forma limpia la colección inmutable `Library`.
 
@@ -244,7 +246,7 @@ Las pipelines actúan como casos de uso u orquestadores puros sin estado, encarg
   1. Detecta plataformas activas en la configuración.
   2. Lanza de forma asíncrona la descarga de juegos en propiedad de Steam (mediante `steampy`) y lee las bases de datos de Heroic Games Launcher para Epic, GOG y Amazon.
   3. Ejecuta la resolución de identidades a través de los `Resolvers` e invoca al `Selector` para filtrar candidatos falsos.
-  4. Envía de forma paralela peticiones al cliente HowLongToBeat para actualizar estimaciones de juego, alimentando la interfaz en tiempo real mediante callbacks de progreso.
+  4. Envía de forma paralela peticiones a los enriquecedores activos (como el de HowLongToBeat y el de Steam Reviews **`SteamScoreEnricher`** en background) para actualizar estimaciones y notas de juego, alimentando la interfaz en tiempo real mediante callbacks de progreso y cargando instantáneamente desde el caché local `extras` si los datos ya residen allí.
 * **`EnrichmentPipeline`**: Aplica de manera segura una lista de `GameEnricher` secuenciales sobre los elementos de una biblioteca.
 
 ---

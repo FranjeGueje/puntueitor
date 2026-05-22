@@ -90,7 +90,7 @@ puntueitor/core/
 ### 3.1. core/models: Modelos de Dominio
 Define la ontología y las estructuras de datos principales del sistema. Están implementados mediante `dataclasses` con optimizaciones de memoria (`slots=True`).
 
-* **`Game` (`game.py`)**: Representa la entidad central. Almacena la identidad canónica (`igdb_id`), la humana (`title`, `title_normalized`), metadatos del dominio (`genres`, `storyline`, `release_date`, `cover_url`), métricas atómicas (`critic_score`, `user_score`, `duration_hours`), mapeos con tiendas (`stores`: `StoreMap`) y estados del usuario (`finished`, `hidden`, `backlog`, `favorite`).
+* **`Game` (`game.py`)**: Representa la entidad central. Almacena la identidad canónica (`igdb_id`), la humana (`title`, `title_normalized`), metadatos del dominio (`genres`, `storyline`, `release_date`, `cover_url`), métricas atómicas (`critic_score`, `user_score`, `duration_hours`, y los nuevos campos de comunidad **`steam_score`** y **`steam_review`**), mapeos con tiendas (`stores`: `StoreMap`) y estados del usuario (`finished`, `hidden`, `backlog`, `favorite`).
   * *Comportamiento*: Al crearse (en `__post_init__`), normaliza automáticamente el título para realizar comparaciones seguras. Permite exportarse e importarse mediante diccionarios (`to_dict` y `from_dict`) para serialización simple.
 * **`Library` (`library.py`)**: Contenedor inmutable que actúa como colección de objetos `Game`. Implementa interfaces de secuencia estándar de Python (`__iter__`, `__len__`, `contains_igdb_id`).
 * **`ScoredGame` (`scored_game.py`)**: Objeto valor que asocia un juego (`Game`) con una calificación flotante calculada en un contexto específico (`score`).
@@ -133,9 +133,9 @@ class GameSorter(Protocol):
 ### 3.4. core/cachers: Sistema de Caching Relacional y Separado
 Módulo de almacenamiento que evita llamadas redundantes a APIs de terceros, garantizando que Puntueitor pueda cargarse y ejecutarse completamente sin conexión a internet si la base de datos local está populada.
 
-* **`IGDBCacher` (`igdb_cacher.py`)**: Gestiona la tabla `games` de SQLite. Almacena las respuestas JSON crudas indexadas por `igdb_id`.
+* **`IGDBCacher` (`igdb_cacher.py`)**: Gestiona la tabla `games` de SQLite. Almacena las respuestas JSON crudas indexadas por `igdb_id` e incluye la columna **`steam_id`** (extraído y cacheado desde el objeto `external_games` de IGDB).
 * **`ResolversCacher` (`resolvers_cacher.py`)**: Mantiene la tabla relacional de correlación `resolvers`. Conecta de forma n-a-n juegos de tiendas externas (`store_name`, `store_game_id`) con su correspondiente identidad unificada en `igdb_id`.
-* **`ExtrasCacher` (`extras_cacher.py`)**: Guarda información adicional no provista por IGDB (como horas de juego calculadas por HowLongToBeat) en la tabla `extras`.
+* **`ExtrasCacher` (`extras_cacher.py`)**: Guarda información adicional no provista por IGDB (como horas de juego calculadas por HowLongToBeat, y los nuevos campos **`steam_score`** y **`steam_review`**) en la tabla `extras` usando combinación selectiva mediante `COALESCE`.
 * **`DesconocidosCacher` (`desconocidos_cacher.py`)**: Cachea asignaciones fallidas bajo la tabla `desconocidos`. Si un juego no tiene correlación en IGDB, se registra aquí para no ralentizar futuras cargas repitiendo la búsqueda externa.
 * **`SteamUserCacher` (`steam_user_cacher.py`)**: Gestiona la caché SQLite de la librería particular de un usuario de Steam (`cache/{steam_id}.sqlite`), manteniendo la lista de juegos comprados y sus tiempos de juego individuales.
 * **`LibraryCacher` (`library_cacher.py`)**: Persiste los campos editables por el usuario (favorito, terminado, backlog, oculto) de forma aislada en `~/.config/puntueitor/library.sqlite`.
@@ -184,9 +184,12 @@ Módulo de lógica condicional que implementa el protocolo `GameFilter`. Se util
 ### 3.8. core/scoring: Motores de Recomendación y Puntuación
 Este módulo calcula el valor matemático numérico de cuán "recomendable" es un juego en base a las preferencias actuales del jugador. Todos los componentes implementan `GameScorer` devolviendo valores en el rango `[0.0, 1.0]` o coeficientes de penalización.
 
+#### Módulos de Utilidad
+* **`helpers.py`**: Proporciona la función `score_or_steam(value, steam_value)`. Si la valoración principal (de IGDB) está ausente o es igual a cero, automáticamente realiza fallback a la puntuación del juego en Steam (`steam_score`).
+
 #### Algoritmos Atómicos
-* **`CriticScoreScorer` / `UserScoreScorer`**: Normalizan las valoraciones críticas y de comunidad de la escala `0-100` a `0.0-1.0`.
-* **`BasicScoreScorer`**: Calcula la media simple entre la nota de la crítica y la nota de los usuarios. Tolera datos parciales (si falta una, utiliza la otra como nota única).
+* **`CriticScoreScorer` / `UserScoreScorer`**: Normalizan las valoraciones críticas y de comunidad de la escala `0-100` a `0.0-1.0`. Ambos hacen uso de `score_or_steam` para garantizar que, si no hay datos de IGDB, se utilicen las reseñas de Steam.
+* **`BasicScoreScorer`**: Calcula la media simple entre la nota de la crítica y la nota de los usuarios. Tolera datos parciales utilizando el valor alternativo o realizando fallback a las valoraciones de Steam para ambos componentes.
 * **`DurationScoreScorer`**: Puntúa según la duración comparada con los ideales del usuario:
   * Si la duración está por debajo del *tiempo ideal*, devuelve `1.0`.
   * Si supera la *duración máxima*, devuelve `0.0`.
@@ -201,7 +204,7 @@ Este módulo calcula el valor matemático numérico de cuán "recomendable" es u
   * Si excede las horas disponibles, calcula un ratio de penalización excedente limitado, restando valor al juego de forma exponencial o lineal.
 * **`MixedScore`**: Combina de forma equilibrada tres vectores: la nota agregada de prensa, de usuarios y un cálculo exponencial de duración:
   $$\text{duration\_norm} = e^{-\frac{\text{duración}}{\text{escala}}}$$
-  Permite priorizar juegos con valoraciones excelentes y duraciones compactas.
+  Usa `score_or_steam` para la prensa y los usuarios, integrando las reseñas de Steam en la fórmula combinada. Permite priorizar juegos con valoraciones excelentes y duraciones compactas.
 
 ---
 
@@ -232,7 +235,7 @@ Cuando un resolver busca en IGDB un título, a menudo recibe múltiples variante
 ### 3.13. core/pipeline: Orquestación del Flujo
 Módulos de alto nivel para procesar la información de forma concurrente, optimizando el rendimiento de la aplicación en colecciones masivas de juegos (de más de 1000 títulos).
 
-* **`enrichment_pipeline.py`**: Aplica en cadena una secuencia de `GameEnricher` (como llamadas concurrentes a HowLongToBeat) a una colección de juegos.
+* **`enrichment_pipeline.py`**: Aplica en cadena una secuencia de `GameEnricher` (llamadas concurrentes a HowLongToBeat y a Steam Reviews) a una colección de juegos.
 * **`filter_library.py`**: Proporciona utilidades para encadenar múltiples filtros lógicos con operadores lógicos AND / OR sobre una librería.
 * **`scoring_ops.py`**: Asigna calificaciones en masa y devuelve la biblioteca ordenada según las prioridades del usuario.
 * **`load_steam_library.py`**: **El motor de carga asíncrono principal**. Realiza las siguientes tareas de forma optimizada:
@@ -240,7 +243,7 @@ Módulos de alto nivel para procesar la información de forma concurrente, optim
   * Lee secuencialmente las bibliotecas activas en la configuración (Steam API, GOG, Epic, Amazon de Heroic).
   * Lanza callbacks de progreso en tiempo real para mantener informada la interfaz del usuario.
   * Resuelve y desambigua los juegos concurrentemente.
-  * Aplica enriquecedores en segundo plano para evitar bloquear el hilo principal durante peticiones web y actualiza los metadatos dinámicamente mediante callbacks de enriquecimiento.
+  * Aplica enriquecedores en segundo plano (como **`HLTBEnricher`** y el nuevo **`SteamScoreEnricher`**) para evitar bloquear el hilo principal durante peticiones web y actualiza los metadatos dinámicamente mediante callbacks de enriquecimiento (restando latencia de red al cargar y mapear `steam_score` y `steam_review` desde la base de datos local `extras` si ya están en caché).
 
 ---
 
@@ -294,6 +297,11 @@ Si te unes al equipo de Puntueitor, aquí tienes plantillas sencillas para añad
 1. Crea una clase que implemente el protocolo `GameScorer` en la carpeta [scoring/atomic/](file:///home/deck/Proyectos/puntueitor/puntueitor/core/scoring/atomic/) (o en `scoring/` si es compuesta).
 2. Implementa el método `score(self, game: Game, ctx: ScoringContext) -> float`, asegurando devolver un valor decimal normalizado.
 3. Registra tu nueva clase en el método `_get_scorer` de [library_service.py](file:///home/deck/Proyectos/puntueitor/puntueitor/core/services/library_service.py) para que la interfaz gráfica pueda invocarla de inmediato.
+
+### 3. ¿Cómo añadir un nuevo Enriquecedor (GameEnricher)?
+1. Crea una clase que implemente la interfaz `GameEnricher` en la carpeta [enrichers/](file:///home/deck/Proyectos/puntueitor/puntueitor/core/enrichers/) (ej. el nuevo **`SteamScoreEnricher`** en `steam_score_enricher.py`).
+2. Implementa el método `enrich(self, game: Game) -> Game` que retorna una versión enriquecida del juego (puedes apoyarte en `dataclasses.replace`).
+3. Instancia tu enriquecedor e incorpóralo en la lista de enriquecedores en [load_steam_library.py](file:///home/deck/Proyectos/puntueitor/puntueitor/core/pipeline/load_steam_library.py) para que forme parte del hilo asíncrono de enriquecimiento de carga de biblioteca.
 
 ---
 
