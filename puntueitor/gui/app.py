@@ -684,9 +684,10 @@ class PuntueitorApp(App):
         try:
             if refresh:
                 cache_dir = Path.home() / ".cache" / "puntueitor"
-                for db_file in cache_dir.glob("*.sqlite"):
-                    try: os.remove(db_file)
-                    except: pass
+                try:
+                    os.remove(cache_dir / "puntueitor.db")
+                except OSError:
+                    pass
 
             from puntueitor.core.igdb.service import IGDBService
             from puntueitor.core.pipeline.load_steam_library import load_library

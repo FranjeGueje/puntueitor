@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class IGDBService:
     TOKEN_PATH = Path.home() / ".cache" / "puntueitor" / "igdb_token.json"
-    FIELDS = "fields name,genres.name,aggregated_rating,cover.url,rating,storyline,first_release_date,total_rating; "
+    FIELDS = "fields name,genres.name,aggregated_rating,cover.url,rating,storyline,first_release_date,total_rating,external_games.uid,external_games.external_game_source; "
     MAX_RETRIES = 2
     INITIAL_DELAY = 0.3
     RETRYABLE_ERRORS = ("timeout", "connection", "reset", "refused", "temporary", "503", "429", "502", "504")

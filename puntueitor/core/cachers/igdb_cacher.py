@@ -32,10 +32,16 @@ class IGDBCacher:
                     name TEXT,
                     rating REAL,
                     storyline TEXT,
-                    total_rating REAL
+                    total_rating REAL,
+                    steam_id INTEGER DEFAULT 0
                 )
             """)
             conn.commit()
+            try:
+                conn.execute("ALTER TABLE games ADD COLUMN steam_id INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
 
     def get_game(self, igdb_id: int) -> dict | None:
         if not self._available:
@@ -63,6 +69,15 @@ class IGDBCacher:
         if not self._available:
             return
         try:
+            steam_id = 0
+            for eg in game_dict.get("external_games", []):
+                if isinstance(eg, dict) and eg.get("external_game_source") == 1:
+                    try:
+                        steam_id = int(eg["uid"])
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
             with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
                 data = {
                     "id": game_dict.get("id"),
@@ -73,16 +88,17 @@ class IGDBCacher:
                     "name": game_dict.get("name"),
                     "rating": game_dict.get("rating"),
                     "storyline": game_dict.get("storyline"),
-                    "total_rating": game_dict.get("total_rating")
+                    "total_rating": game_dict.get("total_rating"),
+                    "steam_id": steam_id,
                 }
 
                 conn.execute("""
                     INSERT INTO games (
                         id, aggregated_rating, cover, first_release_date,
-                        genres, name, rating, storyline, total_rating
+                        genres, name, rating, storyline, total_rating, steam_id
                     ) VALUES (
                         :id, :aggregated_rating, :cover, :first_release_date,
-                        :genres, :name, :rating, :storyline, :total_rating
+                        :genres, :name, :rating, :storyline, :total_rating, :steam_id
                     )
                     ON CONFLICT(id) DO UPDATE SET
                         aggregated_rating=excluded.aggregated_rating,
@@ -92,7 +108,8 @@ class IGDBCacher:
                         name=excluded.name,
                         rating=excluded.rating,
                         storyline=excluded.storyline,
-                        total_rating=excluded.total_rating
+                        total_rating=excluded.total_rating,
+                        steam_id=excluded.steam_id
                 """, data)
                 conn.commit()
         except Exception as e:
