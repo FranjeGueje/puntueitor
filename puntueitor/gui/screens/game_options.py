@@ -4,9 +4,14 @@ from textual.containers import Vertical, Horizontal, Center, Middle
 from textual.widgets import Label, Checkbox, Button
 
 from puntueitor.core.models import Game
+from puntueitor.gui.screens.delete_confirmation import DeleteConfirmationScreen
 
 
 class GameOptionsScreen(ModalScreen[dict | None]):
+
+    BINDINGS = [
+        ("escape", "close_screen", "Salir"),
+    ]
 
     def __init__(self, game: Game):
         super().__init__()
@@ -25,7 +30,10 @@ class GameOptionsScreen(ModalScreen[dict | None]):
                         yield Button("Guardar", variant="primary", id="save")
                         yield Button("Enriquecer", variant="success", id="enrich")
                         yield Button("Cancelar", variant="default", id="cancel")
-                        yield Button("Eliminar", variant="error", id="delete")
+                        yield Button("Desconocer", variant="error", id="delete")
+
+    def action_close_screen(self) -> None:
+        self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":
@@ -38,6 +46,9 @@ class GameOptionsScreen(ModalScreen[dict | None]):
         elif event.button.id == "enrich":
             self.dismiss({"__enrich__": True})
         elif event.button.id == "delete":
-            self.dismiss({"__delete__": True})
+            def on_delete_confirm(confirmed: bool) -> None:
+                if confirmed:
+                    self.dismiss({"__delete__": True})
+            self.app.push_screen(DeleteConfirmationScreen(), on_delete_confirm)
         else:
             self.dismiss(None)
