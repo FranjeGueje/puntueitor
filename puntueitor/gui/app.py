@@ -151,14 +151,16 @@ class PuntueitorApp(App):
             try:
                 from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
                 from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-                resolver = HLTBResolver()
-                enricher = HLTBEnricher(client=resolver, overwrite=True)
-                enriched = enricher.enrich(game)
-                if enriched.duration_hours is not None:
+                from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
+                hltb_resolver = HLTBResolver()
+                hltb = HLTBEnricher(client=hltb_resolver, overwrite=True)
+                steam = SteamScoreEnricher(overwrite=True, igdb_cacher=self.repo.igdb_cacher)
+                enriched = steam.enrich(hltb.enrich(game))
+                if enriched.duration_hours is not None or enriched.steam_score is not None or enriched.steam_review is not None:
                     self.repo.save_game(enriched)
                     self.call_from_thread(self._on_single_enriched, enriched)
                 else:
-                    self.call_from_thread(self.notify, f"No se encontró duración para {game.title}", severity="warning")
+                    self.call_from_thread(self.notify, f"No se encontraron datos para {game.title}", severity="warning")
             except Exception as e:
                 self.call_from_thread(self.notify, f"Error enriqueciendo: {e}", severity="error")
         self.notify(f"Enriqueciendo {game.title}...")
@@ -291,10 +293,12 @@ class PuntueitorApp(App):
         try:
             from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
             from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-            resolver = HLTBResolver()
-            enricher = HLTBEnricher(client=resolver)
-            enriched = enricher.enrich(game)
-            if enriched.duration_hours is not None:
+            from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
+            hltb_resolver = HLTBResolver()
+            hltb = HLTBEnricher(client=hltb_resolver)
+            steam = SteamScoreEnricher(igdb_cacher=self.repo.igdb_cacher)
+            enriched = steam.enrich(hltb.enrich(game))
+            if enriched.duration_hours is not None or enriched.steam_score is not None:
                 game = enriched
                 self.repo.save_game(game)
         except Exception:
@@ -546,10 +550,12 @@ class PuntueitorApp(App):
         try:
             from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
             from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-            
-            resolver = HLTBResolver()
-            enricher = HLTBEnricher(client=resolver)
-            
+            from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
+
+            hltb_resolver = HLTBResolver()
+            hltb = HLTBEnricher(client=hltb_resolver)
+            steam = SteamScoreEnricher(igdb_cacher=self.repo.igdb_cacher)
+
             games = list(self.full_library.games)
             total = len(games)
             self._call_from_thread_safe(self._setup_progress, total)
@@ -558,11 +564,11 @@ class PuntueitorApp(App):
                 if not self.is_enriching:
                     break
                 self._call_from_thread_safe(self._update_loading_counter, i, total, game.title)
-                if game.duration_hours is not None:
+                if game.duration_hours is not None and game.steam_score is not None and game.steam_review is not None:
                     continue
-                enriched_game = enricher.enrich(game)
+                enriched_game = steam.enrich(hltb.enrich(game))
 
-                if enriched_game.duration_hours is not None:
+                if enriched_game.duration_hours is not None or enriched_game.steam_score is not None or enriched_game.steam_review is not None:
                     self.repo.save_game(enriched_game)
                     self._call_from_thread_safe(self._on_game_enriched, enriched_game)
 
@@ -575,7 +581,7 @@ class PuntueitorApp(App):
     def _on_game_enriched(self, game: Game) -> None:
         """Actualiza un juego en la memoria y en la tabla."""
         # 1. Guardar los extras del juego enriquecido en el repositorio (guardado progresivo)
-        if game.duration_hours is not None:
+        if game.duration_hours is not None or game.steam_score is not None or game.steam_review is not None:
             self.repo.save_game(game)
 
         # 2. Actualizar en full_library
@@ -693,6 +699,7 @@ class PuntueitorApp(App):
             from puntueitor.core.pipeline.load_steam_library import load_library
             from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
             from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
+            from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
             from puntueitor.core.heroics import HeroicsLoader
             from puntueitor.core.config import ConfigManager
 
@@ -714,6 +721,11 @@ class PuntueitorApp(App):
                 enrichers.append(hltb_enricher)
             except Exception as e:
                 self.call_from_thread(self.notify, f"Warning: No se pudo inicializar HLTB: {e}", severity="warning")
+            try:
+                steam_enricher = SteamScoreEnricher(overwrite=False, igdb_cacher=self.repo.igdb_cacher)
+                enrichers.append(steam_enricher)
+            except Exception as e:
+                self.call_from_thread(self.notify, f"Warning: No se pudo inicializar Steam Score: {e}", severity="warning")
 
             logger.info("do_reload: calling load_library...")
             game_generator = load_library(

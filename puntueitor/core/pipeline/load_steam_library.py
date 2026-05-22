@@ -28,8 +28,14 @@ def _run_enrichment(
     """Ejecuta el enrichment en background y llama al callback cuando termina."""
     if extras_cache and game.igdb_id in extras_cache:
         cached = extras_cache[game.igdb_id]
+        enriched = game
         if cached.get("duration_hours") is not None:
-            enriched = replace(game, duration_hours=cached["duration_hours"])
+            enriched = replace(enriched, duration_hours=cached["duration_hours"])
+        if cached.get("steam_score") is not None:
+            enriched = replace(enriched, steam_score=cached["steam_score"])
+        if cached.get("steam_review") is not None:
+            enriched = replace(enriched, steam_review=cached["steam_review"])
+        if enriched is not game:
             completed_callback(enriched)
             return
     result = game

@@ -41,8 +41,13 @@ class LibraryRepository:
 
     def save_game(self, game: Game) -> None:
         """Persiste los extras de un solo juego."""
-        if game.duration_hours is not None:
-            self.extras_cacher.save_extras(game.igdb_id, game.duration_hours)
+        if game.duration_hours is not None or game.steam_score is not None or game.steam_review is not None:
+            self.extras_cacher.save_extras(
+                game.igdb_id,
+                duration_hours=game.duration_hours,
+                steam_score=game.steam_score,
+                steam_review=game.steam_review,
+            )
 
     def load(self, path: str | Path | None = None) -> Library:
         """Reconstruye la biblioteca desde puntueitor.db (tabla resolvers, autoritativo) con datos de puntueitor.db (tabla games)."""
@@ -87,6 +92,8 @@ class LibraryRepository:
 
             extras = all_extras.get(igdb_id, {})
             duration_hours = extras.get("duration_hours")
+            steam_score = extras.get("steam_score")
+            steam_review = extras.get("steam_review")
 
             game = Game(
                 igdb_id=igdb_id,
@@ -98,6 +105,8 @@ class LibraryRepository:
                 release_date=release_date,
                 cover_url=cover_url,
                 duration_hours=duration_hours,
+                steam_score=steam_score,
+                steam_review=steam_review,
                 stores=stores
             )
             status = all_statuses.get(igdb_id, {})

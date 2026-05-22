@@ -37,6 +37,8 @@ class Game:
     critic_score: float | None = None    # 0–100
     user_score: float | None = None      # 0–100
     duration_hours: float | None = None  # enriquecido (HLTB u otro)
+    steam_score: float | None = None     # 0–100, enriquecido (Steam Reviews)
+    steam_review: int | None = None      # 0–9, categoría Steam
 
     # 🔗 Metadatos externos
     stores: StoreMap = field(default_factory=dict)
@@ -78,6 +80,8 @@ class Game:
             "critic_score": self.critic_score,
             "user_score": self.user_score,
             "duration_hours": self.duration_hours,
+            "steam_score": self.steam_score,
+            "steam_review": self.steam_review,
             "stores": {k.value: v for k, v in self.stores.items()},
             "finished": self.finished,
             "hidden": self.hidden,
@@ -110,6 +114,8 @@ class Game:
             critic_score=data.get("critic_score"),
             user_score=data.get("user_score"),
             duration_hours=data.get("duration_hours"),
+            steam_score=data.get("steam_score"),
+            steam_review=data.get("steam_review"),
             stores=stores,
             finished=data.get("finished", False),
             hidden=data.get("hidden", False),
