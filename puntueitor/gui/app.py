@@ -68,7 +68,8 @@ class PuntueitorApp(App):
         self.current_library = Library.from_iterable(())
         self.is_reloading = False
         self.is_enriching = False
-        self._library_changed = False
+        self._filter_state: dict = {}
+        self._is_restoring = False
         game_list = self.query_one(GameList)
 
         config = ConfigManager().get
@@ -103,6 +104,57 @@ class PuntueitorApp(App):
         except Exception as e:
             self.call_from_thread(self.notify, f"Error cargando librería: {e}", severity="error")
 
+    def _get_filter_state_path(self) -> Path:
+        return Path.home() / ".config" / "puntueitor" / "filter_state.json"
+
+    def _save_filter_state(self) -> None:
+        if self._is_restoring:
+            return
+        import json
+        path = self._get_filter_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(self._filter_state, f)
+
+    def _load_filter_state(self) -> dict:
+        import json
+        path = self._get_filter_state_path()
+        if not path.exists():
+            return {}
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _restore_filter_state(self) -> None:
+        state = self._load_filter_state()
+        if not state:
+            return
+        self._is_restoring = True
+
+        show_hidden = state.pop("show_hidden", False)
+        if show_hidden:
+            self.query_one(GameList).show_hidden = True
+
+        for filter_type, value in state.items():
+            self.apply_filter(filter_type, value)
+
+        game_list = self.query_one(GameList)
+        game_list.populate_games(self.current_library)
+        game_list.select_first()
+
+        self._filter_state = state | {"show_hidden": show_hidden}
+        self._is_restoring = False
+
+    def _clear_filter_state(self) -> None:
+        self._filter_state = {}
+        path = self._get_filter_state_path()
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def _on_initial_loaded(self, library):
         self.full_library = library
         self.current_library = library
@@ -118,6 +170,7 @@ class PuntueitorApp(App):
             self.call_after_refresh(self._populate_batch, games, end, batch_size)
         else:
             game_list.select_first()
+            self.call_after_refresh(self._restore_filter_state)
 
     def on_unmount(self) -> None:
         self.workers.cancel_all()
@@ -306,9 +359,9 @@ class PuntueitorApp(App):
         new_games = list(self.full_library.games) + [game]
         self.full_library = Library.from_iterable(new_games)
         self.current_library = self.full_library
-        self._library_changed = True
-        unknowns = self.repo.unknown_cacher.get_all()
-        self.query_one(GameList).populate_unknowns(unknowns)
+        game_list = self.query_one(GameList)
+        game_list.current_unknowns = self.repo.unknown_cacher.get_all()
+        game_list.populate_games(self.current_library)
         self.notify(f"Añadido: {game.title}")
 
     def action_configure(self) -> None:
@@ -317,6 +370,8 @@ class PuntueitorApp(App):
     def action_toggle_hidden(self) -> None:
         game_list = self.query_one(GameList)
         game_list.show_hidden = not game_list.show_hidden
+        self._filter_state["show_hidden"] = game_list.show_hidden
+        self._save_filter_state()
         game_list.populate_games(self.current_library if self.current_library else self.full_library)
         self.notify(
             "Mostrando juegos ocultos" if game_list.show_hidden else "Ocultando juegos ocultos"
@@ -347,39 +402,16 @@ class PuntueitorApp(App):
     def action_toggle_favorite(self) -> None:
         self._toggle_game_flag("favorite")
 
-    def check_action(self, action: str, namespace: str) -> bool | None:
-        if getattr(self, '_showing_unknowns', False):
-            restricted = {
-                "sort_library", "filter_library", "enrich_library",
-                "regenerate_enrichers", "soft_reload", "reload_library",
-                "toggle_hidden",
-            }
-            if action in restricted:
-                return False
-        return True
-
     def action_toggle_unknowns(self) -> None:
         game_list = self.query_one(GameList)
-        if not getattr(self, '_showing_unknowns', False):
-            self._saved_library = self.current_library
-            unknowns = self.repo.unknown_cacher.get_all()
-            game_list.populate_unknowns(unknowns)
-            self._showing_unknowns = True
-            self.notify(f"Mostrando {len(unknowns)} desconocidos")
+        game_list.show_unknowns = not game_list.show_unknowns
+        if game_list.show_unknowns:
+            game_list.current_unknowns = self.repo.unknown_cacher.get_all()
+            count = len(game_list.current_unknowns)
+            self.notify(f"Mostrando {count} desconocidos en línea")
         else:
-            if getattr(self, '_library_changed', False):
-                self.full_library = self.repo.load()
-                self.current_library = self.full_library
-                self._library_changed = False
-            else:
-                self.current_library = self._saved_library
-            game_list.populate_games(self.current_library)
-            self._showing_unknowns = False
-            self.notify("Volviendo a biblioteca")
-        self._refresh_footer()
-
-    def _refresh_footer(self) -> None:
-        self.screen.refresh_bindings()
+            self.notify("Ocultando desconocidos")
+        game_list.populate_games(self.current_library)
 
     def action_request_quit(self) -> None:
         def check_quit(should_quit: bool) -> None:
@@ -392,9 +424,6 @@ class PuntueitorApp(App):
         self.push_screen(QuitConfirmation(), check_quit)
 
     def action_sort_library(self) -> None:
-        if getattr(self, '_showing_unknowns', False):
-            self.notify("No disponible en modo desconocidos", severity="warning")
-            return
         def handle_sorting(result: tuple[str, bool] | None) -> None:
             if result:
                 criteria, reverse = result
@@ -403,9 +432,6 @@ class PuntueitorApp(App):
         self.push_screen(SortingScreen(), handle_sorting)
 
     def action_filter_library(self) -> None:
-        if getattr(self, '_showing_unknowns', False):
-            self.notify("No disponible en modo desconocidos", severity="warning")
-            return
         def handle_filter_type(filter_type: str | None) -> None:
             if filter_type == "clear":
                 self.apply_filter(None)
@@ -435,11 +461,14 @@ class PuntueitorApp(App):
         if filter_type is None:
             self.current_library = self.library_service.clear_filters(self.full_library)
             game_list.show_hidden = False
+            self._clear_filter_state()
             self.notify("Filtros limpiados")
         elif filter_type == "name" and value:
             self.current_library = self.library_service.filter_by_name(
                 self.current_library, value
             )
+            self._filter_state["name"] = value
+            self._save_filter_state()
             self.notify(f"Filtro añadido: {value}")
         elif filter_type == "duration" and value:
             try:
@@ -447,6 +476,8 @@ class PuntueitorApp(App):
                 self.current_library = self.library_service.filter_by_duration(
                     self.current_library, hours
                 )
+                self._filter_state["duration"] = value
+                self._save_filter_state()
                 self.notify(f"Filtro añadido: duración máx {hours}h")
             except ValueError:
                 self.notify("Error: La duración debe ser un número", severity="error")
@@ -456,18 +487,24 @@ class PuntueitorApp(App):
             self.current_library = self.library_service.filter_by_finished(
                 self.current_library, flag
             )
+            self._filter_state["finished"] = value
+            self._save_filter_state()
             self.notify(f"Filtro: {'terminados' if flag else 'no terminados'}")
         elif filter_type == "favorite":
             flag = value == "true"
             self.current_library = self.library_service.filter_by_favorite(
                 self.current_library, flag
             )
+            self._filter_state["favorite"] = value
+            self._save_filter_state()
             self.notify(f"Filtro: {'favoritos' if flag else 'no favoritos'}")
         elif filter_type == "backlog":
             flag = value == "true"
             self.current_library = self.library_service.filter_by_backlog(
                 self.current_library, flag
             )
+            self._filter_state["backlog"] = value
+            self._save_filter_state()
             self.notify(f"Filtro: {'backlog' if flag else 'no backlog'}")
         elif filter_type == "hidden":
             flag = value == "true"
@@ -476,15 +513,15 @@ class PuntueitorApp(App):
             )
             if flag:
                 game_list.show_hidden = True
+            self._filter_state["hidden"] = value
+            self._filter_state["show_hidden"] = flag
+            self._save_filter_state()
             self.notify(f"Filtro: ocultos")
 
         game_list.populate_games(self.current_library)
         game_list.select_first()
 
     def action_enrich_library(self) -> None:
-        if getattr(self, '_showing_unknowns', False):
-            self.notify("No disponible en modo desconocidos", severity="warning")
-            return
         if self.is_reloading:
             self.notify("No se puede enriquecer mientras se recarga la biblioteca", severity="warning")
             return
@@ -501,9 +538,6 @@ class PuntueitorApp(App):
             pass
 
     def action_regenerate_enrichers(self) -> None:
-        if getattr(self, '_showing_unknowns', False):
-            self.notify("No disponible en modo desconocidos", severity="warning")
-            return
         if self.is_reloading:
             self.notify("No se puede regenerar mientras se recarga la biblioteca", severity="warning")
             return
@@ -633,9 +667,6 @@ class PuntueitorApp(App):
 
     def action_soft_reload(self) -> None:
         """r: actualiza tiendas desde API y añade solo juegos nuevos a resolvers/igdb."""
-        if getattr(self, '_showing_unknowns', False):
-            self.notify("No disponible en modo desconocidos", severity="warning")
-            return
         if self.is_reloading:
             self.notify("Ya hay una recarga en curso", severity="warning")
             return
@@ -648,9 +679,6 @@ class PuntueitorApp(App):
 
     def action_reload_library(self) -> None:
         """R: borra toda la caché SQLite y recarga todo desde cero."""
-        if getattr(self, '_showing_unknowns', False):
-            self.notify("No disponible en modo desconocidos", severity="warning")
-            return
         if self.is_reloading:
             self.notify("Ya hay una recarga en curso", severity="warning")
             return
@@ -673,6 +701,7 @@ class PuntueitorApp(App):
         self.query_one("#status-progress", ProgressBar).progress = 0
         
         if refresh:
+            self._clear_filter_state()
             self.full_library = Library.from_iterable(())
             self.current_library = self.full_library
             self.query_one(GameList).populate_games(self.current_library)

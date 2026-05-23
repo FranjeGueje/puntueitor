@@ -28,6 +28,7 @@ class GameList(Vertical):
         self.games_map: dict[str, Game] = {}
         self.current_unknowns: list[dict] = []
         self.show_hidden = False
+        self.show_unknowns = False
 
     def compose(self):
         yield Static("Biblioteca: 0 juegos", id="game-count")
@@ -68,7 +69,7 @@ class GameList(Vertical):
         if self.show_hidden:
             visible_games = list(library.games)
             count = len(visible_games)
-            count_label.update(f"Biblioteca: {count} juegos (mostrando ocultos)")
+            count_text = f"Biblioteca: {count} juegos (mostrando ocultos)"
         else:
             visible_games = [g for g in library.games if not g.hidden]
             count = len(visible_games)
@@ -76,10 +77,10 @@ class GameList(Vertical):
             count_text = f"Biblioteca: {count} juegos"
             if hidden_count:
                 count_text += f" ({hidden_count} ocultos)"
-            count_label.update(count_text)
 
-        if count == 0:
-            return
+        if self.show_unknowns and self.current_unknowns:
+            count_text += f" · {len(self.current_unknowns)} desconocidos"
+        count_label.update(count_text)
 
         for game in visible_games:
             row_key = str(game.igdb_id)
@@ -107,7 +108,22 @@ class GameList(Vertical):
             ])
 
             table.add_row(*row_data, key=row_key)
-        
+
+        # Append unknown rows at the bottom if show_unknowns is enabled
+        if self.show_unknowns and self.current_unknowns:
+            for i, u in enumerate(self.current_unknowns):
+                row_key = f"unknown_{i}"
+                title = Text(u["title"], style="#666666")
+                store = Text(u["store"], style="#666666")
+                store_id = Text(str(u["id"]), style="#666666")
+                dash = Text("--", style="#666666")
+
+                row_data = [title, store, store_id, dash]
+                if scores is not None:
+                    row_data.append(Text("--", style="#666666"))
+                row_data.extend(["", "", ""])
+                table.add_row(*row_data, key=row_key)
+
         if table.row_count > current_row:
             table.move_cursor(row=current_row)
             
@@ -193,21 +209,5 @@ class GameList(Vertical):
         
         count_label = self.query_one("#game-count", Static)
         count_label.update(f"Biblioteca: {len(self.games_map)} juegos")
-
-    def populate_unknowns(self, unknowns: list[dict]):
-        table = self.query_one("#game-options", DataTable)
-        count_label = self.query_one("#game-count", Static)
-
-        table.clear(columns=True)
-        table.add_column("Título", key="title", width=70)
-        table.add_column("Tienda", key="store", width=10)
-        table.add_column("ID", key="id", width=10)
-
-        self.games_map.clear()
-        self.current_unknowns = unknowns
-        count_label.update(f"Desconocidos: {len(unknowns)} juegos")
-
-        for i, u in enumerate(unknowns):
-            table.add_row(u["title"], u["store"], u["id"], key=f"unknown_{i}")
 
 
