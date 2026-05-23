@@ -31,7 +31,6 @@ class Config:
     scoring_preferred_genres: list[str] = field(default_factory=list)
 
     steam_is_active: bool = True
-    heroic_is_active: bool = False
     gog_is_active: bool = False
     epic_is_active: bool = False
     amazon_is_active: bool = False
