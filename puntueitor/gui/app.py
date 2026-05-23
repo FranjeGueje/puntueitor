@@ -46,6 +46,7 @@ class PuntueitorApp(App):
         ("f1", "toggle_finished", "Terminado"),
         ("f2", "toggle_backlog", "Backlog"),
         ("f3", "toggle_favorite", "Favorito"),
+        ("v", "show_cover", "Carátula"),
         ("q", "request_quit", "Salir"),
     ]
 
@@ -402,6 +403,30 @@ class PuntueitorApp(App):
 
     def action_toggle_favorite(self) -> None:
         self._toggle_game_flag("favorite")
+
+    def action_show_cover(self) -> None:
+        game_list = self.query_one(GameList)
+        game = game_list.get_current_game()
+        if game is None or not game.cover_url:
+            self.notify("Este juego no tiene carátula", severity="warning")
+            return
+        t = threading.Thread(target=self._download_and_show_cover, args=(game,), daemon=True)
+        t.start()
+
+    def _download_and_show_cover(self, game: Game) -> None:
+        import subprocess
+        import urllib.request
+        from pathlib import Path
+        cover_dir = Path.home() / ".cache" / "puntueitor" / "covers"
+        cover_dir.mkdir(parents=True, exist_ok=True)
+        cover_path = cover_dir / f"{game.igdb_id}.jpg"
+        if not cover_path.exists():
+            try:
+                urllib.request.urlretrieve(game.cover_url, cover_path)
+            except Exception as e:
+                self.call_from_thread(self.notify, f"Error descargando carátula: {e}", severity="error")
+                return
+        subprocess.Popen(["xdg-open", str(cover_path)])
 
     def check_action(self, action: str, namespace: str) -> bool | None:
         if getattr(self, '_showing_unknowns', False):
