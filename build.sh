@@ -15,10 +15,16 @@ pip install -q pyinstaller
 echo "==> Limpiando builds anteriores..."
 rm -rf build dist *.spec
 
+# Extraer versión desde puntueitor/__init__.py
+VERSION=$(python -c "from puntueitor import __version__; print(__version__)")
+ARCH=$(uname -m)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+OUTPUT_NAME="${APP_NAME}-${VERSION}-${ARCH}-${OS}"
+
 echo "==> Ejecutando PyInstaller..."
 pyinstaller \
     --onefile \
-    --name "$APP_NAME" \
+    --name "$OUTPUT_NAME" \
     --add-data "puntueitor/gui/styles.tcss:." \
     --collect-all textual \
     --hidden-import igdbpy \
@@ -42,5 +48,5 @@ pyinstaller \
     "$ENTRY_POINT"
 
 echo ""
-echo "==> Build completado: $(pwd)/dist/$APP_NAME"
-ls -lh "dist/$APP_NAME"
+echo "==> Build completado: $(pwd)/dist/$OUTPUT_NAME"
+ls -lh "dist/$OUTPUT_NAME"
