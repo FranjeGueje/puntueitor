@@ -23,6 +23,7 @@ from puntueitor.gui.screens.unknown_menu import UnknownMenuScreen
 from puntueitor.gui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library, Game
+from puntueitor import __version__
 
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.igdb.service import IGDBService
@@ -64,7 +65,7 @@ class PuntueitorApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "Puntueitor"
+        self.title = f"Puntueitor - {__version__}"
         self.full_library = Library.from_iterable(())
         self.current_library = Library.from_iterable(())
         self.is_reloading = False

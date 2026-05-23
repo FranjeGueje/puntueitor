@@ -7,8 +7,8 @@ class SortingScreen(ModalScreen[tuple[str, bool]]):
     """Pantalla modal para seleccionar el método de ordenación."""
     
     BINDINGS = [
-        ("a", "select('title', False)", "a/A Nombre Alfabético"),
-        ("A", "select('title', True)", ""),
+        ("n", "select('title', False)", "n/N Nombre Alfabético"),
+        ("N", "select('title', True)", ""),
         ("u", "select('user_score', True)", "u/U Puntuación usuario"),
         ("U", "select('user_score', False)", ""),
         ("c", "select('critic_score', True)", "c/C Puntuación crítica"),
