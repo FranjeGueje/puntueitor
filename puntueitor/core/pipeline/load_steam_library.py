@@ -31,10 +31,14 @@ def _run_enrichment(
         enriched = game
         if cached.get("duration_hours") is not None:
             enriched = replace(enriched, duration_hours=cached["duration_hours"])
-        if cached.get("steam_score") is not None:
-            enriched = replace(enriched, steam_score=cached["steam_score"])
         if cached.get("steam_review") is not None:
             enriched = replace(enriched, steam_review=cached["steam_review"])
+        if cached.get("steamdb_score") is not None:
+            enriched = replace(enriched, steamdb_score=cached["steamdb_score"])
+        if cached.get("review_pos") is not None:
+            enriched = replace(enriched, review_pos=cached["review_pos"])
+        if cached.get("review_neg") is not None:
+            enriched = replace(enriched, review_neg=cached["review_neg"])
         if enriched is not game:
             completed_callback(enriched)
             return

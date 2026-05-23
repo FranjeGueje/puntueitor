@@ -1,3 +1,4 @@
+import math
 from dataclasses import replace
 
 import requests
@@ -17,15 +18,15 @@ class SteamScoreEnricher(GameEnricher):
         self.igdb_cacher = igdb_cacher
 
     def enrich(self, game: Game) -> Game:
-        if game.steam_score is not None and not self.overwrite:
+        if game.steamdb_score is not None and game.steam_review is not None and not self.overwrite:
             return game
 
         steam_id = self._get_steam_id(game)
         if not steam_id:
             return game
 
-        score, review = self._fetch_score(steam_id)
-        return replace(game, steam_score=score, steam_review=review)
+        steamdb, review, pos, neg = self._fetch_score(steam_id)
+        return replace(game, steamdb_score=steamdb, steam_review=review, review_pos=pos, review_neg=neg)
 
     def _get_steam_id(self, game: Game) -> str | None:
         sid = game.stores.get("steam") if hasattr(game.stores, "get") else None
@@ -37,7 +38,7 @@ class SteamScoreEnricher(GameEnricher):
                 return str(raw["steam_id"])
         return None
 
-    def _fetch_score(self, steam_id: str) -> tuple[float | None, int | None]:
+    def _fetch_score(self, steam_id: str) -> tuple[float | None, int | None, int | None, int | None]:
         try:
             url = f"https://store.steampowered.com/appreviews/{steam_id}"
             params = {
@@ -53,10 +54,18 @@ class SteamScoreEnricher(GameEnricher):
             data = resp.json()
             summary = data.get("query_summary", {})
             total_positive = summary.get("total_positive", 0)
+            total_negative = summary.get("total_negative", 0)
             total_reviews = summary.get("total_reviews", 0)
-            percentage = (total_positive / total_reviews * 100) if total_reviews > 0 else None
             review_score = summary.get("review_score")
-            return percentage, review_score
+
+            steamdb_score = None
+            if total_reviews > 0:
+                total = total_positive + total_negative
+                average = total_positive / total
+                score = average - (average - 0.5) * (2 ** (-math.log10(total + 1)))
+                steamdb_score = round(score * 100, 2)
+
+            return steamdb_score, review_score, total_positive, total_negative
         except Exception:
             pass
-        return None, None
+        return None, None, None, None

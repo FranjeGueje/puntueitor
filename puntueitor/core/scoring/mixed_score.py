@@ -20,8 +20,8 @@ class MixedScore(GameScorer):
         self.weight_duration = weight_duration
 
     def score(self, game: Game, ctx: ScoringContext) -> float:
-        critics = score_or_steam(game.critic_score, game.steam_score)
-        users = score_or_steam(game.user_score, game.steam_score)
+        critics = score_or_steam(game.critic_score, game.steamdb_score)
+        users = score_or_steam(game.user_score, game.steamdb_score)
 
         if game.duration_hours is not None:
             duration_norm = math.exp(-game.duration_hours / ctx.duration_scale)

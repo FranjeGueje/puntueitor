@@ -88,8 +88,8 @@ class GameList(Vertical):
             # Formatear métricas
             if game.user_score is not None and game.user_score > 0:
                 u = f"{game.user_score:.0f}"
-            elif game.steam_score is not None and game.steam_score > 0:
-                u = Text(f"{game.steam_score:.0f}", style="white on red")
+            elif game.steamdb_score is not None and game.steamdb_score > 0:
+                u = Text(f"{game.steamdb_score:.0f}", style="white on red")
             else:
                 u = "--"
             c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"
@@ -150,11 +150,10 @@ class GameList(Vertical):
         
         if game.user_score is not None and game.user_score > 0:
             u = f"{game.user_score:.0f}"
-        elif game.steam_score is not None and game.steam_score > 0:
-            u = Text(f"{game.steam_score:.0f}", style="white on red")
+        elif game.steamdb_score is not None and game.steamdb_score > 0:
+            u = Text(f"{game.steamdb_score:.0f}", style="white on red")
         else:
             u = "--"
-
         try:
             table.update_cell(row_key, "user", u)
         except Exception:
@@ -179,8 +178,8 @@ class GameList(Vertical):
         
         if game.user_score is not None and game.user_score > 0:
             u = f"{game.user_score:.0f}"
-        elif game.steam_score is not None and game.steam_score > 0:
-            u = Text(f"{game.steam_score:.0f}", style="white on red")
+        elif game.steamdb_score is not None and game.steamdb_score > 0:
+            u = Text(f"{game.steamdb_score:.0f}", style="white on red")
         else:
             u = "--"
         c = f"{game.critic_score:.0f}" if game.critic_score is not None else "--"

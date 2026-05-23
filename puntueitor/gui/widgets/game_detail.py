@@ -32,8 +32,12 @@ class GameDetail(VerticalScroll):
         stores_list = ", ".join(game.stores.keys()) if game.stores else "Ninguna"
         release = game.release_date.strftime("%d/%m/%Y") if game.release_date else "N/A"
         cover = f"[{game.cover_url}]({game.cover_url})" if game.cover_url else "N/A"
-        steam_score_str = f"{game.steam_score:.0f}/100" if game.steam_score is not None else "N/A"
-        steam_review_str = REVIEW_LABELS.get(game.steam_review, "N/A")
+        steamdb_score_str = f"{game.steamdb_score:.2f}" if game.steamdb_score is not None else "N/A"
+        if game.review_pos is not None and game.review_neg is not None:
+            total = game.review_pos + game.review_neg
+            steam_review_str = f"{REVIEW_LABELS.get(game.steam_review, 'N/A')} ({game.review_pos:,} positivas de {total:,} totales)".replace(",", ".")
+        else:
+            steam_review_str = REVIEW_LABELS.get(game.steam_review, "N/A")
 
         content = f"""# {game.title}
 
@@ -45,7 +49,7 @@ class GameDetail(VerticalScroll):
 
 **🏆 Puntuación Crítica:** {critic_score}
 
-**👍 Puntuación Usuarios Steam:** {steam_score_str}
+**👍 Puntuación SteamDB:** {steamdb_score_str}             \\*Formula avanzada en base a puntuaciones de Steam
 
 **🔥 Puntuación Steam:** {steam_review_str}
 

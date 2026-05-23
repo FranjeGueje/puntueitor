@@ -41,12 +41,14 @@ class LibraryRepository:
 
     def save_game(self, game: Game) -> None:
         """Persiste los extras de un solo juego."""
-        if game.duration_hours is not None or game.steam_score is not None or game.steam_review is not None:
+        if game.duration_hours is not None or game.steam_review is not None or game.steamdb_score is not None or game.review_pos is not None or game.review_neg is not None:
             self.extras_cacher.save_extras(
                 game.igdb_id,
                 duration_hours=game.duration_hours,
-                steam_score=game.steam_score,
                 steam_review=game.steam_review,
+                steamdb_score=game.steamdb_score,
+                review_pos=game.review_pos,
+                review_neg=game.review_neg,
             )
 
     def load(self, path: str | Path | None = None) -> Library:
@@ -92,8 +94,10 @@ class LibraryRepository:
 
             extras = all_extras.get(igdb_id, {})
             duration_hours = extras.get("duration_hours")
-            steam_score = extras.get("steam_score")
             steam_review = extras.get("steam_review")
+            steamdb_score = extras.get("steamdb_score")
+            review_pos = extras.get("review_pos")
+            review_neg = extras.get("review_neg")
 
             game = Game(
                 igdb_id=igdb_id,
@@ -105,8 +109,10 @@ class LibraryRepository:
                 release_date=release_date,
                 cover_url=cover_url,
                 duration_hours=duration_hours,
-                steam_score=steam_score,
                 steam_review=steam_review,
+                steamdb_score=steamdb_score,
+                review_pos=review_pos,
+                review_neg=review_neg,
                 stores=stores
             )
             status = all_statuses.get(igdb_id, {})

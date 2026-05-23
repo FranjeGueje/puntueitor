@@ -9,6 +9,6 @@ class BasicScoreScorer(GameScorer):
     Rango [0.0, 1.0].
     """
     def score(self, game: Game, ctx: ScoringContext) -> float:
-        c = score_or_steam(game.critic_score, game.steam_score)
-        u = score_or_steam(game.user_score, game.steam_score)
+        c = score_or_steam(game.critic_score, game.steamdb_score)
+        u = score_or_steam(game.user_score, game.steamdb_score)
         return (c + u) / 2.0

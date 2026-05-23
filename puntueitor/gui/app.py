@@ -156,7 +156,7 @@ class PuntueitorApp(App):
                 hltb = HLTBEnricher(client=hltb_resolver, overwrite=True)
                 steam = SteamScoreEnricher(overwrite=True, igdb_cacher=self.repo.igdb_cacher)
                 enriched = steam.enrich(hltb.enrich(game))
-                if enriched.duration_hours is not None or enriched.steam_score is not None or enriched.steam_review is not None:
+                if enriched.duration_hours is not None or enriched.steam_review is not None or enriched.steamdb_score is not None:
                     self.repo.save_game(enriched)
                     self.call_from_thread(self._on_single_enriched, enriched)
                 else:
@@ -298,7 +298,7 @@ class PuntueitorApp(App):
             hltb = HLTBEnricher(client=hltb_resolver)
             steam = SteamScoreEnricher(igdb_cacher=self.repo.igdb_cacher)
             enriched = steam.enrich(hltb.enrich(game))
-            if enriched.duration_hours is not None or enriched.steam_score is not None:
+            if enriched.duration_hours is not None or enriched.steamdb_score is not None:
                 game = enriched
                 self.repo.save_game(game)
         except Exception:
@@ -564,11 +564,11 @@ class PuntueitorApp(App):
                 if not self.is_enriching:
                     break
                 self._call_from_thread_safe(self._update_loading_counter, i, total, game.title)
-                if game.duration_hours is not None and game.steam_score is not None and game.steam_review is not None:
+                if game.duration_hours is not None and game.steam_review is not None and game.steamdb_score is not None:
                     continue
                 enriched_game = steam.enrich(hltb.enrich(game))
 
-                if enriched_game.duration_hours is not None or enriched_game.steam_score is not None or enriched_game.steam_review is not None:
+                if enriched_game.duration_hours is not None or enriched_game.steam_review is not None or enriched_game.steamdb_score is not None:
                     self.repo.save_game(enriched_game)
                     self._call_from_thread_safe(self._on_game_enriched, enriched_game)
 
@@ -581,7 +581,7 @@ class PuntueitorApp(App):
     def _on_game_enriched(self, game: Game) -> None:
         """Actualiza un juego en la memoria y en la tabla."""
         # 1. Guardar los extras del juego enriquecido en el repositorio (guardado progresivo)
-        if game.duration_hours is not None or game.steam_score is not None or game.steam_review is not None:
+        if game.duration_hours is not None or game.steam_review is not None or game.steamdb_score is not None:
             self.repo.save_game(game)
 
         # 2. Actualizar en full_library
