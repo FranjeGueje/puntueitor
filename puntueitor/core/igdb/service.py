@@ -118,8 +118,6 @@ class IGDBService:
                     endpoint="games",
                     field_query=query,
                 )
-            except TypeError:
-                return []
             except Exception as e:
                 last_error = e
                 if attempt < self.MAX_RETRIES - 1 and self._is_retryable_error(e):

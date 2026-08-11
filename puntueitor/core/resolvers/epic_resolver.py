@@ -50,11 +50,12 @@ class EpicHeroicResolver(BaseResolver):
         for r in results:
             igdb_title = r.get("name", "")
             score = similarity(normalized_title, igdb_title.lower())
-            if score > best_score:
+            if best_match is None or score > best_score:
                 best_score = score
                 best_match = r
 
-        logger.debug(f"Best match for '{title}': '{best_match.get('name')}' (score: {best_score:.2f})")
+        if best_match is not None:
+            logger.debug(f"Best match for '{title}': '{best_match.get('name')}' (score: {best_score:.2f})")
         return best_match
 
     def resolve(self, raw: dict, refresh: bool = False) -> Sequence[Game]:

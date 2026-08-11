@@ -15,15 +15,11 @@ def score_library(
     scorer: GameScorer,
     ctx: ScoringContext,
 ) -> ScoredLibrary:
-    returned_list: list[ScoredGame] = []
-    for game in library.games:
-        if game.duration_hours is not None and game.duration_hours == 0.0:
-            returned_list.append(ScoredGame(game, score=0.0))
-        else:
-            returned_list.append(
-                ScoredGame(game, score=scorer.score(game=game, ctx=ctx))
-            )
-    
+    returned_list: list[ScoredGame] = [
+        ScoredGame(game, score=scorer.score(game=game, ctx=ctx))
+        for game in library.games
+    ]
+
     returned_scored_list = ScoredLibrary(returned_list)
     return returned_scored_list.sort()
     

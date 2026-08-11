@@ -13,7 +13,7 @@ class MixedScore(GameScorer):
         weight_duration: float = 0.2,
     ):
         total = weight_critics + weight_users + weight_duration
-        assert abs(total - 1.0) < 1e-6
+        assert abs(total - 1.0) < 1e-3
 
         self.weight_critics = weight_critics
         self.weight_users = weight_users

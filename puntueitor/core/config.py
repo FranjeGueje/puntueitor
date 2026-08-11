@@ -2,7 +2,7 @@ import json
 import logging
 import threading
 from pathlib import Path
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,8 @@ class ConfigManager:
                     logger.info(f"Loaded config data: {data.keys()}")
 
                 # Filter fields that exist in Config dataclass
-                config_data = {k: v for k, v in data.items() if hasattr(Config, k)}
+                config_field_names = {f.name for f in fields(Config)}
+                config_data = {k: v for k, v in data.items() if k in config_field_names}
 
                 self.config = Config(**config_data)
                 logger.info(f"Config loaded: steam_is_active={self.config.steam_is_active}, gog_is_active={self.config.gog_is_active}, epic_is_active={self.config.epic_is_active}, amazon_is_active={self.config.amazon_is_active}")

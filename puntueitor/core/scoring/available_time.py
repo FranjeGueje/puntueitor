@@ -11,7 +11,7 @@ class AvailableTimeScorer(GameScorer):
 
     def score(self, game: Game, ctx: ScoringContext) -> float:
         # Si no hay contexto o duración, no influye
-        if ctx.available_hours is None:
+        if ctx.available_hours is None or ctx.available_hours <= 0:
             return 0.0
 
         if game.duration_hours is None:

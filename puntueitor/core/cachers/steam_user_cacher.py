@@ -63,19 +63,23 @@ class SteamUserCacher:
     def get_all_games(self) -> list[dict] | None:
         if not self._available:
             return None
-        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("SELECT * FROM owned_games")
-            rows = cursor.fetchall()
-            if not rows:
-                return None
-            result = []
-            for row in rows:
-                d = dict(row)
-                if d.get("content_descriptorids"):
-                    d["content_descriptorids"] = json.loads(d["content_descriptorids"])
-                result.append(d)
-            return result
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("SELECT * FROM owned_games")
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+                result = []
+                for row in rows:
+                    d = dict(row)
+                    if d.get("content_descriptorids"):
+                        d["content_descriptorids"] = json.loads(d["content_descriptorids"])
+                    result.append(d)
+                return result
+        except Exception as e:
+            logger.error(f"Error getting owned games from {self.db_path}: {e}")
+            return None
 
     def save_games(self, games: list[dict]) -> None:
         if not self._available:
@@ -112,21 +116,24 @@ class SteamUserCacher:
             logger.warning("No valid games to save")
             return
 
-        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-            conn.execute("DELETE FROM owned_games")
-            conn.executemany("""
-                INSERT INTO owned_games (
-                    appid, name, playtime_forever, img_icon_url,
-                    playtime_windows_forever, playtime_mac_forever,
-                    playtime_linux_forever, playtime_deck_forever,
-                    rtime_last_played, content_descriptorids,
-                    playtime_disconnected, has_community_visible_stats
-                ) VALUES (
-                    :appid, :name, :playtime_forever, :img_icon_url,
-                    :playtime_windows_forever, :playtime_mac_forever,
-                    :playtime_linux_forever, :playtime_deck_forever,
-                    :rtime_last_played, :content_descriptorids,
-                    :playtime_disconnected, :has_community_visible_stats
-                )
-            """, sanitized)
-            conn.commit()
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+                conn.execute("DELETE FROM owned_games")
+                conn.executemany("""
+                    INSERT INTO owned_games (
+                        appid, name, playtime_forever, img_icon_url,
+                        playtime_windows_forever, playtime_mac_forever,
+                        playtime_linux_forever, playtime_deck_forever,
+                        rtime_last_played, content_descriptorids,
+                        playtime_disconnected, has_community_visible_stats
+                    ) VALUES (
+                        :appid, :name, :playtime_forever, :img_icon_url,
+                        :playtime_windows_forever, :playtime_mac_forever,
+                        :playtime_linux_forever, :playtime_deck_forever,
+                        :rtime_last_played, :content_descriptorids,
+                        :playtime_disconnected, :has_community_visible_stats
+                    )
+                """, sanitized)
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving owned games to {self.db_path}: {e}")

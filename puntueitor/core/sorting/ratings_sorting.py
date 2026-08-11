@@ -44,14 +44,20 @@ class TotalRatingSorter(GameSorter):
         library: Library
     ) -> Library:
         games = library.games
-        games_sorted = sorted(
-            games,
-            key=lambda g: (
-                (g.user_score + g.critic_score) / 2 if g.user_score is not None and g.critic_score is not None
-                else g.user_score if g.user_score is not None
-                else g.critic_score if g.critic_score is not None
-                else float("-inf")
-            ),
-            reverse=not self.ascending,
-        )
+
+        def rating_or_none(score: float | None) -> float | None:
+            return score if score not in (None, 0.0) else None
+
+        def key(g):
+            user = rating_or_none(g.user_score)
+            critic = rating_or_none(g.critic_score)
+            if user is not None and critic is not None:
+                return (user + critic) / 2
+            if user is not None:
+                return user
+            if critic is not None:
+                return critic
+            return float("-inf")
+
+        games_sorted = sorted(games, key=key, reverse=not self.ascending)
         return Library(games=tuple(games_sorted))

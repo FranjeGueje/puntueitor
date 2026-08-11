@@ -86,8 +86,16 @@ class LibraryService:
                 reverse=reverse,
             )
         elif criteria == "mixed":
-            strategy = MixedScore()
-            ctx = ScoringContext()
+            config = ConfigManager().get
+            strategy = MixedScore(
+                weight_critics=config.scoring_mixed_critics,
+                weight_users=config.scoring_mixed_users,
+                weight_duration=config.scoring_mixed_duration,
+            )
+            ctx = ScoringContext(
+                available_hours=config.scoring_available_hours,
+                preferred_genres=set(config.scoring_preferred_genres) if config.scoring_preferred_genres else None,
+            )
             games.sort(key=lambda g: strategy.score(g, ctx), reverse=reverse)
 
         return Library.from_iterable(games)
