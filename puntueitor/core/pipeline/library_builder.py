@@ -1,10 +1,13 @@
 # Convertir raw inputs (Steam, Epic, etc.) en una Library consistente de Game.
+import logging
 from collections.abc import Iterable, Sequence, Callable
 
 from puntueitor.core.models import Game, Library, ScoringContext
 from puntueitor.core.resolvers.base_resolver import BaseResolver
 from puntueitor.core.selector.base_selector import GameSelector
-from puntueitor.core.services.library_ops import add_game
+from puntueitor.core.services.library_ops import add_games
+
+logger = logging.getLogger(__name__)
 
 
 class LibraryBuilder:
@@ -32,6 +35,7 @@ class LibraryBuilder:
         Construye una Library a partir de raws.
         """
         library = initial or Library.from_iterable(())
+        selected_games: list[Game] = []
 
         for raw in raws:
             context = (
@@ -45,13 +49,17 @@ class LibraryBuilder:
             for resolver in self.resolvers:
                 try:
                     candidates.extend(resolver.resolve(raw))
-                except Exception:
+                except Exception as e:
+                    logger.warning(
+                        f"{type(resolver).__name__} failed to resolve a game: {e}"
+                    )
                     continue
 
-            selected = self.selector.select(candidates=candidates,ctx=context)
+            selected = self.selector.select(candidates=candidates, ctx=context)
             if selected is None:
                 continue
 
-            library = add_game(library, selected)
+            selected_games.append(selected)
 
-        return library
+        # Una sola reconstrucción de la Library en vez de una por juego.
+        return add_games(library, selected_games)

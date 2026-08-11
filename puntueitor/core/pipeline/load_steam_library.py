@@ -1,12 +1,11 @@
 import logging
-from pathlib import Path
-from typing import Callable, Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 
-logger = logging.getLogger(__name__)
 from puntueitor.core.igdb.service import IGDBService
-from puntueitor.core.models import Library, Game
+from puntueitor.core.models import Game
 from puntueitor.core.models.selection_context import SelectionContext
 from puntueitor.core.protocols import GameEnricher
 from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
@@ -18,6 +17,29 @@ from steampy.api.steam_api import SteamApi
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.heroics import HeroicsLoader
 
+logger = logging.getLogger(__name__)
+
+CACHEABLE_EXTRAS = (
+    "duration_hours", "steam_review", "steamdb_score", "review_pos", "review_neg",
+)
+
+
+def _apply_cached_extras(game: Game, extras_cache: dict[int, dict] | None) -> Game:
+    """Rellena desde la caché los extras ya conocidos del juego."""
+    if not extras_cache:
+        return game
+
+    cached = extras_cache.get(game.igdb_id)
+    if not cached:
+        return game
+
+    known = {
+        field: cached[field]
+        for field in CACHEABLE_EXTRAS
+        if cached.get(field) is not None
+    }
+    return replace(game, **known) if known else game
+
 
 def _run_enrichment(
     game: Game,
@@ -26,28 +48,20 @@ def _run_enrichment(
     extras_cache: dict[int, dict] | None = None,
 ) -> None:
     """Ejecuta el enrichment en background y llama al callback cuando termina."""
-    if extras_cache and game.igdb_id in extras_cache:
-        cached = extras_cache[game.igdb_id]
-        enriched = game
-        if cached.get("duration_hours") is not None:
-            enriched = replace(enriched, duration_hours=cached["duration_hours"])
-        if cached.get("steam_review") is not None:
-            enriched = replace(enriched, steam_review=cached["steam_review"])
-        if cached.get("steamdb_score") is not None:
-            enriched = replace(enriched, steamdb_score=cached["steamdb_score"])
-        if cached.get("review_pos") is not None:
-            enriched = replace(enriched, review_pos=cached["review_pos"])
-        if cached.get("review_neg") is not None:
-            enriched = replace(enriched, review_neg=cached["review_neg"])
-        if enriched is not game:
-            completed_callback(enriched)
-            return
-    result = game
+    result = _apply_cached_extras(game, extras_cache)
+
+    # Siempre se pasa por los enrichers: cada uno decide si hay algo que
+    # completar. Antes, tener un solo campo en caché cortaba aquí y dejaba el
+    # resto sin enriquecer para siempre.
     for enricher in enrichers:
         try:
             result = enricher.enrich(result)
-        except Exception:
+        except Exception as e:
+            logger.debug(
+                f"{type(enricher).__name__} failed for '{result.title}': {e}"
+            )
             continue
+
     completed_callback(result)
 
 
@@ -63,7 +77,13 @@ def load_library(
     enrichment_callback: Callable[[Game], None] | None = None,
     extras_cache: dict[int, dict] | None = None,
 ) -> Generator[Game, None, None]:
-    """Carga juegos de múltiples tiendas (Steam, GOG, Epic, Amazon)."""
+    """
+    Carga juegos de múltiples tiendas (Steam, GOG, Epic, Amazon).
+
+    Va emitiendo cada `Game` según se resuelve. Si se pasan enrichers, los
+    lanza en segundo plano y cierra su pool al terminar sin esperarlos: los
+    resultados siguen llegando por `enrichment_callback`.
+    """
     config = ConfigManager().get
     # Build stores list from new config fields
     stores = []
@@ -83,151 +103,98 @@ def load_library(
     steam_selector = SteamSelector()
 
     executor = ThreadPoolExecutor(max_workers=4) if enrichers else None
-    games_loaded = []
 
     def process_game(raw_item: dict, resolver, store_name: str) -> Game | None:
-        """Procesa un juego con su resolver y retorna el mejor."""
+        """Resuelve un juego crudo y elige el mejor candidato."""
+        title = raw_item.get("title") or raw_item.get("name") or "Unknown"
         try:
-            title = raw_item.get("title") or raw_item.get("name", "")
             games = resolver.resolve(raw=raw_item, refresh=refresh)
             if not games:
                 return None
-            selected = steam_selector.select(games, SelectionContext(title=str(title)))
-            return selected
+            return steam_selector.select(games, SelectionContext(title=str(title)))
         except Exception as e:
-            title = raw_item.get("title") or raw_item.get("name", "Unknown")
-            logger.warning(f"Error processing game from {store_name}: {e} for '{title}'", exc_info=True)
+            logger.warning(
+                f"Error processing game from {store_name}: {e} for '{title}'",
+                exc_info=True,
+            )
             return None
 
-    def yield_or_store(game: Game) -> Game | None:
-        """Yield el juego o lo guarda para enriquecimiento."""
-        if game:
-            if enrichers and executor and enrichment_callback:
-                executor.submit(
-                    _run_enrichment,
-                    game,
-                    enrichers,
-                    enrichment_callback,
-                    extras_cache,
-                )
-            return game
-        return None
+    def submit_enrichment(game: Game) -> None:
+        if enrichers and executor and enrichment_callback:
+            executor.submit(
+                _run_enrichment, game, enrichers, enrichment_callback, extras_cache,
+            )
 
-    # Cargar Steam
-    if "steam" in stores and api_key and user:
-        try:
-            steam_resolver = SteamIGDBResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-            steam = SteamApi()
-            use_steam_cache = not (refresh or force_store_refresh)
-            steam_games = steam.owned_games(api_key, user, use_cache=use_steam_cache)
+    def load_store(
+        label: str,
+        resolver,
+        raw_items: Sequence[dict],
+    ) -> Generator[Game, None, None]:
+        """Resuelve los juegos crudos de una tienda, emitiéndolos uno a uno."""
+        total = len(raw_items)
+        for index, raw_item in enumerate(raw_items, start=1):
+            title = raw_item.get("title") or raw_item.get("name") or "Unknown"
+            if progress_callback:
+                progress_callback(index, total, f"[{label}] {title}")
 
-            if steam_games:
-                total = len(steam_games)
-                for i, item in enumerate(steam_games):
-                    title = str(item.get("name"))
-                    if progress_callback:
-                        progress_callback(i + 1, total, f"[Steam] {title}")
+            game = process_game(raw_item, resolver, label.lower())
+            if game:
+                submit_enrichment(game)
+                yield game
 
-                    game = process_game(item, steam_resolver, "steam")
-                    result = yield_or_store(game)
-                    if result:
-                        games_loaded.append(result)
-                        yield result
-        except Exception as e:
-            logger.warning(f"Error loading games from Steam: {e}")
+    def steam_items() -> Sequence[dict]:
+        if not (api_key and user):
+            return ()
+        return SteamApi().owned_games(
+            api_key, user, use_cache=not (refresh or force_store_refresh)
+        ) or ()
 
-    heroic_path = None
+    # La ruta de Heroic se busca una sola vez y la comparten GOG/Epic/Amazon.
+    heroic_path: Path | None = None
+    heroic_path_resolved = False
 
-    # Cargar GOG desde Heroic
-    if "gog" in stores and heroic_loader:
-        try:
+    def heroic_items(store: str) -> Sequence[dict]:
+        nonlocal heroic_path, heroic_path_resolved
+        if not heroic_loader:
+            return ()
+
+        if not heroic_path_resolved:
             heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)
-            if heroic_path:
-                gog_resolver = GOGHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-                gog_games = heroic_loader.get_gog_games(heroic_path)
+            heroic_path_resolved = True
 
-                if gog_games:
-                    total = len(gog_games)
-                    for i, item in enumerate(gog_games):
-                        title = item.get("title", "Unknown")
-                        if progress_callback:
-                            progress_callback(i + 1, total, f"[GOG] {title}")
+        if not heroic_path:
+            return ()
 
-                        game = process_game(item, gog_resolver, "gog")
-                        result = yield_or_store(game)
-                        if result:
-                            games_loaded.append(result)
-                            yield result
-        except Exception as e:
-            logger.warning(f"Error loading games from GOG: {e}")
+        getter = {
+            "gog": heroic_loader.get_gog_games,
+            "epic": heroic_loader.get_epic_games,
+            "amazon": heroic_loader.get_amazon_games,
+        }[store]
+        return getter(heroic_path) or ()
 
-    # Cargar Epic desde Heroic
-    if "epic" in stores and heroic_loader:
-        try:
-            heroic_path = heroic_path or heroic_loader.find_heroic_path(config.heroic_path or None)
-            if heroic_path:
-                epic_resolver = EpicHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-                epic_games = heroic_loader.get_epic_games(heroic_path)
-
-                if epic_games:
-                    total = len(epic_games)
-                    for i, item in enumerate(epic_games):
-                        title = item.get("title", "Unknown")
-                        if progress_callback:
-                            progress_callback(i + 1, total, f"[Epic] {title}")
-
-                        game = process_game(item, epic_resolver, "epic")
-                        result = yield_or_store(game)
-                        if result:
-                            games_loaded.append(result)
-                            yield result
-        except Exception as e:
-            logger.warning(f"Error loading games from Epic: {e}")
-
-    # Cargar Amazon desde Heroic
-    if "amazon" in stores and heroic_loader:
-        try:
-            heroic_path = heroic_path or heroic_loader.find_heroic_path(config.heroic_path or None)
-            if heroic_path:
-                amazon_resolver = AmazonHeroicResolver(igdb=engine, cache_file=CACHE_RESOLVERS)
-                amazon_games = heroic_loader.get_amazon_games(heroic_path)
-
-                if amazon_games:
-                    total = len(amazon_games)
-                    for i, item in enumerate(amazon_games):
-                        title = item.get("title", "Unknown")
-                        if progress_callback:
-                            progress_callback(i + 1, total, f"[Amazon] {title}")
-
-                        game = process_game(item, amazon_resolver, "amazon")
-                        result = yield_or_store(game)
-                        if result:
-                            games_loaded.append(result)
-                            yield result
-        except Exception as e:
-            logger.warning(f"Error loading games from Amazon: {e}")
-
-    yield executor
-
-
-def load_steam_library(
-    engine: IGDBService,
-    api_key: str | None = None,
-    user: int | None = None,
-    refresh: bool = False,
-    force_store_refresh: bool = False,
-    progress_callback: Callable[[int, int, str], None] | None = None,
-    enrichers: Sequence[GameEnricher] | None = None,
-    enrichment_callback: Callable[[Game], None] | None = None,
-) -> Generator[Game, None, None]:
-    """Legacy: Carga solo juegos de Steam."""
-    return load_library(
-        engine=engine,
-        api_key=api_key,
-        user=user,
-        refresh=refresh,
-        force_store_refresh=force_store_refresh,
-        progress_callback=progress_callback,
-        enrichers=enrichers,
-        enrichment_callback=enrichment_callback,
+    # (clave de config, etiqueta, clase de resolver, obtención de los crudos)
+    sources = (
+        ("steam", "Steam", SteamIGDBResolver, steam_items),
+        ("gog", "GOG", GOGHeroicResolver, lambda: heroic_items("gog")),
+        ("epic", "Epic", EpicHeroicResolver, lambda: heroic_items("epic")),
+        ("amazon", "Amazon", AmazonHeroicResolver, lambda: heroic_items("amazon")),
     )
+
+    try:
+        for key, label, resolver_cls, get_items in sources:
+            if key not in stores:
+                continue
+            try:
+                raw_items = get_items()
+                if not raw_items:
+                    continue
+                resolver = resolver_cls(igdb=engine, cache_file=CACHE_RESOLVERS)
+            except Exception as e:
+                logger.warning(f"Error loading games from {label}: {e}")
+                continue
+
+            yield from load_store(label, resolver, raw_items)
+    finally:
+        # No esperamos a los enrichers: siguen escribiendo por el callback.
+        if executor:
+            executor.shutdown(wait=False)

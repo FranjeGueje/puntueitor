@@ -38,14 +38,14 @@ class SteamSelector(GameSelector):
         if len(candidates) == 1:
             return candidates[0]
 
-        best_game = None
-        best_score = -1.0
+        best_game: Game | None = None
+        best_score = 0.0
         best_data_completeness = 0
 
         for game in candidates:
             # Usamos el scorer inyectado en lugar de la propiedad del modelo
             game_score = self.scorer.score(game, self._scoring_ctx)
-            
+
             data_completeness = sum(1 for v in (
                 game.critic_score,
                 game.user_score,
@@ -53,8 +53,14 @@ class SteamSelector(GameSelector):
                 game.cover_url
             ) if v is not None)
 
-            if (game_score > best_score) or (
-                game_score == best_score and data_completeness > best_data_completeness
+            # El primer candidato siempre entra: partir de un umbral fijo
+            # dejaba best_game a None si todos puntuaban por debajo, y la
+            # traza posterior reventaba con AttributeError.
+            if (
+                best_game is None
+                or game_score > best_score
+                or (game_score == best_score
+                    and data_completeness > best_data_completeness)
             ):
                 best_game = game
                 best_score = game_score

@@ -13,12 +13,12 @@ En la fase inicial de diseño se plantearon paquetes planos directos (`puntueito
 puntueitor/
 ├── core/
 │   ├── cachers/       # Cachés locales (SQLite) de IGDB, tiendas, estado de librería y HLTB
+│   │                  # Todos sobre BaseCacher: conexión por hilo, esquema y errores
 │   ├── config.py      # Gestor singleton ConfigManager para ~/.config/puntueitor/config.json
 │   ├── enrichers/     # Complemento de metadatos no canónicos (HLTBEnricher)
 │   ├── filters/       # Predicados booleanos puros de juegos (matches)
 │   ├── heroics/       # Lector de librerías de Heroic Games Launcher (GOG, Epic, Amazon)
 │   ├── igdb/          # Cliente y autenticador de la API IGDB (igdbpy)
-│   ├── index/         # Índices optimizados en memoria para búsquedas fuzzy-match
 │   ├── mappers/       # Conversión stateless de esquemas externos a modelos del dominio
 │   ├── models/        # Entidades inmutables y de dominio (Game, Library, Contexts)
 │   ├── pipeline/      # Orquestación de carga asíncrona concurrente de datos (hilos)

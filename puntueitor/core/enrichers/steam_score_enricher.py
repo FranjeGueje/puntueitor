@@ -1,3 +1,4 @@
+import logging
 import math
 from dataclasses import replace
 
@@ -7,8 +8,15 @@ from puntueitor.core import Game
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
 from puntueitor.core.protocols import GameEnricher
 
+logger = logging.getLogger(__name__)
+
+STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{steam_id}"
+REQUEST_TIMEOUT = 10
+
 
 class SteamScoreEnricher(GameEnricher):
+    """Añade la puntuación bayesiana de reseñas de Steam (estilo SteamDB)."""
+
     def __init__(
         self,
         overwrite: bool = False,
@@ -18,54 +26,89 @@ class SteamScoreEnricher(GameEnricher):
         self.igdb_cacher = igdb_cacher
 
     def enrich(self, game: Game) -> Game:
-        if game.steamdb_score is not None and game.steam_review is not None and not self.overwrite:
+        if (
+            game.steamdb_score is not None
+            and game.steam_review is not None
+            and not self.overwrite
+        ):
             return game
 
         steam_id = self._get_steam_id(game)
         if not steam_id:
             return game
 
-        steamdb, review, pos, neg = self._fetch_score(steam_id)
-        return replace(game, steamdb_score=steamdb, steam_review=review, review_pos=pos, review_neg=neg)
+        scores = self._fetch_score(steam_id)
+        if scores is None:
+            # Fallo de red o respuesta inservible: conservamos lo que ya
+            # tuviera el juego en lugar de sobreescribirlo con None.
+            return game
+
+        steamdb, review, pos, neg = scores
+        return replace(
+            game,
+            steamdb_score=steamdb,
+            steam_review=review,
+            review_pos=pos,
+            review_neg=neg,
+        )
 
     def _get_steam_id(self, game: Game) -> str | None:
-        sid = game.stores.get("steam") if hasattr(game.stores, "get") else None
-        if sid:
-            return sid
+        steam_id = game.stores.get("steam")
+        if steam_id:
+            return steam_id
+
         if self.igdb_cacher:
             raw = self.igdb_cacher.get_game(game.igdb_id)
             if raw and raw.get("steam_id"):
                 return str(raw["steam_id"])
+
         return None
 
-    def _fetch_score(self, steam_id: str) -> tuple[float | None, int | None, int | None, int | None]:
+    @staticmethod
+    def _bayesian_score(positive: int, negative: int) -> float | None:
+        """Media de reseñas corregida por volumen (fórmula de SteamDB)."""
+        total = positive + negative
+        if total <= 0:
+            return None
+        average = positive / total
+        score = average - (average - 0.5) * (2 ** (-math.log10(total + 1)))
+        return round(score * 100, 2)
+
+    def _fetch_score(
+        self, steam_id: str
+    ) -> tuple[float | None, int | None, int | None, int | None] | None:
+        """
+        Devuelve (steamdb_score, review_score, positivas, negativas),
+        o None si la consulta falla.
+        """
         try:
-            url = f"https://store.steampowered.com/appreviews/{steam_id}"
-            params = {
-                "json": 1,
-                "language": "all",
-                "filter": "all",
-                "review_type": "all",
-                "purchase_type": "all",
-                "num_per_page": 0,
-            }
-            resp = requests.get(url, params=params, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            summary = data.get("query_summary", {})
-            total_positive = summary.get("total_positive", 0)
-            total_negative = summary.get("total_negative", 0)
-            total_reviews = summary.get("total_reviews", 0)
-            review_score = summary.get("review_score")
+            response = requests.get(
+                STEAM_REVIEWS_URL.format(steam_id=steam_id),
+                params={
+                    "json": 1,
+                    "language": "all",
+                    "filter": "all",
+                    "review_type": "all",
+                    "purchase_type": "all",
+                    "num_per_page": 0,
+                },
+                timeout=REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+            summary = response.json().get("query_summary", {})
+        except Exception as e:
+            logger.debug(f"Steam reviews request failed for app {steam_id}: {e}")
+            return None
 
-            steamdb_score = None
-            if total_reviews > 0:
-                total = total_positive + total_negative
-                average = total_positive / total
-                score = average - (average - 0.5) * (2 ** (-math.log10(total + 1)))
-                steamdb_score = round(score * 100, 2)
+        if not summary.get("total_reviews"):
+            return None
 
-            return steamdb_score, review_score, total_positive, total_negative
-        except Exception:
-            pass
-        return None, None, None, None
+        positive = summary.get("total_positive", 0)
+        negative = summary.get("total_negative", 0)
+
+        return (
+            self._bayesian_score(positive, negative),
+            summary.get("review_score"),
+            positive,
+            negative,
+        )

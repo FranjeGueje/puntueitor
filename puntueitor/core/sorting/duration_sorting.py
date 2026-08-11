@@ -10,10 +10,12 @@ class DurationSorter(GameSorter):
         self,
         library: Library
     ) -> Library:
-        games = library.games
-        games_sorted = sorted(
-            games,
-            key=lambda g: g.duration_hours if g.duration_hours not in (None, 0.0) else float("inf"),
-            reverse=not self.ascending,
-        )
-        return Library(games=tuple(games_sorted))
+        # Los juegos de duración desconocida se quedan al final en ambos
+        # sentidos: separarlos es más claro que colarlos con un ±inf, que
+        # los ponía en cabeza al ordenar de mayor a menor.
+        known = [g for g in library.games if g.duration_hours is not None]
+        unknown = [g for g in library.games if g.duration_hours is None]
+
+        known.sort(key=lambda g: g.duration_hours, reverse=not self.ascending)
+
+        return Library(games=tuple(known + unknown))

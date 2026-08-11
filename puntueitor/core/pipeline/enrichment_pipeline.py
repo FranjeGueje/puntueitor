@@ -1,8 +1,11 @@
 #Tomar una Library y devolver otra Library con juegos enriquecidos.
+import logging
 from collections.abc import Sequence
 
 from puntueitor.core.protocols import GameEnricher
 from puntueitor.core.models import Game, Library
+
+logger = logging.getLogger(__name__)
 
 
 class EnrichmentPipeline:
@@ -27,8 +30,12 @@ class EnrichmentPipeline:
             for enricher in self.enrichers:
                 try:
                     current = enricher.enrich(current)
-                except Exception:
-                    # contrato: enrichers nunca deben romper
+                except Exception as e:
+                    # Contrato: los enrichers nunca deben romper la carga, pero
+                    # tragarse el fallo en silencio ocultaba enrichers rotos.
+                    logger.warning(
+                        f"{type(enricher).__name__} failed for '{current.title}': {e}"
+                    )
                     continue
             enriched_games.append(current)
 

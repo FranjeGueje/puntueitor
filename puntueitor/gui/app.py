@@ -28,7 +28,6 @@ from puntueitor import __version__
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.mappers import IGMapperGame
-from puntueitor.core.pipeline.load_steam_library import load_steam_library
 from puntueitor.core.services.library_service import LibraryService
 
 class PuntueitorApp(App):
@@ -209,7 +208,11 @@ class PuntueitorApp(App):
                 from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
                 from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
                 hltb_resolver = HLTBResolver()
-                hltb = HLTBEnricher(client=hltb_resolver, overwrite=True)
+                hltb = HLTBEnricher(
+                    client=hltb_resolver,
+                    overwrite=True,
+                    extras_cacher=self.repo.extras_cacher,
+                )
                 steam = SteamScoreEnricher(overwrite=True, igdb_cacher=self.repo.igdb_cacher)
                 enriched = steam.enrich(hltb.enrich(game))
                 if enriched.duration_hours is not None or enriched.steam_review is not None or enriched.steamdb_score is not None:
@@ -351,7 +354,10 @@ class PuntueitorApp(App):
             from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
             from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
             hltb_resolver = HLTBResolver()
-            hltb = HLTBEnricher(client=hltb_resolver)
+            hltb = HLTBEnricher(
+                client=hltb_resolver,
+                extras_cacher=self.repo.extras_cacher,
+            )
             steam = SteamScoreEnricher(igdb_cacher=self.repo.igdb_cacher)
             enriched = steam.enrich(hltb.enrich(game))
             if enriched.duration_hours is not None or enriched.steamdb_score is not None:
@@ -649,7 +655,10 @@ class PuntueitorApp(App):
             from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
 
             hltb_resolver = HLTBResolver()
-            hltb = HLTBEnricher(client=hltb_resolver)
+            hltb = HLTBEnricher(
+                client=hltb_resolver,
+                extras_cacher=self.repo.extras_cacher,
+            )
             steam = SteamScoreEnricher(igdb_cacher=self.repo.igdb_cacher)
 
             games = list(self.full_library.games)
@@ -814,7 +823,11 @@ class PuntueitorApp(App):
             enrichers = []
             try:
                 hltb_resolver = HLTBResolver()
-                hltb_enricher = HLTBEnricher(client=hltb_resolver, overwrite=False)
+                hltb_enricher = HLTBEnricher(
+                    client=hltb_resolver,
+                    overwrite=False,
+                    extras_cacher=self.repo.extras_cacher,
+                )
                 enrichers.append(hltb_enricher)
             except Exception as e:
                 self.call_from_thread(self.notify, f"Warning: No se pudo inicializar HLTB: {e}", severity="warning")
@@ -837,28 +850,14 @@ class PuntueitorApp(App):
             )
 
             loaded_games = []
-            executor = None
 
             logger.info("do_reload: iterating games...")
-            for item in game_generator:
-                # El último item puede ser el executor (ThreadPoolExecutor o None)
-                if hasattr(item, 'duration_hours'):
-                    # Es un juego
-                    loaded_games.append(item)
-                    # Guardado progresivo: guardar juego inmediatamente si tiene duration
-                    if item.duration_hours is not None:
-                        self.repo.save_game(item)
-                    self.call_from_thread(self._on_game_loaded, item)
-                else:
-                    # Es el executor
-                    executor = item
-
-            # Cerrar el executor inmediatamente (sin esperar a que terminen los enrichers)
-            if executor:
-                try:
-                    executor.shutdown(wait=False)
-                except Exception as e:
-                    logger.warning(f"Error shutting down executor: {e}")
+            for game in game_generator:
+                loaded_games.append(game)
+                # Guardado progresivo: guardar juego inmediatamente si tiene duration
+                if game.duration_hours is not None:
+                    self.repo.save_game(game)
+                self.call_from_thread(self._on_game_loaded, game)
 
             new_library = Library.from_iterable(loaded_games)
             logger.info("do_reload: saving library...")

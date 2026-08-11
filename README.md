@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white" alt="Python 3.14">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/plataforma-linux-lightgrey" alt="Linux">
-  <img src="https://img.shields.io/badge/versión-1.0.0-orange" alt="Version 1.0.0">
+  <img src="https://img.shields.io/badge/versión-1.1.0-orange" alt="Version 1.1.0">
 </p>
 
 <h1 align="center">🎮 Puntueitor</h1>
@@ -66,8 +66,8 @@
 Descarga la última versión desde [Releases](https://github.com/FranjeGueje/puntueitor/releases):
 
 ```bash
-chmod +x puntueitor-1.0.0-x86_64-linux
-./puntueitor-1.0.0-x86_64-linux
+chmod +x puntueitor-1.1.0-x86_64-linux
+./puntueitor-1.1.0-x86_64-linux
 ```
 
 ### Desde fuente
@@ -187,11 +187,12 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-216 tests (unitarios + integración) que cubren:
+238 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
 - Selectores, Mappers, Enrichers
+- Resolvers (plantilla común y las 4 tiendas)
 - Pipeline (scoring_ops, filter_library, enrichment)
 - Servicios, Cachers (5 tipos), Config, Repository
 
@@ -203,7 +204,7 @@ Genera un binario único auto-contenido:
 
 ```bash
 ./build.sh
-# → dist/puntueitor-1.0.0-x86_64-linux  (25 MB)
+# → dist/puntueitor-1.1.0-x86_64-linux  (25 MB)
 ```
 
 El nombre incluye versión, arquitectura y sistema automáticamente.

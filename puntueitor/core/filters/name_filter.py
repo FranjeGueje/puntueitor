@@ -5,8 +5,8 @@ from puntueitor.core.models.util import normalize_title, similarity
 
 class NameFilter(GameFilter):
     """
-    Filtro de juegos por nombre usando LibraryIndex.
-    - Busca coincidencias exactas y aproximadas.
+    Filtro de juegos por nombre.
+    - Busca coincidencias por subcadena y, si fallan, por parecido tipográfico.
     """
 
     def __init__(

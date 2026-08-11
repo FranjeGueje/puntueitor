@@ -1,139 +1,130 @@
-import logging
-import sqlite3
 import json
+import logging
+import shutil
 from pathlib import Path
-from typing import Any
+
+from puntueitor.core.cachers.base_cacher import BaseCacher, CACHE_DB
 
 logger = logging.getLogger(__name__)
 
-class SteamUserCacher:
+_COLUMNS = (
+    "appid", "name", "playtime_forever", "img_icon_url",
+    "playtime_windows_forever", "playtime_mac_forever",
+    "playtime_linux_forever", "playtime_deck_forever",
+    "rtime_last_played", "content_descriptorids",
+    "playtime_disconnected", "has_community_visible_stats",
+)
+
+_INSERT_GAMES = f"""
+    INSERT INTO owned_games ({", ".join(_COLUMNS)})
+    VALUES ({", ".join(f":{c}" for c in _COLUMNS)})
+"""
+
+_PLAYTIME_FIELDS = (
+    "playtime_forever", "playtime_windows_forever", "playtime_mac_forever",
+    "playtime_linux_forever", "playtime_deck_forever", "rtime_last_played",
+    "playtime_disconnected",
+)
+
+
+class SteamUserCacher(BaseCacher):
     """
-    Caché relacional de juegos de Steam, por usuario.
+    Caché de la lista de juegos en propiedad de un usuario de Steam.
+
     La BBDD se llama {steam_user_id}.sqlite y vive en cache_dir.
-    Tiene una tabla `owned_games` con las columnas del endpoint GetOwnedGames.
+    """
+
+    SCHEMA = """
+        CREATE TABLE IF NOT EXISTS owned_games (
+            appid                       INTEGER PRIMARY KEY,
+            name                        TEXT,
+            playtime_forever            INTEGER,
+            img_icon_url                TEXT,
+            playtime_windows_forever    INTEGER,
+            playtime_mac_forever        INTEGER,
+            playtime_linux_forever      INTEGER,
+            playtime_deck_forever       INTEGER,
+            rtime_last_played           INTEGER,
+            content_descriptorids       JSON,
+            playtime_disconnected       INTEGER,
+            has_community_visible_stats INTEGER
+        );
     """
 
     def __init__(self, steam_user_id: int, cache_dir: str | Path | None = None):
-        new_default_dir = Path.home() / ".cache" / "puntueitor"
-        
-        if cache_dir:
-            base_dir = Path(cache_dir)
-        else:
-            base_dir = new_default_dir
-        
-        self.db_path = base_dir / f"{steam_user_id}.sqlite"
+        base_dir = Path(cache_dir) if cache_dir else CACHE_DB.parent
+        db_path = base_dir / f"{steam_user_id}.sqlite"
 
-        # Migración: Si no existe en la nueva ruta pero sí en la antigua default (./cache)
-        old_default_path = Path.cwd() / "cache" / f"{steam_user_id}.sqlite"
-        if not self.db_path.exists() and old_default_path.exists():
+        # Migración desde la antigua ubicación relativa ./cache
+        old_path = Path.cwd() / "cache" / f"{steam_user_id}.sqlite"
+        if not db_path.exists() and old_path.exists():
             try:
-                import shutil
-                shutil.move(str(old_default_path), str(self.db_path))
-            except Exception:
-                pass # Si falla el movimiento, se creará una nueva DB
+                base_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(old_path), str(db_path))
+            except Exception as e:
+                logger.warning(f"Could not migrate steam cache from {old_path}: {e}")
 
-        self._available = False
-        try:
-            base_dir.mkdir(parents=True, exist_ok=True)
-            self._init_db()
-            self._available = True
-        except Exception as e:
-            logger.error(f"Failed to init SteamUserCacher at {self.db_path}: {e}")
-
-    def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS owned_games (
-                    appid                       INTEGER PRIMARY KEY,
-                    name                        TEXT,
-                    playtime_forever            INTEGER,
-                    img_icon_url                TEXT,
-                    playtime_windows_forever    INTEGER,
-                    playtime_mac_forever        INTEGER,
-                    playtime_linux_forever      INTEGER,
-                    playtime_deck_forever       INTEGER,
-                    rtime_last_played           INTEGER,
-                    content_descriptorids       JSON,
-                    playtime_disconnected       INTEGER,
-                    has_community_visible_stats INTEGER
-                )
-            """)
-            conn.commit()
+        super().__init__(db_path)
 
     def get_all_games(self) -> list[dict] | None:
-        if not self._available:
+        rows = self._query("SELECT * FROM owned_games")
+        if not rows:
             return None
-        try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute("SELECT * FROM owned_games")
-                rows = cursor.fetchall()
-                if not rows:
-                    return None
-                result = []
-                for row in rows:
-                    d = dict(row)
-                    if d.get("content_descriptorids"):
-                        d["content_descriptorids"] = json.loads(d["content_descriptorids"])
-                    result.append(d)
-                return result
-        except Exception as e:
-            logger.error(f"Error getting owned games from {self.db_path}: {e}")
+
+        games = []
+        for row in rows:
+            game = dict(row)
+            if game.get("content_descriptorids"):
+                try:
+                    game["content_descriptorids"] = json.loads(
+                        game["content_descriptorids"]
+                    )
+                except (json.JSONDecodeError, TypeError):
+                    game["content_descriptorids"] = []
+            games.append(game)
+        return games
+
+    @staticmethod
+    def _sanitize(game: dict) -> dict | None:
+        appid = game.get("appid")
+        name = game.get("name")
+
+        if not isinstance(appid, int) or appid <= 0:
+            logger.warning(f"Skipping invalid game: invalid appid {appid}")
             return None
+
+        if not isinstance(name, str):
+            logger.warning(f"Skipping game with appid {appid}: invalid name type")
+            return None
+
+        row = {
+            "appid": appid,
+            "name": name[:500],
+            "img_icon_url": game.get("img_icon_url"),
+            "content_descriptorids": json.dumps(
+                game.get("content_descriptorids") or []
+            ),
+            "has_community_visible_stats": int(
+                bool(game.get("has_community_visible_stats", False))
+            ),
+        }
+        for field in _PLAYTIME_FIELDS:
+            row[field] = game.get(field, 0) or 0
+        return row
 
     def save_games(self, games: list[dict]) -> None:
         if not self._available:
             return
-        sanitized = []
-        for g in games:
-            appid = g.get("appid")
-            name = g.get("name")
 
-            if not isinstance(appid, int) or appid <= 0:
-                logger.warning(f"Skipping invalid game: invalid appid {appid}")
-                continue
-
-            if not isinstance(name, str):
-                logger.warning(f"Skipping game with appid {appid}: invalid name type")
-                continue
-
-            sanitized.append({
-                "appid": appid,
-                "name": name[:500] if len(name) > 500 else name,
-                "playtime_forever": g.get("playtime_forever", 0) or 0,
-                "img_icon_url": g.get("img_icon_url"),
-                "playtime_windows_forever": g.get("playtime_windows_forever", 0) or 0,
-                "playtime_mac_forever": g.get("playtime_mac_forever", 0) or 0,
-                "playtime_linux_forever": g.get("playtime_linux_forever", 0) or 0,
-                "playtime_deck_forever": g.get("playtime_deck_forever", 0) or 0,
-                "rtime_last_played": g.get("rtime_last_played", 0) or 0,
-                "content_descriptorids": json.dumps(g.get("content_descriptorids") or []),
-                "playtime_disconnected": g.get("playtime_disconnected", 0) or 0,
-                "has_community_visible_stats": int(bool(g.get("has_community_visible_stats", False))),
-            })
-
+        sanitized = [row for row in map(self._sanitize, games) if row is not None]
         if not sanitized:
             logger.warning("No valid games to save")
             return
 
         try:
-            with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
+            conn = self._connect()
+            with conn:
                 conn.execute("DELETE FROM owned_games")
-                conn.executemany("""
-                    INSERT INTO owned_games (
-                        appid, name, playtime_forever, img_icon_url,
-                        playtime_windows_forever, playtime_mac_forever,
-                        playtime_linux_forever, playtime_deck_forever,
-                        rtime_last_played, content_descriptorids,
-                        playtime_disconnected, has_community_visible_stats
-                    ) VALUES (
-                        :appid, :name, :playtime_forever, :img_icon_url,
-                        :playtime_windows_forever, :playtime_mac_forever,
-                        :playtime_linux_forever, :playtime_deck_forever,
-                        :rtime_last_played, :content_descriptorids,
-                        :playtime_disconnected, :has_community_visible_stats
-                    )
-                """, sanitized)
-                conn.commit()
+                conn.executemany(_INSERT_GAMES, sanitized)
         except Exception as e:
             logger.error(f"Error saving owned games to {self.db_path}: {e}")

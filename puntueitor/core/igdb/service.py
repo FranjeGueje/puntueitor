@@ -119,6 +119,9 @@ class IGDBService:
                     field_query=query,
                 )
             except Exception as e:
+                # Ningún error se interpreta como "el juego no existe": eso
+                # acababa marcando juegos válidos como desconocidos para
+                # siempre por un fallo puntual del cliente.
                 last_error = e
                 if attempt < self.MAX_RETRIES - 1 and self._is_retryable_error(e):
                     logger.warning(f"IGDB request failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}. Retrying in {delay}s...")
@@ -160,7 +163,7 @@ class IGDBService:
             data = self.cacher.get_game(igdb_id)
             if data:
                 return data
-            if not self.cacher._available:
+            if not self.cacher.available:
                 raise ValueError(f"IGDB cache unavailable for game {igdb_id}")
 
         # Consultar IGDB
