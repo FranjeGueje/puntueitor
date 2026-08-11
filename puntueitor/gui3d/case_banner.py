@@ -5,7 +5,7 @@ Banner de tiendas incrustado en la parte superior de cada caja del carrusel
 y se balancea con la caja porque es un hijo más de su nodo.
 
 No hay logos reales de Steam/Epic/GOG/Amazon en el repo — usar los oficiales
-sin más plantea temas de marca para un prototipo que no es material oficial
+sin más plantea temas de marca para algo que no es material oficial
 de esas tiendas. Cada badge es un color distintivo + texto corto en vez del
 logo — la misma paleta que `store_colors.py` usa para el color del estuche y
 `real_data.py` para la carátula de relleno, un solo sitio para las tres.

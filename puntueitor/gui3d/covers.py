@@ -8,15 +8,18 @@ sirvan al otro.
 """
 import logging
 import queue
+import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from panda3d.core import Filename, Texture, TexturePool
 
+from puntueitor.core import paths
+
 logger = logging.getLogger(__name__)
 
-COVERS_DIR = Path.home() / ".cache" / "puntueitor" / "covers"
+
 DOWNLOAD_TIMEOUT = 8
 
 
@@ -109,17 +112,44 @@ class CoverLoader:
     def __init__(self, max_workers: int = 4):
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._done: queue.Queue[tuple[object, Path]] = queue.Queue()
+        self._requested: set[object] = set()
+        self._inflight = 0
+        self._inflight_lock = threading.Lock()
+
+    @property
+    def inflight(self) -> int:
+        """Descargas encoladas o en curso todavía sin terminar."""
+        with self._inflight_lock:
+            return self._inflight
 
     def request(self, key: object, igdb_id: int, cover_url: str | None) -> None:
-        """Encola la descarga de la carátula de `igdb_id`, asociada a `key`."""
-        if not cover_url:
+        """
+        Encola la descarga de la carátula de `igdb_id`, asociada a `key`.
+
+        Repetir la petición de una `key` ya pedida no hace nada. Importa
+        porque quien llama pide las carátulas de alrededor de la selección
+        cada vez que se navega, y las ventanas de dos posiciones contiguas
+        se solapan casi por completo: sin esto, moverse por el carrusel
+        volvería a encolar los mismos juegos una y otra vez.
+        """
+        if not cover_url or key in self._requested:
             return
+        self._requested.add(key)
+        with self._inflight_lock:
+            self._inflight += 1
         self._executor.submit(self._download, key, igdb_id, cover_url)
 
     def _download(self, key: object, igdb_id: int, cover_url: str) -> None:
-        path = download_cover(igdb_id, cover_url)
-        if path is not None:
-            self._done.put((key, path))
+        try:
+            path = download_cover(igdb_id, cover_url)
+            if path is not None:
+                self._done.put((key, path))
+        finally:
+            # En `finally` para que un fallo de descarga no deje el contador
+            # inflado para siempre: si se quedara alto, el relleno de fondo
+            # dejaría de encolar nada y las carátulas restantes no bajarían.
+            with self._inflight_lock:
+                self._inflight -= 1
 
     def poll(self) -> list[tuple[object, Texture]]:
         """

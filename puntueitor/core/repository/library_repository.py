@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from puntueitor.core.cachers.base_cacher import CACHE_DB
+from puntueitor.core import paths
 from puntueitor.core.cachers.desconocidos_cacher import DesconocidosCacher
 from puntueitor.core.cachers.extras_cacher import ExtrasCacher
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
@@ -26,7 +26,7 @@ class LibraryRepository:
     """
 
     def __init__(self, cache_dir: str | Path | None = None):
-        self.cache_dir = Path(cache_dir).resolve() if cache_dir else CACHE_DB.parent
+        self.cache_dir = Path(cache_dir).resolve() if cache_dir else paths.data_dir()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         db_path = self.cache_dir / "puntueitor.db"

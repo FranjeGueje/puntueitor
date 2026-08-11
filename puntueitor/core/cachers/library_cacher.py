@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from puntueitor.core.cachers.base_cacher import BaseCacher
+from puntueitor.core import paths
 
 logger = logging.getLogger(__name__)
 
@@ -12,11 +13,13 @@ class LibraryCacher(BaseCacher):
     """
     Estados editables del usuario, separados de la caché de red.
 
-    Vive en ~/.config (datos del usuario, no regenerables) y no en ~/.cache,
+    Vive en ~/.local/share (datos del usuario, no regenerables) y no en ~/.cache,
     para que borrar la caché nunca pierda las marcas de terminado/favorito.
     """
 
-    DEFAULT_PATH = Path.home() / ".config" / "puntueitor" / "library.sqlite"
+    @staticmethod
+    def default_path() -> Path:
+        return paths.library_db()
 
     SCHEMA = """
         CREATE TABLE IF NOT EXISTS user_games (

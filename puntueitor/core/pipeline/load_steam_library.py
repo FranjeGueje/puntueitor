@@ -15,6 +15,7 @@ from puntueitor.core.resolvers.amazon_resolver import AmazonHeroicResolver
 from puntueitor.core.selector.steam_selector import SteamSelector
 from steampy.api.steam_api import SteamApi
 from puntueitor.core.config import ConfigManager
+from puntueitor.core import paths
 from puntueitor.core.heroics import HeroicsLoader
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def load_library(
     api_key = api_key or config.steam_api_key
     user = user or config.steam_user_id
 
-    CACHE_RESOLVERS = Path.home() / ".cache" / "puntueitor" / "puntueitor.db"
+    CACHE_RESOLVERS = paths.main_db()
     steam_selector = SteamSelector()
 
     executor = ThreadPoolExecutor(max_workers=4) if enrichers else None

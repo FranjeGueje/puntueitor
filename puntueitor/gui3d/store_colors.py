@@ -2,7 +2,7 @@
 Paleta de colores por tienda, compartida entre el color del estuche
 (`game_case.py`), el banner de tiendas (`case_banner.py`) y la carátula de
 relleno mientras se descarga la real (`real_data.py`) — un solo sitio para
-mantener la paleta consistente en todo el prototipo, en vez de la misma
+mantener la paleta consistente en todo el frontend 3D, en vez de la misma
 tabla de colores copiada en varios módulos.
 
 No hay logos reales de Steam/Epic/GOG/Amazon en el repo (temas de marca para

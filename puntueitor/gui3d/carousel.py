@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from direct.interval.IntervalGlobal import LerpPosHprInterval
 from panda3d.core import NodePath, Texture
 
+from puntueitor.core.models import Game
 from puntueitor.gui3d.case_banner import build_case_banner
 from puntueitor.gui3d.game_case import build_case_reflection, build_game_case
 from puntueitor.gui3d.store_colors import primary_store_color
@@ -102,12 +103,18 @@ def _cumulative_angle(distance: int) -> float:
 
 @dataclass(frozen=True)
 class CarouselEntry:
-    """Los datos mínimos que el carrusel necesita de un juego."""
+    """
+    Los datos que el carrusel necesita de un juego.
+
+    El carrusel en sí solo usa `key`, `texture` y `stores` — el resto va de
+    paso, para que quien dibuja el título y la ficha lo tenga a mano sin
+    tener que volver a consultar la biblioteca en cada movimiento.
+    """
     key: object  # normalmente igdb_id; opaco para el carrusel
     title: str
-    description: str
     texture: Texture
     stores: frozenset = frozenset()
+    game: Game | None = None  # ficha completa; None con datos incompletos
 
 
 class CarouselBox:

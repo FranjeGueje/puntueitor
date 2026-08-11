@@ -7,12 +7,13 @@ from typing import Any
 
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
+from puntueitor.core import paths
 
 logger = logging.getLogger(__name__)
 
 
 class IGDBService:
-    TOKEN_PATH = Path.home() / ".cache" / "puntueitor" / "igdb_token.json"
+
     FIELDS = "fields name,genres.name,aggregated_rating,cover.url,rating,storyline,first_release_date,total_rating,external_games.uid,external_games.external_game_source; "
     MAX_RETRIES = 2
     INITIAL_DELAY = 0.3
@@ -31,7 +32,7 @@ class IGDBService:
         self.client_secret = client_secret or config.igdb_client_secret
 
         if cache_dir is None:
-            cache_dir = Path.home() / ".cache" / "puntueitor"
+            cache_dir = paths.data_dir()
         db_path = Path(cache_dir) / "puntueitor.db"
         logger.info(f"IGDBService: IGDBCacher at {db_path}")
         self.cacher = IGDBCacher(db_path)

@@ -26,6 +26,7 @@ from puntueitor.core.models import Library, Game
 from puntueitor import __version__
 
 from puntueitor.core.config import ConfigManager
+from puntueitor.core import paths
 from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.mappers import IGMapperGame
 from puntueitor.core.services.library_service import LibraryService
@@ -424,7 +425,7 @@ class PuntueitorApp(App):
         import subprocess
         import urllib.request
         from pathlib import Path
-        cover_dir = Path.home() / ".cache" / "puntueitor" / "covers"
+        cover_dir = paths.covers_dir()
         cover_dir.mkdir(parents=True, exist_ok=True)
         cover_path = cover_dir / f"{game.igdb_id}.jpg"
         if not cover_path.exists():
@@ -795,9 +796,8 @@ class PuntueitorApp(App):
 
         try:
             if refresh:
-                cache_dir = Path.home() / ".cache" / "puntueitor"
                 try:
-                    os.remove(cache_dir / "puntueitor.db")
+                    os.remove(paths.main_db())
                 except OSError:
                     pass
 
@@ -900,13 +900,13 @@ class PuntueitorApp(App):
         bar.progress = current
 
 if __name__ == "__main__":
-    LOG_DIR = Path.home() / ".cache" / "puntueitor"
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = paths.log_file()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
-        filename=str(LOG_DIR / "puntueitor.log"),
+        filename=str(log_path),
         filemode="w",
     )
     app = PuntueitorApp()

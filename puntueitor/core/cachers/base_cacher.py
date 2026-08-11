@@ -4,9 +4,9 @@ import threading
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from puntueitor.core import paths
 
-CACHE_DB = Path.home() / ".cache" / "puntueitor" / "puntueitor.db"
+logger = logging.getLogger(__name__)
 
 #: sqlite3 acepta parámetros posicionales (?) o con nombre (:campo).
 Params = Sequence | Mapping[str, object]
@@ -29,9 +29,6 @@ class BaseCacher:
        fallo de inicialización marca el cacher como no disponible.
     """
 
-    #: Ruta por defecto de la base de datos. Las subclases la sobreescriben.
-    DEFAULT_PATH: Path = CACHE_DB
-
     #: DDL idempotente, ejecutado con `executescript` al inicializar.
     SCHEMA: str = ""
 
@@ -39,8 +36,21 @@ class BaseCacher:
     #: aplicaron, y eso es esperado.
     MIGRATIONS: tuple[str, ...] = ()
 
+    @staticmethod
+    def default_path() -> Path:
+        """
+        Ruta por defecto de la base de datos; las subclases la
+        sobreescriben.
+
+        Es un método y no un atributo de clase a propósito: como atributo se
+        evaluaría al importar el módulo, y entonces redirigir la aplicación
+        a otro directorio (tests, un sandbox) parcheando `Path.home` o las
+        XDG_*_HOME ya no tendría ningún efecto.
+        """
+        return paths.main_db()
+
     def __init__(self, db_path: str | Path | None = None):
-        self.db_path = Path(db_path) if db_path else self.DEFAULT_PATH
+        self.db_path = Path(db_path) if db_path else self.default_path()
         self._local = threading.local()
         self._available = False
 

@@ -81,6 +81,19 @@ pip install -r requirements.txt
 python -m puntueitor.gui.app
 ```
 
+### Interfaz 3D
+
+Además de la TUI hay un frontend 3D: un carrusel de cajas de juego con la
+ficha del seleccionado, navegable con teclado o con mando.
+
+```bash
+python -m puntueitor.gui3d.app
+```
+
+Lee la misma biblioteca cacheada que la TUI y no modifica nada: lo único
+que descarga son las carátulas que falten, y en segundo plano según vas
+navegando. Necesita una GPU con OpenGL.
+
 ---
 
 ## ⚙️ Configuración

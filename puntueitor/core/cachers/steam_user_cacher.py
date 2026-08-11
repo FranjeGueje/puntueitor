@@ -3,7 +3,8 @@ import logging
 import shutil
 from pathlib import Path
 
-from puntueitor.core.cachers.base_cacher import BaseCacher, CACHE_DB
+from puntueitor.core.cachers.base_cacher import BaseCacher
+from puntueitor.core import paths
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,10 @@ class SteamUserCacher(BaseCacher):
     """
 
     def __init__(self, steam_user_id: int, cache_dir: str | Path | None = None):
-        base_dir = Path(cache_dir) if cache_dir else CACHE_DB.parent
+        # Caché de verdad: es una copia de lo que devuelve la API de Steam
+        # y se rehace sola, así que se queda en ~/.cache aunque las bases
+        # de la biblioteca se hayan movido a ~/.local/share.
+        base_dir = Path(cache_dir) if cache_dir else paths.cache_dir()
         db_path = base_dir / f"{steam_user_id}.sqlite"
 
         # Migración desde la antigua ubicación relativa ./cache

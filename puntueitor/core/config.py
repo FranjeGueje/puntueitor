@@ -1,3 +1,4 @@
+from puntueitor.core import paths
 import json
 import logging
 import threading
@@ -53,8 +54,8 @@ class ConfigManager:
         pass
 
     def _load(self):
-        self.config_dir = Path.home() / ".config" / "puntueitor"
-        self.config_file = self.config_dir / "config.json"
+        self.config_dir = paths.config_dir()
+        self.config_file = paths.config_file()
 
         if not self.config_file.exists():
             self.config_dir.mkdir(parents=True, exist_ok=True)

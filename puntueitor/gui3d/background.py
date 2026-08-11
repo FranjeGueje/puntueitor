@@ -124,6 +124,11 @@ class Background:
         if self._current_tex_size is not None:
             self._apply_cover_fit(*self._current_tex_size)
 
+    @property
+    def current(self) -> Texture | None:
+        """Carátula de origen que hay puesta ahora (sin desenfocar)."""
+        return self._current
+
     def _blurred(self, texture: Texture) -> Texture:
         key = id(texture)
         cached = self._blur_cache.get(key)
