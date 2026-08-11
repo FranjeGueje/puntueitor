@@ -17,6 +17,8 @@ from panda3d.core import Filename, Texture, TexturePool
 
 from puntueitor.core import paths
 
+COVERS_DIR = paths.covers_dir()
+
 logger = logging.getLogger(__name__)
 
 

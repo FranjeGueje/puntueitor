@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="puntueitor"
-ENTRY_POINT="puntueitor/gui/app.py"
+APP_NAME="puntueitor3d"
+ENTRY_POINT="puntueitor/gui3d/app.py"
 
 cd "$(dirname "$0")"
 
@@ -21,12 +21,14 @@ OUTPUT_NAME="${APP_NAME}-${VERSION}-${ARCH}-${OS}"
 echo "==> Limpiando builds anteriores..."
 rm -rf build dist/"$OUTPUT_NAME" *.spec
 
+
 echo "==> Ejecutando PyInstaller..."
 pyinstaller \
     --onefile \
     --name "$OUTPUT_NAME" \
-    --add-data "puntueitor/gui/styles.tcss:." \
-    --collect-all textual \
+    --add-data "$(python -c 'import panda3d; import os; print(os.path.dirname(panda3d.__file__))')/etc:etc" \
+    --collect-all panda3d \
+    --collect-all direct \
     --hidden-import igdbpy \
     --hidden-import howlongtobeatpy \
     --hidden-import igdbpy \
