@@ -2,3 +2,4 @@ igdbpy==0.1.1
 howlongtobeatpy
 textual
 rich
+panda3d
