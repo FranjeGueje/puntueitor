@@ -17,8 +17,6 @@ from panda3d.core import Filename, Texture, TexturePool
 
 from puntueitor.core import paths
 
-COVERS_DIR = paths.covers_dir()
-
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +24,7 @@ DOWNLOAD_TIMEOUT = 8
 
 
 def _cover_path(igdb_id: int) -> Path:
-    return COVERS_DIR / f"{igdb_id}.jpg"
+    return paths.covers_dir() / f"{igdb_id}.jpg"
 
 
 def _load_texture(path: Path) -> Texture | None:
@@ -68,7 +66,7 @@ def download_cover(igdb_id: int, cover_url: str) -> Path | None:
     red devuelve None en vez de propagar, para no tumbar el arranque del
     carrusel por un juego sin conexión.
     """
-    COVERS_DIR.mkdir(parents=True, exist_ok=True)
+    paths.covers_dir().mkdir(parents=True, exist_ok=True)
     path = _cover_path(igdb_id)
     try:
         urllib.request.urlretrieve(cover_url, path)

@@ -54,7 +54,7 @@
 | **Juegos desconocidos** | Los juegos no encontrados en IGDB se aíslan para resolución manual |
 | **Resolución IGDB** | Búsqueda por título con 15 resultados, o re-resolución automática por tienda |
 | **Persistencia de filtros** | Los filtros activos se guardan entre sesiones (JSON) |
-| **Caché unificada** | Una sola base de datos SQLite en `~/.cache/puntueitor/` |
+| **Caché unificada** | Una sola base de datos SQLite en `~/.local/share/puntueitor/` |
 | **Binario único** | PyInstaller — sin dependencias del sistema, 25 MB |
 
 ---
@@ -99,6 +99,19 @@ navegando. Necesita una GPU con OpenGL.
 ## ⚙️ Configuración
 
 Al arrancar por primera vez, pulsa `c` para abrir el diálogo de configuración, o edita manualmente `~/.config/puntueitor/config.json`:
+
+> Puntueitor sigue la especificación XDG Base Directory. Si vienes de una
+> versión anterior, tus ficheros se trasladan solos al arrancar:
+>
+> | Directorio | Contenido |
+> |---|---|
+> | `~/.config/puntueitor/` | `config.json` |
+> | `~/.local/share/puntueitor/` | biblioteca y marcas de usuario (`puntueitor.db`, `library.sqlite`) |
+> | `~/.cache/puntueitor/` | carátulas y datos re-descargables |
+> | `~/.local/state/puntueitor/` | log |
+>
+> La biblioteca ya no vive en `~/.cache`: ahí un limpiador de disco podía
+> borrarla, y casi nadie incluye esa carpeta en sus copias de seguridad.
 
 | Campo | Tipo | Descripción |
 |---|---|---|

@@ -79,11 +79,11 @@ class IGDBService:
             raise RuntimeError(f"IGDB token renewal failed: {e}") from e
     
     def _load_token_from_disk(self) -> dict | None:
-        if not self.TOKEN_PATH.exists():
+        if not paths.igdb_token_file().exists():
             return None
         
         try:
-            data = json.loads(self.TOKEN_PATH.read_text())
+            data = json.loads(paths.igdb_token_file().read_text())
             for key in ("access_token", "expires_in", "token_type", "expires_at"):
                 if key not in data:
                     return None
@@ -93,8 +93,8 @@ class IGDBService:
 
             
     def _save_token_to_disk(self, token: dict) -> None:
-        self.TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self.TOKEN_PATH.write_text(json.dumps(token))
+        paths.igdb_token_file().parent.mkdir(parents=True, exist_ok=True)
+        paths.igdb_token_file().write_text(json.dumps(token))
 
     
     # ---------------------------
