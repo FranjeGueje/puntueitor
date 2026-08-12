@@ -35,7 +35,14 @@ REVIEW_LABELS = {
 NOT_AVAILABLE = "N/A"
 FALLBACK_DESCRIPTION = "Sin descripción disponible."
 
-STEAMDB_NOTE = "*Fórmula avanzada en base a puntuaciones de Steam"
+# Marca de nota a superíndice junto a la puntuación SteamDB — el "[1]" en sí,
+# sin el texto de la nota ("Fórmula avanzada en base a puntuaciones de
+# Steam"): se pidió como referencia visual discreta, no como explicación en
+# pantalla. Va con el escape de estructura de TextNode (`\1nombre\1 texto
+# \2`, registrado como propiedad "sup" en `app.py:_setup_hud`), que aplica
+# `set_glyph_shift`/`set_text_scale` a lo que quede entre las marcas — el
+# mismo mecanismo que usaría un "º" en una fuente con esa forma.
+STEAMDB_NOTE_MARK = "\x01sup\x01[1]\x02"
 
 
 def _thousands(value: int) -> str:
@@ -77,9 +84,16 @@ def build_values(game: Game) -> list[str]:
         if game.duration_hours is not None and game.duration_hours > 0
         else NOT_AVAILABLE
     )
-    user_score = f"{game.user_score:.0f}/100" if game.user_score is not None else NOT_AVAILABLE
-    critic_score = f"{game.critic_score:.0f}/100" if game.critic_score is not None else NOT_AVAILABLE
-    steamdb = f"{game.steamdb_score:.2f}" if game.steamdb_score is not None else NOT_AVAILABLE
+    user_score = f"{game.user_score:.0f}" if game.user_score is not None else NOT_AVAILABLE
+    critic_score = f"{game.critic_score:.0f}" if game.critic_score is not None else NOT_AVAILABLE
+    # La marca [1] solo tiene sentido junto a un número real — pegarla a
+    # "N/A" sugeriría que hay una nota sobre la ausencia de dato, que no la
+    # hay.
+    steamdb = (
+        f"{game.steamdb_score:.0f}{STEAMDB_NOTE_MARK}"
+        if game.steamdb_score is not None
+        else NOT_AVAILABLE
+    )
     stores = ", ".join(game.stores.keys()) if game.stores else "Ninguna"
     release = game.release_date.strftime("%d/%m/%Y") if game.release_date else NOT_AVAILABLE
 
@@ -88,7 +102,7 @@ def build_values(game: Game) -> list[str]:
         duration,
         user_score,
         critic_score,
-        f"{steamdb}   {STEAMDB_NOTE}",
+        steamdb,
         _steam_review(game),
         stores,
         release,
