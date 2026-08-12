@@ -65,10 +65,13 @@ def build_real_entries(
     # Orden alfabético. Antes iban primero los que ya tenían la carátula
     # descargada, para que el prototipo arrancara enseñando arte real: eso
     # dejaba la biblioteca en un orden sin sentido para quien la usa
-    # (depende de qué JPEG haya en la caché) y ya no hace falta, porque las
-    # carátulas que faltan se piden según se navega. Ordenar de verdad es
-    # cosa del submenú "Ordenar", que aún está por conectar; esto es el
-    # criterio por defecto mientras tanto.
+    # (depende de qué JPEG haya en la caché).
+    #
+    # Este orden ya NO es el que se ve: `app.App` aplica su propia
+    # ordenación al arrancar (ver `gui3d/sorting.py`). Se mantiene porque
+    # sigue siendo el desempate: `sort` es estable, así que dos juegos con
+    # la misma nota o la misma duración salen en orden alfabético en vez de
+    # en uno arbitrario.
     games.sort(key=lambda game: game.title_normalized)
 
     entries = []

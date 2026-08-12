@@ -63,7 +63,7 @@ FILTER_ITEMS = [
     MenuItem("sort:title", "Nombre"),
     MenuItem("sort:user_score", "Puntuación de usuarios"),
     MenuItem("sort:critic_score", "Puntuación de crítica"),
-    MenuItem("sort:mixed", "Puntuación media"),
+    MenuItem("sort:steamdb", "Puntuación de SteamDB"),
     MenuItem("sort:duration", "Duración"),
     MenuItem("sec_filter", "FILTRAR", kind="header"),
     MenuItem("filter:finished:true", "Solo terminados"),

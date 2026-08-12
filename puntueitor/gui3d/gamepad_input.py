@@ -76,6 +76,7 @@ class GamepadInput(DirectObject):
         on_filter: Callable[[], None] | None = None,
         on_labels: Callable[[], None] | None = None,
         on_hidden: Callable[[], None] | None = None,
+        on_jump: Callable[[int], None] | None = None,
     ):
         super().__init__()
         self._app = app
@@ -88,6 +89,9 @@ class GamepadInput(DirectObject):
             "labels": on_labels,
             "hidden": on_hidden,
         }
+        # Aparte del resto: lleva argumento (hacia dónde saltar), así que no
+        # encaja en el diccionario de gestos sin parámetros de `_fire`.
+        self._on_jump = on_jump
         self._left_trigger_held = False
 
         self._device_manager = InputDeviceManager.get_global_ptr()
@@ -176,6 +180,12 @@ class GamepadInput(DirectObject):
         for button, gesture in bindings.items():
             self.accept(f"{EVENT_PREFIX}-{button}", self._fire, [gesture])
 
+        # L1/R1: salto rápido de grupo. Estos SÍ son botones de verdad (a
+        # diferencia de los gatillos, ver `update`), así que llegan como
+        # eventos y no hay que sondear nada.
+        self.accept(f"{EVENT_PREFIX}-lshoulder", self._fire_jump, [-1])
+        self.accept(f"{EVENT_PREFIX}-rshoulder", self._fire_jump, [1])
+
         # La cruceta se sigue por eventos de pulsar/soltar además de por
         # sondeo (ver `direction`). `ButtonThrower` emite "<prefijo>-<botón>"
         # al pulsar y "<prefijo>-<botón>-up" al soltar, así que con los dos
@@ -194,6 +204,10 @@ class GamepadInput(DirectObject):
         callback = self._callbacks.get(gesture)
         if callback:
             callback()
+
+    def _fire_jump(self, direction: int) -> None:
+        if self._on_jump:
+            self._on_jump(direction)
 
     # ──────────────────────────────
     # Dirección (estado continuo, por sondeo)

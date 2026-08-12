@@ -793,6 +793,14 @@ menu of nothing but headers can't spin forever).
 
 Input bindings, all four main menus opening from the carousel: Select/Esc →
 Options, Start/Tab → scoring, X/`x` → filter+sort, A/Enter → game menu.
+Pressing the button that *opened* a menu again closes the **whole stack** back
+to the carousel, not one level (`_toggle_root_menu` + `_menu_opener`). Each
+button only closes its own menu — X inside the scoring menu configures the
+focused system rather than closing it. The game menu is deliberately excluded:
+it opens with A, and A inside a menu means "choose", so it can't also mean
+"close" without ticking a checkbox on the way out. `_menu_opener` must be
+cleared whenever the stack empties, or the *previous* menu's button would close
+the next one.
 B and Esc both go back, but they are **not** the same handler: Esc doubles as
 "open Options" on the main screen (the keyboard has no comfortable Select),
 while B on the main screen deliberately does nothing, because it means
@@ -898,6 +906,62 @@ Consequences worth knowing:
 - Toggling "Oculto" from the game menu defers the re-filter until that menu
   closes (`_hidden_filter_dirty`). Applying it immediately yanks the box out from
   under the open menu and shifts the selection while you're still editing it.
+
+## Sorting and the L1/R1 group jump (sorting.py)
+
+`sorting.py` owns the sort criteria (`title`, `user_score`, `critic_score`,
+`steamdb`, `duration` — the TUI's keys except `steamdb`, which it doesn't
+offer). Each defines the value it sorts by, the direction, the **group** that
+value falls in, and how that group is named on screen. Default directions match
+the TUI's: name and duration ascending, scores descending.
+
+Group labels are per-criterion for a reason. Scores name *which* score they are
+("Usuarios: 95", "Crítica: 90", "SteamDB: 85") — the notification doesn't say
+which sort you came from, so a bare "Puntuación: 95" wouldn't tell you. They
+show only the low end, not a range: scores top out at 100, so the last bucket
+came out as `100-104`, an interval that can't exist and holds exactly one value.
+Durations *do* show the range ("Duración: 5-9 h") because hours have no ceiling.
+Names say "Letra: A", falling back to "Inicial: 1" for titles starting with a
+digit ("112 Operator"), which form their own group and aren't a letter.
+
+An earlier `mixed` criterion computed the score through `MixedScore` +
+`ConfigManager`, mirroring `LibraryService.sort`. It was replaced by SteamDB's
+score: it's a plain stored field, it drops the config dependency, and it sorts
+by the very number already printed on each box's sticker. Note the sticker
+*rounds* (`94.95` → "95") while the bucket *floors* (→ the 90 group), so a box
+can read 95 while the jump says "Puntuación: 90". That's display rounding, not a
+mis-sorted entry.
+
+`order_entries()` returns `(keys, groups)` *together*, and that pairing is the
+whole design. The group is always derived from the same value the sort used, so
+the jump can't land somewhere that disagrees with what's on screen. The carousel
+stores the group boundaries once (`_group_starts`) and `jump_to_group` is then a
+`bisect` — no walking 1266 entries per button press.
+
+Jump semantics, per the spec: R1 goes to the **first** entry of the next group,
+L1 to the **first** entry of the previous group (not the last, and not the start
+of the current one), wrapping at both ends. "No games with that letter" needs no
+special handling — walking the boundaries of the *actual* sorted list skips
+absent groups for free (verified: 3 → 6 → 8 with no 4, 5 or 7 in the library).
+
+Two things that follow from the grouping, not from taste:
+
+- Name sort uses `title.lower()`, **not** `title_normalized`. The latter strips
+  punctuation for IGDB matching, so grouping by its initial would put games in
+  letters that don't match what's printed on screen. `real_data`'s
+  `title_normalized` sort is now only the stable-sort tiebreak.
+- Games with **no value** (no score, unknown duration) go last in their own
+  group, whichever the direction. Treating them as zero would float them to the
+  top of an ascending sort, and a game with no score is not a bad game.
+
+`mixed` reuses `MixedScore` with `ConfigManager`, exactly like
+`LibraryService.sort`, so both frontends rank identically. `ConfigManager` is
+imported lazily inside the value factory — it reads from disk and is pointless
+if you never sort by that criterion. The strategy is built once per sort, not
+per game.
+
+L1/R1 are real buttons (`lshoulder`/`rshoulder`), unlike the triggers — they
+arrive as events with no polling.
 
 Transient messages go through `notifications.Notifier` (top-right, at the
 title's height): fade in 1 s, hold 2 s, fade out 1 s, driven by one `Sequence`.

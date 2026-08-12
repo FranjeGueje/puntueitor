@@ -4,6 +4,7 @@ las cajas reposan en un arco poco profundo frente a la cámara, la
 seleccionada se adelanta y se encara, y todas tienen un balanceo continuo de
 "flotación" además del desplazamiento al navegar.
 """
+import bisect
 import logging
 import math
 from dataclasses import dataclass
@@ -276,6 +277,9 @@ class Carousel:
         self._order = list(range(len(entries)))
         self._pos_by_key = {entry.key: i for i, entry in enumerate(entries)}
         self._selected_pos = 0
+        # Cortes entre grupos para los saltos de L1/R1; los rellena
+        # `set_order` en cuanto se aplica una ordenación.
+        self._group_starts: list[int] = [0]
         self._elapsed = 0.0
         self._layout(animate=False)
 
@@ -370,25 +374,40 @@ class Carousel:
         offset = (pos - self._selected_pos) % total
         return min(offset, total - offset) <= radius
 
-    def set_visible_keys(self, keys: set) -> None:
+    def set_order(
+        self,
+        ordered_keys: list,
+        groups: list | None = None,
+        reset_selection: bool = False,
+    ) -> None:
         """
-        Restringe el carrusel a `keys`, conservando el orden base.
+        Fija QUÉ juegos se recorren y EN QUÉ orden.
 
-        Se reconstruye el recorrido a partir de la lista completa, así que
-        un juego que vuelve a aparecer lo hace EN SU SITIO (por orden
-        alfabético, o el que imponga la ordenación cuando se conecte), no
-        al final.
+        `ordered_keys` ya viene filtrado y ordenado por quien llama (ver
+        `app.App._apply_order`); aquí solo se traduce a índices de caja. Lo
+        mismo vale para filtrar que para reordenar, que son la misma
+        operación desde el punto de vista del carrusel.
 
-        Si no quedara ningún juego visible no se aplica nada: el carrusel
-        no tiene un estado "vacío" que dibujar y medio programa da por hecho
-        que hay una selección (la ficha, el fondo, el menú de juego). Es
-        preferible ignorar el filtro y avisar que quedarse sin selección.
+        `groups` es el grupo de cada clave, en paralelo, y sirve para los
+        saltos de L1/R1 (ver `jump_to_group`). Se guardan ya calculados los
+        cortes entre grupos porque el salto tiene que ser inmediato y
+        recorrer mil doscientas entradas en cada pulsación para encontrar
+        dónde empieza el grupo siguiente no hace falta: los cortes solo
+        cambian cuando cambia la ordenación.
+
+        `reset_selection` lleva la selección al primer elemento — es lo que
+        se quiere al elegir una ordenación nueva. Por defecto se intenta
+        seguir en el mismo juego.
+
+        Si la lista viniera vacía no se aplica nada: el carrusel no tiene un
+        estado "vacío" que dibujar y medio programa da por hecho que hay una
+        selección (la ficha, el fondo, el menú de juego). Es preferible
+        ignorar el cambio y avisar que quedarse sin selección.
         """
-        order = [i for i, entry in enumerate(self._entries) if entry.key in keys]
+        box_by_key = {entry.key: i for i, entry in enumerate(self._entries)}
+        order = [box_by_key[key] for key in ordered_keys if key in box_by_key]
         if not order:
-            logger.warning(
-                "gui3d: el filtro dejaría el carrusel vacío; se ignora"
-            )
+            logger.warning("gui3d: el orden dejaría el carrusel vacío; se ignora")
             return
 
         previous_key = self.selected.key
@@ -403,21 +422,74 @@ class Carousel:
         self._pos_by_key = {
             self._entries[index].key: pos for pos, index in enumerate(order)
         }
+        self._group_starts = self._compute_group_starts(groups, len(order))
 
-        # Se intenta seguir en el mismo juego. Si es el que acaba de dejar
-        # de verse (te ocultas el juego que tienes delante), se cae al
-        # siguiente que sí se vea a partir de donde estabas, que es lo que
-        # menos desorienta: la selección se queda donde estaba mirando el
-        # usuario en vez de saltar al principio de la biblioteca.
-        pos = self._pos_by_key.get(previous_key)
-        if pos is None:
-            pos = next(
-                (p for p, index in enumerate(order) if index >= previous_box_index),
-                0,
-            )
-        self._selected_pos = pos
+        if reset_selection:
+            self._selected_pos = 0
+        else:
+            # Se intenta seguir en el mismo juego. Si es el que acaba de
+            # dejar de verse (te ocultas el juego que tienes delante), se
+            # cae al siguiente que sí se vea a partir de donde estabas, que
+            # es lo que menos desorienta: la selección se queda donde estaba
+            # mirando el usuario en vez de saltar al principio.
+            pos = self._pos_by_key.get(previous_key)
+            if pos is None:
+                pos = next(
+                    (p for p, index in enumerate(order) if index >= previous_box_index),
+                    0,
+                )
+            self._selected_pos = pos
 
         self._layout(animate=False)
+
+    @staticmethod
+    def _compute_group_starts(groups: list | None, total: int) -> list[int]:
+        """
+        Posiciones en las que empieza cada grupo.
+
+        Sin grupos (o con uno solo) se devuelve la lista entera como un
+        único grupo, y entonces saltar no lleva a ninguna parte, que es lo
+        correcto: no hay a dónde saltar.
+        """
+        if not groups or len(groups) != total:
+            return [0]
+        starts = [0]
+        for i in range(1, total):
+            if groups[i] != groups[i - 1]:
+                starts.append(i)
+        return starts
+
+    def jump_to_group(self, direction: int) -> bool:
+        """
+        Salta al principio del grupo anterior (-1) o siguiente (+1).
+
+        Siempre al PRINCIPIO del grupo, también hacia atrás: estando en
+        mitad de la H, L1 lleva al primer juego de la G, no al último. Da la
+        vuelta por los extremos (de la A hacia atrás se va a la Z).
+
+        Devuelve si se ha movido, para que quien llama sepa si merece la
+        pena refrescar y avisar.
+        """
+        starts = self._group_starts
+        if len(starts) <= 1:
+            return False
+
+        # `bisect_right - 1` da el grupo que contiene la posición actual,
+        # esté donde esté dentro de él.
+        current = bisect.bisect_right(starts, self._selected_pos) - 1
+        target = starts[(current + direction) % len(starts)]
+        if target == self._selected_pos:
+            return False
+
+        self._selected_pos = target
+        self._layout(animate=False)
+        return True
+
+    def group_at_selection(self, groups: list) -> object:
+        """El grupo de la selección actual, dada la lista paralela `groups`."""
+        if not groups or self._selected_pos >= len(groups):
+            return None
+        return groups[self._selected_pos]
 
     def update(self, dt: float) -> None:
         """Llamar cada frame: avanza el balanceo continuo de las cajas."""
@@ -443,7 +515,7 @@ class Carousel:
         n = len(self._order)
 
         # Se recorre el orden VISIBLE, no todas las cajas: las filtradas ya
-        # las escondió `set_visible_keys` y no tienen hueco en el arco.
+        # las escondió `set_order` y no tienen hueco en el arco.
         for pos, box_index in enumerate(self._order):
             box = self._boxes[box_index]
             offset = self._signed_offset(pos, n)

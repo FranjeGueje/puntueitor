@@ -99,8 +99,10 @@ from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
 from puntueitor.gui3d.fonts import (
+    ICON_GAMEPAD_L1,
     ICON_GAMEPAD_L2,
     ICON_GAMEPAD_LEFT_RIGHT,
+    ICON_GAMEPAD_R1,
     ICON_GAMEPAD_SELECT,
     ICON_GAMEPAD_START,
     ICON_GAMEPAD_UP_DOWN,
@@ -109,10 +111,12 @@ from puntueitor.gui3d.fonts import (
     ICON_KEYBOARD_ESCAPE,
     ICON_KEYBOARD_LEFT,
     ICON_KEYBOARD_O,
+    ICON_KEYBOARD_Q,
     ICON_KEYBOARD_RIGHT,
     ICON_KEYBOARD_SPACE,
     ICON_KEYBOARD_TAB,
     ICON_KEYBOARD_UP,
+    ICON_KEYBOARD_W,
     ICON_KEYBOARD_X,
     ICON_XBOX_A,
     ICON_XBOX_B,
@@ -129,6 +133,7 @@ from puntueitor.gui3d.menu import Menu
 from puntueitor.gui3d.notifications import Notifier
 from puntueitor.gui3d.real_data import build_real_entries
 from puntueitor.gui3d.sample_data import build_sample_entries
+from puntueitor.gui3d import sorting
 from puntueitor.gui3d.store_colors import as_text_color, primary_store_color
 
 logging.basicConfig(level=logging.INFO)
@@ -237,8 +242,11 @@ def _build_help_text() -> str:
     importar sería antes de que exista esa fuente.
     """
     kb_lr = ICON_KEYBOARD_LEFT + ICON_KEYBOARD_RIGHT
+    kb_qw = ICON_KEYBOARD_Q + ICON_KEYBOARD_W
+    pad_lr = ICON_GAMEPAD_L1 + ICON_GAMEPAD_R1
     return (
         f"{icon_markup(kb_lr)} / {icon_markup(ICON_GAMEPAD_LEFT_RIGHT)}  navegar   -   "
+        f"{icon_markup(kb_qw)} / {icon_markup(pad_lr)}  saltar   -   "
         f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  juego   -   "
         f"{icon_markup(ICON_KEYBOARD_TAB)} / {icon_markup(ICON_GAMEPAD_START)}  scoring   -   "
         f"{icon_markup(ICON_KEYBOARD_X)} / {icon_markup(ICON_XBOX_X)}  filtrar   -   "
@@ -319,7 +327,9 @@ class App(ShowBase):
         # Los juegos marcados como ocultos no salen en el carrusel mientras
         # no se pidan expresamente (L2 / tecla "o").
         self._show_hidden = False
-        self._apply_hidden_filter()
+        self._sort_key = sorting.DEFAULT_CRITERION
+        self._groups: list = []
+        self._apply_order()
 
         # Carátulas que aún no están en disco: se descargan en segundo plano
         # y se sustituyen en caliente cuando llegan (ver _update). Se piden
@@ -365,6 +375,7 @@ class App(ShowBase):
             on_filter=self._open_filter_menu,
             on_labels=self._toggle_labels,
             on_hidden=self._toggle_hidden,
+            on_jump=self._jump_group,
         )
 
         self.task_mgr.add(self._update, "carousel-update")
@@ -603,6 +614,8 @@ class App(ShowBase):
         self.accept("tab", self._open_scoring_menu)
         self.accept("x", self._on_filter_key)
         self.accept("o", self._toggle_hidden)
+        self.accept("q", self._jump_group, [-1])
+        self.accept("w", self._jump_group, [1])
 
     def _set_key_held(self, name: str, held: bool) -> None:
         self._keys_held[name] = held
@@ -697,7 +710,7 @@ class App(ShowBase):
         self._labels_visible = not self._labels_visible
         self.carousel.set_labels_visible(self._labels_visible)
 
-    def _visible_keys(self) -> set:
+    def _visible_entries(self) -> list:
         """
         Qué juegos deben verse en el carrusel ahora mismo.
 
@@ -705,21 +718,38 @@ class App(ShowBase):
         de ocultos no puedan discrepar. Cuando se conecten los filtros del
         menú de "Filtrar y ordenar", el resto de condiciones van aquí.
         """
-        return {
-            entry.key for entry in self.entries
+        return [
+            entry for entry in self.entries
             if self._show_hidden or not (entry.game and entry.game.hidden)
-        }
+        ]
+
+    def _apply_order(self, reset_selection: bool = False) -> None:
+        """
+        Recalcula filtro + ordenación y se los pasa al carrusel.
+
+        Los dos van juntos y en este orden: primero se decide qué juegos
+        entran y luego se ordenan solo esos. Al revés daría lo mismo, pero
+        ordenar la biblioteca entera para tirar después la mitad es trabajo
+        de más.
+
+        `self._groups` se guarda porque hace falta después para saber en qué
+        grupo está la selección al saltar con L1/R1 (ver `_jump_group`).
+        """
+        criterion = sorting.CRITERIA[self._sort_key]
+        keys, groups = sorting.order_entries(self._visible_entries(), criterion)
+        self._groups = groups
+        self.carousel.set_order(keys, groups, reset_selection=reset_selection)
 
     def _apply_hidden_filter(self) -> None:
-        self.carousel.set_visible_keys(self._visible_keys())
+        self._apply_order()
 
     def _toggle_hidden(self) -> None:
         """
         Enseña u oculta los juegos marcados como ocultos (L2 / tecla "o").
 
         Al volver a mostrarlos, cada uno reaparece en su sitio dentro del
-        recorrido, no al final: `Carousel.set_visible_keys` rehace el orden
-        a partir de la lista completa.
+        recorrido, no al final: `_apply_order` rehace filtro y ordenación
+        enteros a partir de la lista completa.
         """
         self._show_hidden = not self._show_hidden
         self._apply_hidden_filter()
@@ -750,6 +780,9 @@ class App(ShowBase):
         Ocupan poco: son unas pocas decenas de textos en total.
         """
         self._menu_stack: list[Menu] = []
+        # Con qué botón se abrió el menú de la base de la pila: pulsarlo otra
+        # vez cierra todo (ver `_toggle_root_menu`).
+        self._menu_opener: str | None = None
 
         scoring_hint = _menu_hint(
             f"{icon_markup(ICON_KEYBOARD_X)} / {icon_markup(ICON_XBOX_X)}  configurar"
@@ -822,6 +855,10 @@ class App(ShowBase):
             # Se vació la pila: se vuelve al carrusel, así que la ficha
             # deshace la animación y reaparece.
             self._animate_ficha(visible=True)
+            # Y se olvida con qué botón se había entrado. Si no, al salir
+            # con B y abrir después otro menú distinto, el botón del menú
+            # ANTERIOR seguiría cerrándolo (ver `_toggle_root_menu`).
+            self._menu_opener = None
         self._reset_navigation()
 
     def _reset_navigation(self) -> None:
@@ -877,28 +914,53 @@ class App(ShowBase):
 
     # ── Aperturas ──
 
+    def _toggle_root_menu(self, menu: Menu, opener: str) -> None:
+        """
+        Abre `menu`, o cierra TODO si ya se entró con este mismo botón.
+
+        Volver a pulsar el botón con el que se abrió devuelve a la pantalla
+        principal de una vez, sin ir saliendo nivel a nivel: si has entrado
+        en Opciones con Select y desde ahí en "Salir", Select te saca de los
+        dos. Para retroceder un solo nivel está B (o Esc).
+
+        Se compara con `_menu_opener` y no simplemente "hay un menú abierto"
+        porque cada botón solo cierra LO SUYO: pulsar X dentro del menú de
+        scoring no lo cierra, configura el sistema enfocado (ver
+        `_on_filter_key`), que es lo que hace X ahí.
+
+        El menú de juego se abre con A y queda fuera de esto a propósito: A
+        dentro de un menú es "elegir", así que no puede significar también
+        "cerrar" — marcaría la casilla y saldría en la misma pulsación.
+        """
+        if self._menu_stack:
+            if self._menu_opener == opener:
+                self._close_all_menus()
+            return
+
+        self._menu_opener = opener
+        self._push_menu(menu)
+
     def _open_options_menu(self) -> None:
         """Select / Esc sobre el carrusel."""
-        self._push_menu(self.options_menu)
+        self._toggle_root_menu(self.options_menu, "options")
 
     def _open_scoring_menu(self) -> None:
         """Start / Tab sobre el carrusel."""
-        if self.active_menu is None:
-            self._push_menu(self.scoring_menu)
+        self._toggle_root_menu(self.scoring_menu, "scoring")
 
     def _open_filter_menu(self) -> None:
         """X sobre el carrusel."""
-        if self.active_menu is None:
-            self._push_menu(self.filter_menu)
+        self._toggle_root_menu(self.filter_menu, "filter")
 
     def _on_filter_key(self) -> None:
         """
-        La tecla "x". Dentro del menú de scoring configura el sistema
-        enfocado; fuera de cualquier menú, abre el de filtrar y ordenar.
+        La tecla "x" / botón X. Dentro del menú de scoring configura el
+        sistema enfocado; en el resto de casos abre —o cierra— el menú de
+        filtrar y ordenar.
         """
         if self.active_menu is self.scoring_menu:
             self._configure_focused_scoring()
-        elif self.active_menu is None:
+        else:
             self._open_filter_menu()
 
     def _open_game_menu(self) -> None:
@@ -916,6 +978,10 @@ class App(ShowBase):
         # pero atarlo aquí evita que un cambio futuro acabe guardando el
         # estado en el juego equivocado, que es un fallo silencioso y feo.
         self._game_menu_entry = entry
+        # Un "abridor" que ningún botón puede igualar: el menú de juego se
+        # abre con A, y A dentro de un menú significa "elegir", así que no
+        # debe cerrarlo nadie por esta vía.
+        self._menu_opener = "game"
         self._push_menu(self.game_menu)
 
     # ── Acciones ──
@@ -940,10 +1006,8 @@ class App(ShowBase):
 
     def _activate(self, menu: Menu, key: str) -> None:
         """
-        Qué hace elegir un elemento. De momento casi todo se queda en el
-        log: esta pasada es la del sistema de menús y su navegación, y las
-        acciones de verdad (ordenar, filtrar, cambiar de scoring) se
-        conectan después.
+        Qué hace elegir un elemento. Los filtros y la configuración de
+        scoring todavía se quedan en el log; el resto ya hace algo.
         """
         if key == "quit":
             self._push_menu(self.quit_menu)
@@ -951,8 +1015,57 @@ class App(ShowBase):
             self.userExit()
         elif key == "quit_no":
             self._pop_menu()
+        elif key.startswith("sort:"):
+            self._apply_sort(key.removeprefix("sort:"))
         else:
             logger.info(f"gui3d: elegido {key!r} en el menú {menu.title!r}")
+
+    def _apply_sort(self, sort_key: str) -> None:
+        """
+        Cambia la ordenación y deja el carrusel en el primer elemento.
+
+        Se cierra el menú entero (no solo su nivel) porque elegir una
+        ordenación es el final de esa tarea: dejarlo abierto obligaría a
+        salir a mano para ver el resultado, que es justo lo que se acaba de
+        pedir mirar.
+        """
+        criterion = sorting.CRITERIA.get(sort_key)
+        if criterion is None:
+            logger.warning(f"gui3d: ordenación desconocida {sort_key!r}")
+            return
+
+        self._sort_key = sort_key
+        self._close_all_menus()
+        self._apply_order(reset_selection=True)
+        self._on_selection_changed()
+        # Con dos puntos y sin tocar la etiqueta: pasarla a minúsculas para
+        # que encajara en la frase dejaba "SteamDB" como "steamdb".
+        self.notifier.show(f"Ordenado por: {criterion.label}")
+        logger.info(f"gui3d: ordenado por {sort_key!r}")
+
+    def _close_all_menus(self) -> None:
+        while self._menu_stack:
+            self._pop_menu()
+        self._menu_opener = None
+
+    def _jump_group(self, direction: int) -> None:
+        """
+        L1/R1 (teclas "q" y "w"): salto rápido al grupo anterior/siguiente
+        de la ordenación actual — la inicial siguiente, o el tramo de cinco
+        puntos u horas siguiente.
+
+        No hace nada con un menú abierto: ahí las mismas teclas no pintan
+        nada y mover el carrusel por detrás solo desconcierta.
+        """
+        if self.active_menu is not None:
+            return
+        if not self.carousel.jump_to_group(direction):
+            return
+
+        self._on_selection_changed()
+        criterion = sorting.CRITERIA[self._sort_key]
+        group = self.carousel.group_at_selection(self._groups)
+        self.notifier.show(sorting.group_label(criterion, group))
 
     def _configure_focused_scoring(self) -> None:
         item = self.scoring_menu.focused_item
