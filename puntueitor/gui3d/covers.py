@@ -7,13 +7,14 @@ para que las carátulas descargadas desde cualquiera de los dos frontends
 sirvan al otro.
 """
 import logging
+import os
 import queue
 import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from panda3d.core import Filename, Texture, TexturePool
+from panda3d.core import Filename, Texture
 
 from puntueitor.core import paths
 
@@ -43,9 +44,28 @@ def _load_texture(path: Path) -> Texture | None:
     anisotrópico sí lo arreglan, y el anisotrópico importa especialmente
     aquí porque las cajas laterales se ven muy escorzadas.
     """
-    texture = TexturePool.load_texture(Filename.from_os_specific(str(path)))
-    if texture is None:
+    # `Texture().read(...)`, NO `TexturePool.load_texture(...)`. TexturePool
+    # cachea por nombre de fichero y, verificado en runtime, no vuelve a leer
+    # del disco aunque el contenido cambie por debajo con el mismo nombre:
+    # cargar el mismo `{igdb_id}.jpg` dos veces devuelve el mismísimo objeto
+    # Texture de la primera vez, corrupto incluido, sin importar que el
+    # fichero se haya borrado y regenerado entre medias. Como cada
+    # `igdb_id` es siempre el mismo nombre de fichero para siempre (por
+    # diseño, para compartir caché con la TUI), ese comportamiento convertía
+    # un solo fallo de lectura en un fallo PERMANENTE para ese juego durante
+    # el resto de la sesión — el borrado de más abajo no arreglaba nada
+    # porque el problema nunca estuvo en el disco, sino en la caché interna
+    # de Panda3D. Un `Texture()` nuevo por lectura sí relee el disco siempre.
+    texture = Texture()
+    if not texture.read(Filename.from_os_specific(str(path))):
         logger.warning(f"gui3d: carátula corrupta o ilegible: {path}")
+        # Se borra para que la próxima vez `get_cached_cover_path` no la
+        # vea y se reintente la descarga. Sin esto, un fichero realmente
+        # corrupto (que con el renombrado atómico de `download_cover` ya no
+        # debería producirse, pero por si acaso: disco lleno a mitad de
+        # escritura, conexión cortada sin que `urlretrieve` lo detecte) se
+        # queda ahí para siempre — "existe" así que nunca se vuelve a bajar.
+        path.unlink(missing_ok=True)
         return None
 
     texture.set_minfilter(Texture.FT_linear_mipmap_linear)
@@ -65,13 +85,33 @@ def download_cover(igdb_id: int, cover_url: str) -> Path | None:
     Descarga la carátula a la caché local. Best-effort: cualquier fallo de
     red devuelve None en vez de propagar, para no tumbar el arranque del
     carrusel por un juego sin conexión.
+
+    Se descarga a un fichero temporal en el mismo directorio y se renombra
+    al final con `os.replace` (atómico dentro del mismo sistema de
+    ficheros), en vez de escribir directamente sobre `{igdb_id}.jpg` con
+    `urlretrieve`. La versión directa deja el fichero destino visible y
+    "existente" desde el primer byte escrito: cualquiera que compruebe
+    `path.exists()` mientras la descarga está en curso —y aquí hay más de
+    un sitio que lo hace desde el hilo principal, sin pasar por
+    `CoverLoader`, ver `app.App._request_nearby_covers`— encuentra un JPEG
+    a medias y Panda3D falla al decodificarlo ("Texture exists but cannot
+    be read"). Con el renombrado atómico, `path.exists()` es False hasta
+    que el fichero está completo: no hay ventana en la que se pueda leer a
+    medias.
     """
     paths.covers_dir().mkdir(parents=True, exist_ok=True)
     path = _cover_path(igdb_id)
+    # Sufijo con el id de hilo: dos descargas de carátulas DISTINTAS nunca
+    # chocan (rutas distintas), pero si alguna vez se pidiera la misma
+    # `igdb_id` dos veces en paralelo, un nombre temporal fijo compartido
+    # sí podría pisarse entre sí.
+    tmp_path = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
     try:
-        urllib.request.urlretrieve(cover_url, path)
+        urllib.request.urlretrieve(cover_url, tmp_path)
+        os.replace(tmp_path, path)
     except Exception as e:
         logger.warning(f"gui3d: no se pudo descargar la carátula {igdb_id}: {e}")
+        tmp_path.unlink(missing_ok=True)
         return None
     return path
 

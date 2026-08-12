@@ -96,6 +96,46 @@ The download side is in two tiers, and both matter:
   to visit. The cap is the whole point: dumping 1200 requests into the pool
   at once would put a freshly-navigated-to cover behind all of them.
 
+**Two independent bugs produced "Texture exists but cannot be read" /
+"carátula corrupta o ilegible" for a handful of covers per session**, and
+fixing only one of them looked like a fix but wasn't:
+
+1. `download_cover` used to write straight to the final `{igdb_id}.jpg`
+   path via `urlretrieve`. While a download was in flight, the file was on
+   disk and `path.exists()` was already True — but the bytes were only
+   partial. `App._request_nearby_covers` and `_on_cover_ready` read
+   straight from disk on the main thread (bypassing `CoverLoader` entirely
+   when the file looks present), so a fast-enough navigation could catch a
+   cover mid-download and get a truncated JPEG. Fixed by downloading to a
+   `{igdb_id}.jpg.<thread-id>.tmp` sibling and `os.replace`-ing it into
+   place: `path.exists()` is now False until the file is fully written,
+   with no partial-visibility window, because rename is atomic at the
+   filesystem level.
+
+2. Fixing (1) alone did not fix the symptom, and the reason is worth
+   knowing before touching this file again: `_load_texture` used
+   `TexturePool.load_texture(filename)`. **Verified empirically**
+   (`Texture` object identity compared before/after replacing the file's
+   content at the same path): TexturePool caches by filename string and
+   does not re-read from disk on a second call for the same path, even
+   after the underlying content changes completely. Since every `igdb_id`
+   always maps to the same filename for the life of the process (by
+   design, to share the cache with the TUI), a single bad read — however it
+   happened — poisoned that cover for the rest of the session; deleting the
+   file on failure (to allow a retry) did nothing, because the problem was
+   never on disk, it was in Panda3D's pool. Switched to a fresh `Texture()`
+   + `.read(Filename)` per call, which always re-reads from disk and has no
+   such cache.
+
+Confirmed the combined fix under stress: a harness that downloads via a
+throttled `urlretrieve` stand-in while the main thread polls
+`load_cover_texture(allow_download=False)` in a tight loop, counting only
+reads where the file was already present at the moment of the call (get
+this check wrong — checking existence *after* the call instead of before —
+and the harness reports false failures purely from its own TOCTOU gap, as
+one early version of it did). 800 downloads, 47 caught mid-flight, 0 real
+failures.
+
 `CoverLoader.request` ignores keys already asked for (consecutive windows
 overlap almost entirely) and keeps an `inflight` count, decremented in a
 `finally` — a failed download that leaked the count would stall the backfill
