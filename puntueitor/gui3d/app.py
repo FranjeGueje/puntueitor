@@ -9,8 +9,13 @@ que falten, y en segundo plano.
 
 Ejecutar con:
     python -m puntueitor.gui3d.app
+    python -m puntueitor.gui3d.app --resolution 1920x1080
+    python -m puntueitor.gui3d.app --fhd
 """
+import argparse
 import logging
+import re
+import sys
 
 from direct.gui.DirectGui import DirectFrame
 from direct.gui.OnscreenText import OnscreenText
@@ -42,6 +47,51 @@ framebuffer-multisample 1
 multisamples 4
 textures-power-2 none
 """)
+
+# Resoluciones con nombre para --hd/--fhd/--wxga/--wuxga. WXGA y WUXGA no
+# tienen una única definición estándar; se usan aquí los tamaños de panel
+# más comunes (1280x800 y 1920x1200, ambos 16:10).
+RESOLUTION_PRESETS = {
+    "hd": (1280, 720),
+    "fhd": (1920, 1080),
+    "wxga": (1280, 800),
+    "wuxga": (1920, 1200),
+}
+
+_RESOLUTION_RE = re.compile(r"^(\d+)x(\d+)$", re.IGNORECASE)
+
+
+def _parse_resolution_arg(value: str) -> tuple[int, int]:
+    match = _RESOLUTION_RE.match(value.strip())
+    if not match:
+        raise argparse.ArgumentTypeError(
+            f"resolución inválida: {value!r} (formato esperado: ANCHOxALTO, p.ej. 1920x1080)"
+        )
+    width, height = int(match.group(1)), int(match.group(2))
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError(f"resolución inválida: {value!r} (ancho y alto deben ser positivos)")
+    return width, height
+
+
+def parse_args(argv: list[str] | None = None) -> tuple[int, int] | None:
+    """Resuelve la resolución de ventana pedida por línea de comandos, si hay alguna."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--resolution", type=_parse_resolution_arg, metavar="ANCHOxALTO",
+        help="Resolución de ventana, p.ej. 1920x1080",
+    )
+    for name, (width, height) in RESOLUTION_PRESETS.items():
+        group.add_argument(
+            f"--{name}", dest="preset", action="store_const", const=name,
+            help=f"Resolución de ventana {width}x{height}",
+        )
+    args = parser.parse_args(argv)
+    if args.resolution is not None:
+        return args.resolution
+    if args.preset is not None:
+        return RESOLUTION_PRESETS[args.preset]
+    return None
 
 from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
@@ -680,6 +730,11 @@ class App(ShowBase):
 
 
 def main() -> None:
+    resolution = parse_args(sys.argv[1:])
+    if resolution is not None:
+        width, height = resolution
+        load_prc_file_data("", f"win-size {width} {height}")
+
     app = App()
     app.run()
 
