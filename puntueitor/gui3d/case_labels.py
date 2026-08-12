@@ -10,14 +10,15 @@ mismo criterio).
 Cuatro huecos fijos, no configurables por juego:
 
     favorito              arriba-izquierda
-    terminado / backlog   arriba-derecha    (comparten hueco, ver abajo)
+    terminado / backlog   arriba-derecha    (ver abajo)
     duración              abajo-centro      número pintado encima
     puntuación            abajo-derecha     número pintado encima
 
-Terminado y backlog comparten el mismo hueco y son EXCLUYENTES: si un juego
-está en los dos estados gana "terminado", porque ya haberlo jugado es más
-informativo que tenerlo pendiente — y son estados que en la práctica se
-contradicen.
+Terminado y backlog comparten la columna de arriba-derecha. Si el juego solo
+tiene uno de los dos, va en la posición de siempre. Si tiene los DOS a la
+vez, "terminado" se queda arriba (donde siempre) y "backlog" se pinta justo
+debajo, en la misma vertical — así se ven ambas etiquetas sin que ninguna
+tape a la otra ni haga falta elegir cuál prevalece.
 
 Cada etiqueta solo aparece si su dato está presente: favorito, terminado y
 backlog son `True`, puntuación y duración tienen un valor real. Un juego
@@ -55,6 +56,13 @@ _ASSETS_DIR = Path(__file__).parent / "assets" / "labels"
 TOP_LABEL_SIZE = 0.22
 TOP_LABEL_TOP_MARGIN = 0.01
 TOP_LABEL_SIDE_MARGIN = 0.02
+
+# Cuando un juego es terminado Y backlog a la vez, la segunda etiqueta
+# (backlog) se apila justo debajo de la primera (terminado), en la misma
+# columna. El hueco entre las dos es más pequeño que el margen superior:
+# aquí las separa una etiqueta de la otra, no una etiqueta del canto de la
+# caja, así que no hace falta el mismo respiro.
+TOP_LABEL_STACK_GAP = 0.015
 
 # Duración y puntuación. Ya no son tres en la franja de abajo (backlog se
 # fue arriba, al hueco de terminado), así que sobra sitio y pueden ir más
@@ -171,11 +179,15 @@ def build_case_labels(parent: NodePath, game: Game | None) -> NodePath | None:
     if game.favorite:
         _build_icon(root, "favorite", TOP_LABEL_SIZE, -top_x, top_z)
 
-    # Mismo hueco para los dos, y "terminado" tiene prioridad: un juego
-    # marcado a la vez como terminado y pendiente es una contradicción, y de
-    # las dos la que importa es que ya lo has jugado.
+    # Misma columna para los dos. Si el juego tiene los dos estados a la vez,
+    # "terminado" se queda en su sitio de siempre y "backlog" se apila justo
+    # debajo, en la misma vertical, en vez de tener que elegir cuál de las
+    # dos se pierde.
     if game.finished:
         _build_icon(root, "finish", TOP_LABEL_SIZE, top_x, top_z)
+        if game.backlog:
+            stacked_z = top_z - TOP_LABEL_SIZE - TOP_LABEL_STACK_GAP
+            _build_icon(root, "backlog", TOP_LABEL_SIZE, top_x, stacked_z)
     elif game.backlog:
         _build_icon(root, "backlog", TOP_LABEL_SIZE, top_x, top_z)
 
