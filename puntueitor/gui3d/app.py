@@ -47,7 +47,21 @@ from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
-from puntueitor.gui3d.fonts import ui_font
+from puntueitor.gui3d.fonts import (
+    ICON_GAMEPAD_LEFT_RIGHT,
+    ICON_GAMEPAD_START,
+    ICON_KEYBOARD_ENTER,
+    ICON_KEYBOARD_ESCAPE,
+    ICON_KEYBOARD_LEFT,
+    ICON_KEYBOARD_Q,
+    ICON_KEYBOARD_RIGHT,
+    ICON_KEYBOARD_SPACE,
+    ICON_XBOX_A,
+    ICON_XBOX_Y,
+    icon_font,
+    icon_markup,
+    ui_font,
+)
 from puntueitor.gui3d.gamepad_input import GamepadInput
 from puntueitor.gui3d.real_data import build_real_entries
 from puntueitor.gui3d.sample_data import build_sample_entries
@@ -135,10 +149,23 @@ CAROUSEL_RAISE = 1.3
 
 BACKGROUND_COLOR = (0.04, 0.04, 0.06, 1)
 
-HELP_TEXT = (
-    "<-  /  ->  o mando: navegar   -   Enter/A: seleccionar   -   "
-    "Espacio/Y: etiquetas   -   Esc/Start: menu   -   Q: salir"
-)
+def _build_help_text() -> str:
+    """
+    Construye la barra de ayuda con iconos de tecla/botón en vez de sus
+    nombres en texto ("Enter/A" -> el dibujo de la tecla Enter y el botón
+    A). Función, no constante: `icon_markup()` necesita que `icon_font()`
+    ya haya registrado `ICON_PROPERTY`, y eso solo ha pasado una vez que
+    `_setup_hud()` llama a `icon_font()` — como módulo, construirla al
+    importar sería antes de que exista esa fuente.
+    """
+    kb_lr = ICON_KEYBOARD_LEFT + ICON_KEYBOARD_RIGHT
+    return (
+        f"{icon_markup(kb_lr)} / {icon_markup(ICON_GAMEPAD_LEFT_RIGHT)}  navegar   -   "
+        f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  seleccionar   -   "
+        f"{icon_markup(ICON_KEYBOARD_SPACE)} / {icon_markup(ICON_XBOX_Y)}  etiquetas   -   "
+        f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_GAMEPAD_START)}  menu   -   "
+        f"{icon_markup(ICON_KEYBOARD_Q)}  salir"
+    )
 
 
 class App(ShowBase):
@@ -253,6 +280,10 @@ class App(ShowBase):
         # `ui_font()` cachea internamente, así que no hay coste por repetir
         # la llamada en cada widget.
         font = ui_font()
+        # Registra ICON_PROPERTY antes de construir la barra de ayuda, que
+        # es lo único del HUD que mezcla iconos con texto — ver
+        # `_build_help_text()`.
+        icon_font()
 
         self.title_text = OnscreenText(
             text="", pos=(0, TITLE_TEXT_Y), scale=TITLE_TEXT_SCALE,
@@ -300,7 +331,7 @@ class App(ShowBase):
             align=TextNode.A_left, wordwrap=40, mayChange=True, font=font,
         )
         self.help_text = OnscreenText(
-            parent=self.ficha_frame, text=HELP_TEXT,
+            parent=self.ficha_frame, text=_build_help_text(),
             pos=(0, -0.955), scale=0.032,
             fg=(0.55, 0.55, 0.6, 1), align=TextNode.A_center, mayChange=False,
             font=font,

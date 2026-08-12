@@ -1,10 +1,20 @@
 """
-Tipografía del frontend 3D: Hussar Print (Robert Jablonski / Cannot Into
-Space Fonts), licencia SIL Open Font License 1.1 — ver
-`assets/fonts/HussarPrint-OFL.txt`. Permite usar, modificar y redistribuir
-el tipo de letra junto con el software sin más condición que no venderlo
-por separado y no reutilizar su nombre reservado en derivados, así que
-puede ir en el repo tal cual.
+Tipografías del frontend 3D.
+
+Texto: Hussar Print (Robert Jablonski / Cannot Into Space Fonts), licencia
+SIL Open Font License 1.1 — ver `assets/fonts/HussarPrint-OFL.txt`. Permite
+usar, modificar y redistribuir el tipo de letra junto con el software sin
+más condición que no venderlo por separado y no reutilizar su nombre
+reservado en derivados, así que puede ir en el repo tal cual.
+
+Iconos: PromptFont (Yukari "Shinmera" Hafner, https://shinmera.com/promptfont),
+misma licencia SIL OFL — ver `assets/buttons/PromptFont-OFL.txt`. Es una
+fuente normal (OTF), no un atlas de imágenes: cada tecla/botón es un glifo
+en un punto de código Unicode del bloque "Control Pictures" y de rangos de
+símbolos matemáticos reutilizados a propósito por la fuente para esto. Se
+usa exactamente igual que Hussar Print — se carga con `DynamicTextFont` y
+se manda como texto normal — así que no hace falta ningún sistema de
+iconos aparte ni texturas por botón.
 
 Un único punto de carga para que el título, la ficha, el banner de tiendas
 y el submenú usen siempre la misma fuente — antes cada `OnscreenText` y
@@ -16,6 +26,7 @@ from pathlib import Path
 from panda3d.core import DynamicTextFont, FontPool, TextProperties, TextPropertiesManager
 
 _FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "HussarPrintA.otf"
+_ICON_FONT_PATH = Path(__file__).parent / "assets" / "buttons" / "PromptFont.otf"
 
 #: Nombre registrado en `TextPropertiesManager` para el superíndice (usado
 #: por la marca "[1]" de la puntuación SteamDB en `ficha.py`). Vive aquí,
@@ -23,7 +34,49 @@ _FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "HussarPrintA.otf"
 #: global de texto y así solo hay un sitio que la registra.
 SUPERSCRIPT_PROPERTY = "sup"
 
+#: Nombre registrado para conmutar a PromptFont dentro de un texto (ver
+#: `icon_font()` y `icon_markup()`).
+ICON_PROPERTY = "icon"
+
 _cached_font: DynamicTextFont | None = None
+_cached_icon_font: DynamicTextFont | None = None
+
+# Un carácter por control, construido con `chr()` a partir del punto de
+# código en vez de tecleado literal: son glifos del bloque "Control
+# Pictures" y de símbolos matemáticos que PromptFont reutiliza como
+# iconos, no atajos de teclado reales, y un carácter mal transcrito a mano
+# no avisa — dibuja el glifo equivocado en silencio. Cada punto de código
+# se verificó contra `glyphs.json` del paquete de PromptFont antes de
+# usarlo (la lista de nombres no está documentada en el propio .otf).
+ICON_KEYBOARD_LEFT = chr(0x23F4)              # keyboard-left
+ICON_KEYBOARD_RIGHT = chr(0x23F5)             # keyboard-right
+ICON_KEYBOARD_ENTER = chr(0x242E)             # keyboard-enter
+ICON_KEYBOARD_SPACE = chr(0x243A)             # keyboard-space
+ICON_KEYBOARD_ESCAPE = chr(0x242F)            # keyboard-escape
+ICON_KEYBOARD_Q = chr(0xFF31)                 # keyboard-q
+ICON_XBOX_A = chr(0x21D3)                     # xbox-a
+ICON_XBOX_Y = chr(0x21D1)                     # xbox-y
+# El dpad tiene glifos "left"/"right"/"left-right", pero en un solo color
+# (sin el resaltado de color del brazo activo que lleva la fuente original)
+# los tres se ven exactamente igual que la cruz completa — probado
+# renderizando los cuatro uno junto a otro. El icono de STICK con flechas a
+# los lados sí distingue izquierda/derecha a simple vista, y además es más
+# preciso: la navegación acepta cruceta Y stick indistintamente.
+ICON_GAMEPAD_LEFT_RIGHT = chr(0x21D4)         # analog-left-right
+ICON_GAMEPAD_START = chr(0x21F8)              # gamepad-start
+
+
+def icon_markup(text: str) -> str:
+    """
+    Envuelve `text` en la marca de estructura que conmuta a PromptFont.
+
+    Mismo mecanismo que `SUPERSCRIPT_PROPERTY`: `\x01icon\x01` empuja la
+    propiedad, el `\x02` suelto la saca. Un helper porque escribir los
+    caracteres de control a mano en cada sitio que mezcla iconos con texto
+    normal es propenso a errores de tecleo silenciosos (un `\x02` de más o
+    de menos no avisa, simplemente dibuja mal).
+    """
+    return f"\x01{ICON_PROPERTY}\x01{text}\x02"
 
 
 def ui_font() -> DynamicTextFont | None:
@@ -64,3 +117,41 @@ def ui_font() -> DynamicTextFont | None:
         )
 
     return _cached_font
+
+
+def icon_font() -> DynamicTextFont | None:
+    """
+    Fuente de iconos de botones/teclas (PromptFont), cargada una sola vez.
+
+    De paso registra `ICON_PROPERTY`: un texto envuelto con `icon_markup()`
+    conmuta a esta fuente y vuelve a Hussar Print al cerrar la marca, así
+    que un mismo `OnscreenText`/`TextNode` puede mezclar libremente
+    palabras normales e iconos de botones sin necesitar varios nodos ni
+    posicionarlos a mano — es el mismo truco de `\x01nombre\x01...\x02` que
+    ya usa `SUPERSCRIPT_PROPERTY`, aplicado a conmutar de fuente en vez de
+    a escalar.
+
+    `set_text_scale`/`set_glyph_shift` compensan que PromptFont no comparte
+    métricas con Hussar Print: sin ajustar, los iconos salían visiblemente
+    más pequeños y más altos que el texto de alrededor — ajustado sobre el
+    render, no hay forma de calcularlo de las métricas de las fuentes.
+    """
+    global _cached_icon_font
+    if _cached_icon_font is None:
+        _cached_icon_font = FontPool.load_font(str(_ICON_FONT_PATH))
+        if _cached_icon_font is None:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"gui3d: no se pudo cargar la fuente de iconos en {_ICON_FONT_PATH}"
+            )
+            return None
+
+        icon = TextProperties()
+        icon.set_font(_cached_icon_font)
+        icon.set_text_scale(1.55)
+        icon.set_glyph_shift(-0.08)
+        TextPropertiesManager.get_global_ptr().set_properties(
+            ICON_PROPERTY, icon,
+        )
+
+    return _cached_icon_font

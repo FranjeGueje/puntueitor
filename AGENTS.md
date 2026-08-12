@@ -713,6 +713,60 @@ a sliver of margin from the physical top edge (a sticker flush with the
 edge reads as an render artifact, like it's been cut off, not intentional
 overhang).
 
+## Button icons (fonts.py: icon_font, ICON_*)
+
+The bottom help bar used to spell out key/button names as text ("Enter/A",
+"Esc/Start"). It's icons now, via PromptFont (Yukari "Shinmera" Hafner, SIL
+OFL — `assets/buttons/PromptFont-OFL.txt`), extracted from the zip the user
+provides as `promptfont-all.zip` — only `promptfont.otf` and the license
+text are committed, not the ~1 MB zip itself (same treatment as
+`hussar-print.zip` for Hussar Print: keep the source archive out of the
+repo, commit only what's actually used). **Don't delete or `git add -A`
+that zip** — it's the user's file, not a build artifact.
+
+PromptFont is a normal OTF, not a texture atlas: every key/button is a
+glyph at a specific Unicode codepoint (mostly the "Control Pictures" block
+and repurposed math-symbol ranges), so it's used exactly like Hussar
+Print — loaded with `DynamicTextFont`, sent as regular text. `icon_font()`
+mirrors `ui_font()`'s pattern and registers `ICON_PROPERTY`, a `TextProperties`
+that swaps `set_font` to PromptFont for whatever text sits inside
+`icon_markup(...)` — reusing the exact `\x01name\x01...\x02` structure
+escape already established for `SUPERSCRIPT_PROPERTY`. `icon_markup()`
+exists specifically so nobody hand-types those control characters at each
+call site; a stray or missing `\x02` doesn't error, it just silently
+renders wrong.
+
+The `ICON_*` constants are built with `chr(0x....)`, not typed as literal
+characters. A hand-typed exotic Unicode glyph is one accidental
+mis-transcription away from silently becoming a *different* glyph with no
+error — `chr()` keeps the codepoint visible and searchable next to the
+comment naming which PromptFont glyph it is. Every codepoint used was
+checked against PromptFont's own `glyphs.json` before use; the font ships
+~900 glyphs under non-obvious names and nothing in the `.otf` itself
+documents which codepoint is which.
+
+Not every plausible glyph reads correctly at HUD size. `xbox-dpad-left`,
+`xbox-dpad-right` and `xbox-dpad-left-right` all render as the exact same
+plain cross in flat single-colour text — whatever distinguishes them (the
+"active" arm) is conveyed by a colour/shade variant in PromptFont's own
+multi-colour rendering that a plain `TextNode` fill doesn't reproduce.
+Confirmed by rendering all four dpad variants side by side. Ended up using
+`analog-left-right` (a stick icon flanked by two arrows) instead, which
+reads unambiguously *and* is more accurate — this app's navigation accepts
+the d-pad and the analog stick interchangeably, so a generic "directional
+input" icon fits better than a dpad-specific one anyway. Before wiring up
+any new icon from this font, render it in isolation and at the actual
+target size first — don't assume the name matches what it looks like
+flattened to one colour.
+
+`icon_font()`'s `TextProperties` needs its own `set_text_scale`/
+`set_glyph_shift` tuned against Hussar Print, because the two fonts don't
+share metrics — untuned, PromptFont's glyphs sat smaller and higher than
+the surrounding text. There's no way to compute this from font metrics;
+it's calibrated by rendering the help bar and reading it at the size it
+actually ships at, the same as every other layout constant in this
+codebase.
+
 ## Environment
 
 - Python 3.14 (from `.venv`)
