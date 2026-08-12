@@ -19,6 +19,7 @@ import sys
 
 from direct.gui.DirectGui import DirectFrame
 from direct.gui.OnscreenText import OnscreenText
+from direct.interval.IntervalGlobal import LerpColorScaleInterval, LerpPosInterval, Parallel
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import (
     AmbientLight,
@@ -147,6 +148,16 @@ FICHA_BAR_COLOR = (0, 0, 0, 0.75)
 # límite no es arbitrario — por encima de -0.16 empieza a comerse la caja
 # seleccionada del carrusel, no solo su reflejo (comprobado renderizando).
 FICHA_BAR_TOP_Z = -0.16
+
+# La ficha se aparta al abrir un menú, para que no compita con él, y vuelve
+# al cerrar el último. Deslizarla hacia abajo Y desvanecerla a la vez en
+# vez de solo lo uno o lo otro: solo desvanecer deja el bulto del panel
+# oscuro asomando por debajo del menú (que no ocupa toda la pantalla);
+# solo deslizar dejaría un salto brusco de opacidad al final del recorrido.
+# Combinado con `Parallel`, sigue siendo una única animación barata: dos
+# lerps sobre un nodo cada vez, nada de geometría ni texturas de por medio.
+FICHA_ANIM_DURATION = 0.22
+FICHA_ANIM_SLIDE = 0.12
 
 FICHA_LABEL_SCALE = 0.034
 FICHA_LINE_HEIGHT = 0.048
@@ -323,6 +334,8 @@ class App(ShowBase):
         self._background_key = None
         self._settle_time = 0.0
         self._labels_visible = True
+        # Se pone a True en `destroy()`; ver la guarda de `_update`.
+        self._shutting_down = False
 
         # Antes de `_on_selection_changed`: es quien pone el color de acento
         # de los menús a partir de la tienda del juego elegido, así que los
@@ -342,6 +355,20 @@ class App(ShowBase):
         )
 
         self.task_mgr.add(self._update, "carousel-update")
+
+        # `destroy()` ya existía (cierra `cover_loader` y `gamepad`) pero
+        # nada la llamaba: `userExit()` acaba en `sys.exit()` sin pasar por
+        # aquí. `ThreadPoolExecutor` no crea hilos daemon, así que el propio
+        # intérprete se queda esperando a que sus hilos de descarga acaben
+        # antes de poder cerrar el proceso — con carátulas descargándose al
+        # arrancar (comportamiento normal, ver `real_data.py`), casi
+        # siempre había alguna descarga en curso al cerrar la ventana, y el
+        # proceso se quedaba colgado hasta que esa petición HTTP terminara
+        # (o para siempre con Ctrl+C). `exitFunc` es el enganche que
+        # `ShowBase.userExit()` ya llama antes de `sys.exit()` para
+        # exactamente este caso — no hace falta reimplementar el cierre a
+        # mano ni engancharse a otro evento.
+        self.exitFunc = self.destroy
 
     # ──────────────────────────────
     # Escena
@@ -392,6 +419,13 @@ class App(ShowBase):
             frameSize=(-1, 1, -1.0, FICHA_BAR_TOP_Z),
             pos=(0, 0, 0),
         )
+        # Estado de la animación de aparecer/desaparecer con los menús (ver
+        # `_animate_ficha`). `_ficha_visible` es la posición LÓGICA de
+        # destino, no si está a la vista ahora mismo — se necesita para no
+        # relanzar la misma animación dos veces si dos menús se abren
+        # seguidos sin que la ficha llegue a volver de en medio.
+        self._ficha_visible = True
+        self._ficha_anim: Parallel | None = None
 
         # Una fila por campo (etiqueta a la derecha, valor a la izquierda) en
         # vez de un único texto multilínea por columna. Da dos cosas que
@@ -431,6 +465,28 @@ class App(ShowBase):
         self._resize_ficha()
 
     def _on_window_event(self, window) -> None:
+        """
+        `ShowBase.__init__` ya se suscribe a "window-event" con su propio
+        `windowEvent()` — el que detecta que se ha cerrado la ventana desde
+        el gestor de ventanas (la X) y llama a `userExit()`. `self.accept`
+        no APILA manejadores por evento: dos `accept` del mismo objeto para
+        el mismo evento son el mismo hueco, y el segundo se queda con el
+        único sitio, así que suscribirse aquí sin más SUSTITUYE al de
+        ShowBase en vez de sumarse — la ventana se cerraba (la caja
+        desaparecía) pero el proceso se quedaba corriendo de fondo para
+        siempre, porque `userExit()` ya no se llamaba.
+        Encadenar explícitamente a `ShowBase.windowEvent` en vez de
+        reimplementar el cierre a mano: así se conserva también el resto de
+        lo que hace (pausar al minimizar, etc.) sin duplicarlo.
+
+        `getProperties` no existe en modo offscreen (`self.win` es un
+        `GraphicsBuffer`, no una `GraphicsWindow` de verdad — mismo caso que
+        `request_properties` más arriba en `__init__`), así que se
+        comprueba antes de encadenar para no romper los tests/smoke scripts
+        que arrancan la app en ese modo.
+        """
+        if hasattr(window, "getProperties"):
+            ShowBase.windowEvent(self, window)
         self._sync_lens_aspect_ratio()
         self._resize_ficha()
 
@@ -673,7 +729,12 @@ class App(ShowBase):
         paneles quedaban uno encima de otro y los textos se superponían
         letra sobre letra, ilegibles.
         """
-        if self.active_menu is not None:
+        if self.active_menu is None:
+            # Primer menú de la pila: es el momento en que la ficha se
+            # aparta. Entrar a un submenú desde otro (Salir sobre Opciones)
+            # no la vuelve a animar, ya está fuera.
+            self._animate_ficha(visible=False)
+        else:
             self.active_menu.close()
 
         self._refresh_menu_accent()
@@ -691,12 +752,48 @@ class App(ShowBase):
         self._menu_stack.pop().close()
         if self.active_menu is not None:
             self.active_menu.open()
+        else:
+            # Se vació la pila: se vuelve al carrusel, así que la ficha
+            # deshace la animación y reaparece.
+            self._animate_ficha(visible=True)
         self._reset_navigation()
 
     def _reset_navigation(self) -> None:
         self._nav_direction = 0
         self._nav_held_time = 0.0
         self._nav_next_repeat = 0.0
+
+    def _animate_ficha(self, visible: bool) -> None:
+        """
+        Aparta la ficha (y la barra de ayuda, que cuelga del mismo frame)
+        hacia abajo con un desvanecido a la vez, o deshace el movimiento.
+
+        Deslizar Y desvanecer en paralelo, no una animación de cada tipo por
+        separado: `Parallel` los lanza y gestiona como una sola unidad (un
+        `finish()` corta las dos), y siguen siendo dos lerps baratos sobre
+        UN nodo — nada de geometría ni de texturas de por medio, por eso
+        vale como "poco costosa".
+        """
+        if self._ficha_visible == visible:
+            return
+        self._ficha_visible = visible
+
+        if self._ficha_anim is not None:
+            self._ficha_anim.finish()
+
+        target_z = 0.0 if visible else -FICHA_ANIM_SLIDE
+        target_alpha = 1.0 if visible else 0.0
+        self._ficha_anim = Parallel(
+            LerpPosInterval(
+                self.ficha_frame, FICHA_ANIM_DURATION, (0, 0, target_z),
+                blendType="easeInOut",
+            ),
+            LerpColorScaleInterval(
+                self.ficha_frame, FICHA_ANIM_DURATION, (1, 1, 1, target_alpha),
+                blendType="easeInOut",
+            ),
+        )
+        self._ficha_anim.start()
 
     def _refresh_menu_accent(self) -> None:
         """
@@ -962,6 +1059,18 @@ class App(ShowBase):
         self._layout_ficha_rows()
 
     def _update(self, task):
+        # Al cerrar la ventana, `destroy()` desmonta ShowBase (entre otras
+        # cosas se lleva por delante `self.win`) pero esta tarea sigue
+        # encolada y llega a ejecutarse una vez más antes de que el
+        # `sys.exit()` de `userExit()` haga efecto. Sin esta guarda,
+        # `_check_lens_aspect_ratio` reventaba con
+        # "AttributeError: 'App' object has no attribute 'win'", y esa
+        # excepción SUSTITUÍA al SystemExit que estaba saliendo del bucle de
+        # tareas: la aplicación acababa cerrándose con un traceback feo en
+        # vez de limpiamente.
+        if self._shutting_down:
+            return task.done
+
         self._check_lens_aspect_ratio()
 
         dt = globalClock.get_dt()
@@ -992,6 +1101,10 @@ class App(ShowBase):
             self._resize_ficha()
 
     def destroy(self):
+        # Antes que nada: corta la tarea de refresco para que no vuelva a
+        # entrar mientras se desmonta todo lo que usa (ver `_update`).
+        self._shutting_down = True
+        self.task_mgr.remove("carousel-update")
         self.cover_loader.shutdown()
         self.gamepad.destroy()
         super().destroy()

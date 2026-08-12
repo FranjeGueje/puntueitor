@@ -13,6 +13,7 @@ los lados al maximizar a un aspect ratio más ancho que el de arranque.
 """
 import math
 
+from direct.showbase.DirectObject import DirectObject
 from panda3d.core import CardMaker, NodePath, PNMImage, Texture, TextureStage
 
 ZOOM = 1.15  # >1 = acerca la imagen (recorta un poco el centro y lo amplía)
@@ -82,8 +83,28 @@ def _blur_texture(source: Texture) -> Texture:
     return texture
 
 
-class Background:
+class Background(DirectObject):
+    """
+    Hereda de `DirectObject` SOLO para poder escuchar "window-event" con
+    identidad propia, y ese detalle es importante.
+
+    El messenger de Panda3D indexa los manejadores por (objeto, evento), y
+    un mismo objeto solo puede tener UN manejador por evento: registrar otro
+    sustituye al anterior en silencio, sin aviso ni error. Antes esto hacía
+    `base.accept("window-event", ...)`, o sea "que el objeto BASE (la App)
+    escuche", en vez de escuchar como Background — así que este manejador
+    PISABA el de la App, que a su vez ya había pisado el que instala
+    `ShowBase.__init__`. Y el de ShowBase es justo el que detecta que se ha
+    cerrado la ventana y llama a `userExit()`: el resultado era que al
+    cerrar la ventana no se enteraba nadie y el proceso seguía corriendo con
+    el bucle de tareas girando en el vacío.
+
+    Heredando de `DirectObject` y usando `self.accept(...)`, cada uno se
+    registra con su propia identidad y los tres manejadores conviven.
+    """
+
     def __init__(self, base, distance: float = 20.0):
+        super().__init__()
         self._base = base
         self._distance = distance
         self._half_w = 1.0
@@ -106,7 +127,7 @@ class Background:
         self._blur_cache: dict[int, tuple[Texture, Texture]] = {}
 
         self._resize()
-        base.accept("window-event", self._on_window_event)
+        self.accept("window-event", self._on_window_event)
 
     def _on_window_event(self, window) -> None:
         self._resize()

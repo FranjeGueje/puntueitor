@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from direct.gui.OnscreenText import OnscreenText
 from panda3d.core import NodePath, TextNode
 
-from puntueitor.gui3d.fonts import ui_font, ui_font_bold
+from puntueitor.gui3d.fonts import ui_font
 from puntueitor.gui3d.rounded_panel import make_rounded_panel
 
 # Colores base. El del resaltado lo pone `set_accent_color()`; este es solo
@@ -161,7 +161,7 @@ class Menu:
             scale=TITLE_SCALE,
             fg=TITLE_COLOR,
             align=TextNode.A_center,
-            font=ui_font_bold(),
+            font=ui_font(),
             mayChange=True,
         )
         self._hint_text = OnscreenText(

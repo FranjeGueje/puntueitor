@@ -9,9 +9,9 @@ sirvan al otro.
 import logging
 import os
 import queue
+import shutil
 import threading
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from panda3d.core import Filename, Texture
@@ -21,7 +21,17 @@ from puntueitor.core import paths
 logger = logging.getLogger(__name__)
 
 
+#: Segundos de espera por descarga. `urlretrieve` NO acepta timeout, así que
+#: durante mucho tiempo esta constante estuvo declarada pero sin usar y las
+#: descargas se quedaban esperando indefinidamente si el servidor no
+#: respondía. Por eso se baja el fichero con `urlopen(..., timeout=...)` a
+#: mano en vez de con `urlretrieve`.
 DOWNLOAD_TIMEOUT = 8
+
+#: Cada cuánto comprueba un hilo de descarga si le han pedido parar mientras
+#: espera trabajo. Corto para que `shutdown()` tenga efecto enseguida, pero
+#: no tanto como para que despertarse salga caro estando la cola vacía.
+_WORKER_POLL_TIMEOUT = 0.2
 
 
 def _cover_path(igdb_id: int) -> Path:
@@ -107,7 +117,9 @@ def download_cover(igdb_id: int, cover_url: str) -> Path | None:
     # sí podría pisarse entre sí.
     tmp_path = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
     try:
-        urllib.request.urlretrieve(cover_url, tmp_path)
+        with urllib.request.urlopen(cover_url, timeout=DOWNLOAD_TIMEOUT) as response:
+            with open(tmp_path, "wb") as tmp_file:
+                shutil.copyfileobj(response, tmp_file)
         os.replace(tmp_path, path)
     except Exception as e:
         logger.warning(f"gui3d: no se pudo descargar la carátula {igdb_id}: {e}")
@@ -147,14 +159,36 @@ class CoverLoader:
     tocan el disco (`urllib` + escritura de fichero); `poll()` se llama desde
     una tarea del `task_mgr` en el hilo principal y es ahí donde se carga la
     textura y se le entrega al llamante.
+
+    Los hilos son PROPIOS y `daemon=True`, no un `ThreadPoolExecutor`. El
+    executor parecía la opción obvia, pero sus hilos son no-daemon y además
+    `concurrent.futures` registra un `atexit` que los ESPERA a todos al
+    cerrar el intérprete. Resultado: al cerrar la ventana, el proceso se
+    quedaba colgado hasta que terminara la última descarga en curso — y sin
+    timeout (ver `DOWNLOAD_TIMEOUT`), para siempre si el servidor no
+    contestaba. Ni `shutdown(wait=False, cancel_futures=True)` lo evita: eso
+    cancela lo ENCOLADO, pero no interrumpe lo que ya se está descargando.
+    Con hilos daemon, el intérprete no los espera y el proceso se cierra al
+    instante; una descarga a medias no deja basura porque el fichero se
+    escribe en un temporal y solo se renombra al terminar (ver
+    `download_cover`).
     """
 
     def __init__(self, max_workers: int = 4):
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._pending: queue.Queue[tuple[object, int, str]] = queue.Queue()
         self._done: queue.Queue[tuple[object, Path]] = queue.Queue()
         self._requested: set[object] = set()
         self._inflight = 0
         self._inflight_lock = threading.Lock()
+        self._stop = threading.Event()
+        self._workers = [
+            threading.Thread(
+                target=self._worker, name=f"cover-loader-{i}", daemon=True,
+            )
+            for i in range(max_workers)
+        ]
+        for worker in self._workers:
+            worker.start()
 
     @property
     def inflight(self) -> int:
@@ -177,22 +211,39 @@ class CoverLoader:
         self._requested.add(key)
         with self._inflight_lock:
             self._inflight += 1
-        self._executor.submit(self._download, key, igdb_id, cover_url)
+        self._pending.put((key, igdb_id, cover_url))
 
-    def _download(self, key: object, igdb_id: int, cover_url: str) -> None:
-        try:
-            # Puede estar ya en disco (descargada en otra sesión, o por la
-            # TUI, que usa el mismo directorio). Entonces no hay nada que
-            # bajar y se anuncia directamente.
-            path = get_cached_cover_path(igdb_id) or download_cover(igdb_id, cover_url)
-            if path is not None:
-                self._done.put((key, path))
-        finally:
-            # En `finally` para que un fallo de descarga no deje el contador
-            # inflado para siempre: si se quedara alto, el relleno de fondo
-            # dejaría de encolar nada y las carátulas restantes no bajarían.
-            with self._inflight_lock:
-                self._inflight -= 1
+    def _worker(self) -> None:
+        """
+        Bucle de un hilo de descarga: coge peticiones y las baja.
+
+        La espera en la cola lleva timeout en vez de bloquear para siempre
+        porque así el hilo comprueba `_stop` de vez en cuando y termina solo
+        tras un `shutdown()`, sin necesidad de despertarlo con centinelas.
+        """
+        while not self._stop.is_set():
+            try:
+                key, igdb_id, cover_url = self._pending.get(timeout=_WORKER_POLL_TIMEOUT)
+            except queue.Empty:
+                continue
+            try:
+                if self._stop.is_set():
+                    # Se ha pedido cerrar mientras esta petición esperaba en
+                    # la cola: ya no le interesa a nadie.
+                    continue
+                # Puede estar ya en disco (descargada en otra sesión, o por
+                # la TUI, que usa el mismo directorio). Entonces no hay nada
+                # que bajar y se anuncia directamente.
+                path = get_cached_cover_path(igdb_id) or download_cover(igdb_id, cover_url)
+                if path is not None:
+                    self._done.put((key, path))
+            finally:
+                # En `finally` para que un fallo de descarga no deje el
+                # contador inflado para siempre: si se quedara alto, el
+                # relleno de fondo dejaría de encolar nada y las carátulas
+                # restantes no bajarían.
+                with self._inflight_lock:
+                    self._inflight -= 1
 
     def poll(self) -> list[tuple[object, Path]]:
         """
@@ -214,4 +265,9 @@ class CoverLoader:
         return results
 
     def shutdown(self) -> None:
-        self._executor.shutdown(wait=False, cancel_futures=True)
+        """
+        Pide a los hilos que paren. NO los espera: son daemon justamente
+        para que cerrar la aplicación sea inmediato aunque haya descargas a
+        medias (ver la nota de la clase).
+        """
+        self._stop.set()

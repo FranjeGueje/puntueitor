@@ -781,7 +781,7 @@ Three modules, split by what they know about:
   Panda3D has no rounded rect (`DirectFrame` is square-cornered at every
   relief), and the usual 9-slice texture route would need one PNG per panel
   colour, so it generates a triangle-fan geometry instead.
-- `menu.py` — the widget: panel, bold title, rows, focus highlight. Knows
+- `menu.py` — the widget: panel, title, rows, focus highlight. Knows
   nothing about games or scoring.
 - `menus.py` — just the *contents* (which rows, which keys). `MenuItem.key`
   is the contract with `app.py`, and the keys deliberately match the TUI's
@@ -822,15 +822,64 @@ Things that were found by rendering, not by reasoning:
   of their slot, so only a fraction of a row is left under the last one; a
   normal-sized gap put the hint on top of the last item.
 
-`ui_font_bold()` (fonts.py) is back for menu titles, and its two non-obvious
-bits are both Panda3D caching traps. It builds `DynamicTextFont` **by hand**
-instead of via `FontPool.load_font`, because emboldening is state *on the
-font object* and `FontPool` returns the same instance per path — thickening
-"the Hussar Print" would have thickened the entire UI. And the outline is
-**white**, not the text colour: `fg` multiplies the glyph texture rather than
-replacing it, so a pre-coloured outline got tinted differently from the fill
-and the title came out two-tone with a halo. White outline = one instance
-works for every colour.
+Menu titles use plain `ui_font()`, not a bold variant — bold was tried
+(`ui_font_bold()`, same faked-outline approach documented above for the case
+labels) and dropped again once seen rendered: the outline blurred the title
+at menu scale. `ui_font_bold()` was deleted outright rather than left unused,
+same call as the case-labels bold removal — see the note above if it needs
+reviving.
+
+## `messenger.accept` overwrites silently — one handler per (object, event)
+
+Closing the window used to leave the process running forever (the window
+vanished, the task loop kept spinning, only Ctrl+C got out). Three separate
+bugs stacked on top of each other; the first is the one that will bite again:
+
+**1. Handlers clobbering each other.** Panda3D's messenger keys handlers by
+`(object, event)`, and registering a second one for the same pair *replaces*
+the first — no error, no warning at default notify level. Three places were
+registering `window-event`:
+
+- `ShowBase.__init__` → `self.windowEvent` (this is the one that notices the
+  window closed and calls `userExit()`)
+- `App.__init__` → `self._on_window_event`
+- `background.py` → **`base.accept("window-event", ...)`**
+
+That last one is the trap: `Background` wasn't a `DirectObject`, so it called
+`base.accept(...)`, meaning *"the App accepts this event"*. Same object key as
+the App's own handler, so it silently replaced it — which had already replaced
+ShowBase's. Only Background's survived, so nothing ever called `userExit()`.
+Fix: `Background` now inherits `DirectObject` and uses `self.accept(...)`, so
+it has its own messenger identity. `App._on_window_event` explicitly chains
+`ShowBase.windowEvent(self, window)` (guarded by `hasattr(window,
+"getProperties")`, absent in offscreen/test mode where `self.win` is a
+`GraphicsBuffer`).
+
+Verify with:
+```python
+messenger._Messenger__callbacks['window-event']   # expect one entry per object
+```
+
+**2. Nothing called `App.destroy()`.** `userExit()` goes straight to
+`sys.exit()`. `ShowBase` exposes `self.exitFunc` precisely as the pre-exit
+hook — set it rather than reimplementing the close path.
+
+**3. Non-daemon download threads blocked interpreter exit.**
+`ThreadPoolExecutor`'s workers are non-daemon *and* `concurrent.futures`
+registers an atexit hook that joins them all, so the process waited on
+in-flight covers. `shutdown(wait=False, cancel_futures=True)` does **not**
+help — it cancels *queued* work, never interrupts a running download. Plus
+`DOWNLOAD_TIMEOUT` was declared but never wired up (`urlretrieve` accepts no
+timeout), so a stalled server hung forever. `CoverLoader` now runs its own
+`daemon=True` threads and downloads via `urlopen(..., timeout=...)`. Abandoning
+a download mid-flight is safe because covers are written to a temp file and
+`os.replace`d only when complete.
+
+Reproducing a real close needs an actual `WM_DELETE_WINDOW` — a programmatic
+`request_properties(open=False)` does *not* generate the same event. Use
+python-xlib to send the ClientMessage, then assert the process is gone; and
+dump `faulthandler.dump_traceback()` on a stuck run to see which thread is
+stuck where, rather than guessing.
 
 ## Environment
 
