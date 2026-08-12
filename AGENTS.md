@@ -697,15 +697,13 @@ number large on the ~99% of boxes that show two digits. Anyone resizing
 these must re-check with a 3-digit value, not just whatever game happens to
 be selected while testing.
 
-Numbers are drawn in a faked bold: Hussar Print ships one weight and Panda3D
-has no synthetic bold, so `ui_font_bold()` gives the glyph an outline in its
-own colour (`DynamicTextFont.set_outline`), which reads as a thicker stroke
-rather than a visible border. It needs a **separate font instance** built
-with `DynamicTextFont` directly — outline is a property of the *font*, not
-of the `TextNode`, and `FontPool.load_font` caches by path and returns the
-same object, so setting it on the pooled font would embolden the title,
-ficha and banner too. Same cache-by-name behaviour that forced the move away
-from `TexturePool` for covers.
+A faked-bold variant (`DynamicTextFont.set_outline`, a separate font
+instance since `FontPool.load_font` caches by path and would have emboldened
+the title/ficha/banner too) was tried and dropped — asked for plain weight
+again once seen rendered. `ui_font_bold()` no longer exists; if bold ever
+comes back, the separate-instance requirement is the part worth
+remembering, same cache-by-name trap that forced the move away from
+`TexturePool` for covers.
 
 The top badges are deliberately oversized relative to `BANNER_HEIGHT`
 (0.22 vs 0.11) and positioned to slightly overhang the case's own outer

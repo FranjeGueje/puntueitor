@@ -40,7 +40,7 @@ from panda3d.core import (
 )
 
 from puntueitor.core.models import Game
-from puntueitor.gui3d.fonts import ui_font, ui_font_bold
+from puntueitor.gui3d.fonts import ui_font
 from puntueitor.gui3d.game_case import CASE_DEPTH, CASE_HEIGHT, CASE_WIDTH
 
 _ASSETS_DIR = Path(__file__).parent / "assets" / "labels"
@@ -60,7 +60,7 @@ TOP_LABEL_SIDE_MARGIN = 0.02
 # fue arriba, al hueco de terminado), así que sobra sitio y pueden ir más
 # grandes — que además es lo que interesa, porque son las únicas que llevan
 # un número dentro que hay que poder leer a la distancia del carrusel.
-BOTTOM_LABEL_SIZE = 0.21
+BOTTOM_LABEL_SIZE = 0.27
 BOTTOM_LABEL_BOTTOM_MARGIN = 0.015
 BOTTOM_LABEL_SIDE_MARGIN = 0.03
 
@@ -138,9 +138,7 @@ def _build_number(
     node.set_text(text)
     node.set_align(TextNode.A_center)
     node.set_text_color(*_LABEL_TEXT_COLOR)
-    # Negrita: el número tiene que leerse sobre un icono de color y a
-    # tamaño pequeño, donde el trazo fino de Hussar Print se pierde.
-    font = ui_font_bold(_LABEL_TEXT_COLOR) or ui_font()
+    font = ui_font()
     if font is not None:
         node.set_font(font)
     label_np = parent.attach_new_node(node)
