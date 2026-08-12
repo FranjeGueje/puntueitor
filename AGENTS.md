@@ -767,6 +767,71 @@ it's calibrated by rendering the help bar and reading it at the size it
 actually ships at, the same as every other layout constant in this
 codebase.
 
+## Menu system (menu.py, menus.py, rounded_panel.py)
+
+Replaced the old single `submenu.py`, which was one fixed options panel
+navigated **left/right** — a leftover from when the only thing on screen was
+the horizontal carousel. Menus are vertical lists now and they **stack**:
+`app.App._menu_stack` holds them, `_push_menu`/`_pop_menu` move through it,
+and `active_menu` (top of stack, or None) is what decides who owns input.
+
+Three modules, split by what they know about:
+
+- `rounded_panel.py` — pure drawing primitive, knows nothing about menus.
+  Panda3D has no rounded rect (`DirectFrame` is square-cornered at every
+  relief), and the usual 9-slice texture route would need one PNG per panel
+  colour, so it generates a triangle-fan geometry instead.
+- `menu.py` — the widget: panel, bold title, rows, focus highlight. Knows
+  nothing about games or scoring.
+- `menus.py` — just the *contents* (which rows, which keys). `MenuItem.key`
+  is the contract with `app.py`, and the keys deliberately match the TUI's
+  (`gui/screens/scoring.py`, `sorting.py`, `filtering.py`).
+
+Item kinds are `action`, `check` (toggles in place) and `header` (a section
+label that `move_focus` skips — its loop is bounded to one full pass so a
+menu of nothing but headers can't spin forever).
+
+Input bindings, all four main menus opening from the carousel: Select/Esc →
+Options, Start/Tab → scoring, X/`x` → filter+sort, A/Enter → game menu.
+B and Esc both go back, but they are **not** the same handler: Esc doubles as
+"open Options" on the main screen (the keyboard has no comfortable Select),
+while B on the main screen deliberately does nothing, because it means
+"back" and there's nowhere to go back to. `x` is context-sensitive — inside
+the scoring menu it configures the focused system instead of opening filters.
+
+Things that were found by rendering, not by reasoning:
+
+- **Stacked menus must hide the one underneath.** Leaving it visible (so you
+  could see where you came from) sounds nice, but every menu draws centred at
+  the same spot, so the two panels landed on top of each other and the text
+  overlapped letter-on-letter. Screenshot it if you ever want to re-try this.
+- **Unfocused rows have to be dim, not white.** The focus highlight uses the
+  selected game's store colour (`store_colors.as_text_color`, which brightens
+  the chip colours — they're designed as dark backgrounds with white text on
+  top, unreadable as text themselves). Epic's is a near-black grey that
+  brightens to off-white, so against white rows its highlight was *invisible*.
+  Dimming the unfocused rows makes the highlight work for any store hue.
+- **Panel width is measured, not fixed.** The scoring menu's hint has one
+  extra key ("configurar") and overflowed a fixed-width panel, while the quit
+  confirmation had half a panel of empty space. `_half_width()` measures the
+  composed `TextNode`s (`get_width() * scale`) — you can't estimate this by
+  counting characters, especially with icon glyphs mixed in. This forces the
+  panel to be built *after* the texts, hence `set_bin("background", 0)` so it
+  doesn't cover them.
+- **The hint gap must exceed the other margins.** Row baselines sit at 0.62
+  of their slot, so only a fraction of a row is left under the last one; a
+  normal-sized gap put the hint on top of the last item.
+
+`ui_font_bold()` (fonts.py) is back for menu titles, and its two non-obvious
+bits are both Panda3D caching traps. It builds `DynamicTextFont` **by hand**
+instead of via `FontPool.load_font`, because emboldening is state *on the
+font object* and `FontPool` returns the same instance per path — thickening
+"the Hussar Print" would have thickened the entire UI. And the outline is
+**white**, not the text colour: `fg` multiplies the glyph texture rather than
+replacing it, so a pre-coloured outline got tinted differently from the fill
+and the title came out two-tone with a halo. White outline = one instance
+works for every colour.
+
 ## Environment
 
 - Python 3.14 (from `.venv`)

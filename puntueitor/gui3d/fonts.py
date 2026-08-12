@@ -23,7 +23,13 @@ nada con el resto del estilo "caja de videojuego".
 """
 from pathlib import Path
 
-from panda3d.core import DynamicTextFont, FontPool, TextProperties, TextPropertiesManager
+from panda3d.core import (
+    DynamicTextFont,
+    FontPool,
+    LColor,
+    TextProperties,
+    TextPropertiesManager,
+)
 
 _FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "HussarPrintA.otf"
 _ICON_FONT_PATH = Path(__file__).parent / "assets" / "buttons" / "PromptFont.otf"
@@ -39,7 +45,33 @@ SUPERSCRIPT_PROPERTY = "sup"
 ICON_PROPERTY = "icon"
 
 _cached_font: DynamicTextFont | None = None
+_cached_bold_font: DynamicTextFont | None = None
 _cached_icon_font: DynamicTextFont | None = None
+
+# Hussar Print no trae variante negrita, así que se engorda engordando el
+# contorno del propio glifo: el trazo crece hacia fuera y se lee como una
+# negrita de verdad, no como un texto con borde.
+#
+# El contorno va en BLANCO, no del color del texto, y ese es el detalle que
+# hace que funcione: el color de un `OnscreenText`/`TextNode` (`fg`) no
+# sustituye al del glifo, lo MULTIPLICA. Con el contorno ya coloreado, el
+# relleno (blanco en el atlas) y el contorno acababan tintados de forma
+# distinta y el título salía a dos tonos, con un halo más claro alrededor —
+# se ve perfectamente al renderizarlo. Con el atlas entero en blanco, `fg`
+# tiñe todo por igual y una sola instancia vale para cualquier color.
+#
+# Feather a 0 para que el borde quede nítido: con feather el contorno se
+# difumina y el texto sale emborronado en vez de más grueso. El ancho está
+# ajustado sobre el render — a partir de 0.7 el trazo empieza a cerrar los
+# huecos interiores de la "o" y la "e".
+_BOLD_OUTLINE_WIDTH = 0.4
+_BOLD_OUTLINE_FEATHER = 0.0
+
+# La negrita se dibuja a más resolución que el texto normal porque el
+# contorno se calcula sobre el mapa de píxeles del glifo, no sobre su
+# contorno vectorial: al tamaño por defecto, engordarlo redondea las
+# esquinas y el resultado se ve blando.
+_BOLD_PIXELS_PER_UNIT = 120
 
 # Un carácter por control, construido con `chr()` a partir del punto de
 # código en vez de tecleado literal: son glifos del bloque "Control
@@ -50,12 +82,21 @@ _cached_icon_font: DynamicTextFont | None = None
 # usarlo (la lista de nombres no está documentada en el propio .otf).
 ICON_KEYBOARD_LEFT = chr(0x23F4)              # keyboard-left
 ICON_KEYBOARD_RIGHT = chr(0x23F5)             # keyboard-right
+ICON_KEYBOARD_UP = chr(0x23F6)                # keyboard-up
+ICON_KEYBOARD_DOWN = chr(0x23F7)              # keyboard-down
 ICON_KEYBOARD_ENTER = chr(0x242E)             # keyboard-enter
 ICON_KEYBOARD_SPACE = chr(0x243A)             # keyboard-space
 ICON_KEYBOARD_ESCAPE = chr(0x242F)            # keyboard-escape
+ICON_KEYBOARD_TAB = chr(0x242B)               # keyboard-tab
 ICON_KEYBOARD_Q = chr(0xFF31)                 # keyboard-q
-ICON_XBOX_A = chr(0x21D3)                     # xbox-a
+ICON_KEYBOARD_X = chr(0xFF38)                 # keyboard-x
+# Las cuatro caras van en el orden en que están en el mando, no alfabético:
+# 0x21D0 izquierda (X), 0x21D1 arriba (Y), 0x21D2 derecha (B), 0x21D3 abajo
+# (A) — mismo orden que las flechas dobles de Unicode que ocupan esos puntos.
+ICON_XBOX_X = chr(0x21D0)                     # xbox-x
 ICON_XBOX_Y = chr(0x21D1)                     # xbox-y
+ICON_XBOX_B = chr(0x21D2)                     # xbox-b
+ICON_XBOX_A = chr(0x21D3)                     # xbox-a
 # El dpad tiene glifos "left"/"right"/"left-right", pero en un solo color
 # (sin el resaltado de color del brazo activo que lleva la fuente original)
 # los tres se ven exactamente igual que la cruz completa — probado
@@ -63,7 +104,11 @@ ICON_XBOX_Y = chr(0x21D1)                     # xbox-y
 # los lados sí distingue izquierda/derecha a simple vista, y además es más
 # preciso: la navegación acepta cruceta Y stick indistintamente.
 ICON_GAMEPAD_LEFT_RIGHT = chr(0x21D4)         # analog-left-right
+ICON_GAMEPAD_UP_DOWN = chr(0x21D5)            # analog-up-down
 ICON_GAMEPAD_START = chr(0x21F8)              # gamepad-start
+# "Select" y "Back" son el mismo botón físico con dos nombres según la
+# generación del mando; PromptFont solo trae el dibujo rotulado SELECT.
+ICON_GAMEPAD_SELECT = chr(0x21F7)             # gamepad-select
 
 
 def icon_markup(text: str) -> str:
@@ -117,6 +162,33 @@ def ui_font() -> DynamicTextFont | None:
         )
 
     return _cached_font
+
+
+def ui_font_bold() -> DynamicTextFont | None:
+    """
+    La misma Hussar Print, pero engordada, para los títulos de los menús.
+
+    Vale para cualquier color de texto (ver `_BOLD_OUTLINE_WIDTH` sobre por
+    qué el contorno va en blanco), así que basta una instancia cacheada.
+
+    OJO con el detalle que hace que esto funcione: se construye
+    `DynamicTextFont(ruta)` A MANO en vez de pedírsela a `FontPool`. El
+    engordado es estado DE LA FUENTE, no del texto que la usa, y
+    `FontPool.load_font` devuelve SIEMPRE el MISMO objeto para una ruta
+    dada — pedirle "la Hussar Print" y engordarla se lo aplicaría también
+    al texto normal, y la interfaz entera saldría en negrita de golpe.
+    """
+    global _cached_bold_font
+    if _cached_bold_font is None:
+        if not _FONT_PATH.exists():
+            return None
+        font = DynamicTextFont(str(_FONT_PATH))
+        font.set_pixels_per_unit(_BOLD_PIXELS_PER_UNIT)
+        font.set_outline(
+            LColor(1, 1, 1, 1), _BOLD_OUTLINE_WIDTH, _BOLD_OUTLINE_FEATHER,
+        )
+        _cached_bold_font = font
+    return _cached_bold_font
 
 
 def icon_font() -> DynamicTextFont | None:

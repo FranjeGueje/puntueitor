@@ -151,6 +151,25 @@ class CarouselBox:
         self.reflection_cover_np.set_texture(texture)
         self.texture = texture
 
+    def rebuild_labels(self, game, visible: bool = True) -> None:
+        """
+        Rehace las pegatinas de estado tras cambiar un dato del juego.
+
+        Se tiran y se vuelven a construir en vez de esconder o enseñar las
+        que ya hay: qué pegatinas existen y en qué hueco va cada una depende
+        de la combinación de estados (terminado y backlog comparten columna,
+        ver `case_labels`), así que no hay una correspondencia fija entre
+        campo y nodo que se pueda ir tocando.
+
+        `visible` mantiene el estado del interruptor global de etiquetas: si
+        estaban ocultas, las nuevas tienen que nacer ocultas también.
+        """
+        if self.labels_np is not None:
+            self.labels_np.remove_node()
+        self.labels_np = build_case_labels(self.root, game)
+        if self.labels_np is not None and not visible:
+            self.labels_np.hide()
+
     def set_slot(self, angle_deg: float, tilt_deg: float, selected: bool) -> None:
         """Posiciona la caja en su hueco del arco (sin animar)."""
         if self._slide is not None and not self._slide.is_stopped():
@@ -251,6 +270,12 @@ class Carousel:
         box = self._boxes_by_key.get(key)
         if box is not None:
             box.set_texture(texture)
+
+    def rebuild_labels(self, key: object, game, visible: bool = True) -> None:
+        """Rehace las pegatinas del juego `key`, si sigue en el carrusel."""
+        box = self._boxes_by_key.get(key)
+        if box is not None:
+            box.rebuild_labels(game, visible)
 
     def set_labels_visible(self, visible: bool) -> None:
         """

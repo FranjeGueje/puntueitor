@@ -41,6 +41,9 @@ STICK_THRESHOLD = 0.5
 # confundirlo con un eje analógico si el orden no fuera el esperado.
 HAT_THRESHOLD = 0.5
 
+#: Los cuatro lados de la cruceta que se siguen por eventos de pulsar/soltar.
+_DPAD_SIDES = ("left", "right", "up", "down")
+
 
 class GamepadInput(DirectObject):
     """
@@ -55,7 +58,9 @@ class GamepadInput(DirectObject):
         app,
         on_confirm: Callable[[], None] | None = None,
         on_back: Callable[[], None] | None = None,
-        on_menu: Callable[[], None] | None = None,
+        on_options: Callable[[], None] | None = None,
+        on_scoring: Callable[[], None] | None = None,
+        on_filter: Callable[[], None] | None = None,
         on_labels: Callable[[], None] | None = None,
     ):
         super().__init__()
@@ -63,13 +68,17 @@ class GamepadInput(DirectObject):
         self._callbacks = {
             "confirm": on_confirm,
             "back": on_back,
-            "menu": on_menu,
+            "options": on_options,
+            "scoring": on_scoring,
+            "filter": on_filter,
             "labels": on_labels,
         }
 
         self._device_manager = InputDeviceManager.get_global_ptr()
         self._device: InputDevice | None = None
-        self._dpad_held = {"left": False, "right": False}
+        self._dpad_held = dict.fromkeys(_DPAD_SIDES, False)
+        self._hat_axis: int | None = None
+        self._hat_axis_v: int | None = None
 
         self.accept("connect-device", self._on_device_connected)
         self.accept("disconnect-device", self._on_device_disconnected)
@@ -88,30 +97,34 @@ class GamepadInput(DirectObject):
             logger.info("gui3d: no hay mando conectado; solo teclado")
 
     @staticmethod
-    def _find_hat_axis(device: InputDevice) -> int | None:
+    def _find_hat_axes(device: InputDevice) -> tuple[int | None, int | None]:
         """
-        Índice del eje horizontal de la cruceta, o None si no lo hay.
+        Índices de los ejes horizontal y vertical de la cruceta, o None.
 
-        Se busca el PRIMER eje sin mapear (`Axis.none`): evdev numera
-        ABS_HAT0X (0x10) antes que ABS_HAT0Y (0x11) y Panda3D los recorre en
-        ese orden, así que el primero sin nombre es el horizontal. Es una
-        heurística, pero acotada — solo se miran los ejes que Panda3D ya ha
-        declarado desconocidos, nunca los que sí tienen nombre.
+        Se buscan los DOS PRIMEROS ejes sin mapear (`Axis.none`): evdev
+        numera ABS_HAT0X (0x10) antes que ABS_HAT0Y (0x11) y Panda3D los
+        recorre en ese orden, así que el primero sin nombre es el horizontal
+        y el segundo el vertical. Es una heurística, pero acotada — solo se
+        miran los ejes que Panda3D ya ha declarado desconocidos, nunca los
+        que sí tienen nombre.
         """
-        for index, axis in enumerate(device.axes):
-            if axis.axis == InputDevice.Axis.none:
-                return index
-        return None
+        unmapped = [
+            index for index, axis in enumerate(device.axes)
+            if axis.axis == InputDevice.Axis.none
+        ]
+        horizontal = unmapped[0] if len(unmapped) > 0 else None
+        vertical = unmapped[1] if len(unmapped) > 1 else None
+        return horizontal, vertical
 
     def _attach(self, device: InputDevice) -> None:
         self._device = device
-        self._hat_axis = self._find_hat_axis(device)
+        self._hat_axis, self._hat_axis_v = self._find_hat_axes(device)
         if self._hat_axis is None:
             logger.debug("gui3d: el mando no expone eje de cruceta sin mapear")
         # Si se soltó la cruceta con el mando ya desconectado, su evento de
         # "soltar" no llegó nunca y el estado se habría quedado pulsado para
         # siempre, con el carrusel corriendo solo.
-        self._dpad_held = {"left": False, "right": False}
+        self._dpad_held = dict.fromkeys(_DPAD_SIDES, False)
         self._app.attach_input_device(device, prefix=EVENT_PREFIX)
         self._bind_buttons()
         logger.info(f"gui3d: mando conectado: {device.name}")
@@ -135,8 +148,14 @@ class GamepadInput(DirectObject):
         bindings = {
             "face_a": "confirm",
             "face_b": "back",
+            "face_x": "filter",
             "face_y": "labels",
-            "start": "menu",
+            "start": "scoring",
+            # "Select" en los mandos antiguos, "Back"/"View" en los de Xbox
+            # modernos: es el mismo botón y Panda3D lo llama siempre `back`.
+            # Ojo con el nombre: no tiene NADA que ver con el gesto "back"
+            # de volver atrás, que es el botón B.
+            "back": "options",
         }
         for button, gesture in bindings.items():
             self.accept(f"{EVENT_PREFIX}-{button}", self._fire, [gesture])
@@ -146,7 +165,8 @@ class GamepadInput(DirectObject):
         # al pulsar y "<prefijo>-<botón>-up" al soltar, así que con los dos
         # se reconstruye el estado de "mantenido" sin depender de que el
         # dispositivo mantenga al día su ButtonState.
-        for button, side in (("dpad_left", "left"), ("dpad_right", "right")):
+        for side in _DPAD_SIDES:
+            button = f"dpad_{side}"
             self.accept(f"{EVENT_PREFIX}-{button}", self._set_dpad, [side, True])
             self.accept(f"{EVENT_PREFIX}-{button}-up", self._set_dpad, [side, False])
 
@@ -167,9 +187,42 @@ class GamepadInput(DirectObject):
         state = self._device.find_button(button)
         return bool(state and state.known and state.pressed)
 
+    def _axis_direction(
+        self,
+        negative_side: str, positive_side: str,
+        negative_button, positive_button,
+        hat_axis: int | None,
+        stick_axis,
+        invert_hat: bool = False,
+    ) -> int:
+        """
+        Un eje de dirección, combinando cruceta y stick. Ver `direction`.
+
+        `invert_hat` está para el eje vertical: el hat da +1 hacia ABAJO
+        (evdev cuenta la Y hacia abajo, como una pantalla), mientras que el
+        stick da +1 hacia ARRIBA. Sin invertir uno de los dos, la cruceta y
+        el stick moverían el menú en sentidos contrarios.
+        """
+        negative = self._dpad_held[negative_side] or self._button_pressed(negative_button)
+        positive = self._dpad_held[positive_side] or self._button_pressed(positive_button)
+
+        if hat_axis is not None:
+            hat = self._device.axes[hat_axis].value
+            if invert_hat:
+                hat = -hat
+            negative = negative or hat <= -HAT_THRESHOLD
+            positive = positive or hat >= HAT_THRESHOLD
+
+        axis = self._device.find_axis(stick_axis)
+        value = axis.value if axis else 0.0
+        negative = negative or value <= -STICK_THRESHOLD
+        positive = positive or value >= STICK_THRESHOLD
+
+        return (1 if positive else 0) - (1 if negative else 0)
+
     def direction(self) -> int:
         """
-        Hacia dónde se está pidiendo ir AHORA MISMO: -1, 0 o +1.
+        Hacia dónde se está pidiendo ir en HORIZONTAL: -1, 0 o +1.
 
         Vale tanto la cruceta como el stick izquierdo, indistintamente, y
         cuenta mientras se mantengan — no es un flanco. Si se pulsan los dos
@@ -184,21 +237,31 @@ class GamepadInput(DirectObject):
         """
         if self._device is None:
             return 0
+        return self._axis_direction(
+            "left", "right",
+            GamepadButton.dpad_left(), GamepadButton.dpad_right(),
+            self._hat_axis, InputDevice.Axis.left_x,
+        )
 
-        left = self._dpad_held["left"] or self._button_pressed(GamepadButton.dpad_left())
-        right = self._dpad_held["right"] or self._button_pressed(GamepadButton.dpad_right())
+    def direction_v(self) -> int:
+        """
+        Lo mismo en VERTICAL, para navegar los menús: -1 arriba, +1 abajo.
 
-        if self._hat_axis is not None:
-            hat = self._device.axes[self._hat_axis].value
-            left = left or hat <= -HAT_THRESHOLD
-            right = right or hat >= HAT_THRESHOLD
-
-        axis = self._device.find_axis(InputDevice.Axis.left_x)
-        value = axis.value if axis else 0.0
-        left = left or value <= -STICK_THRESHOLD
-        right = right or value >= STICK_THRESHOLD
-
-        return (1 if right else 0) - (1 if left else 0)
+        El signo va como en pantalla (+1 baja), no como en el mundo 3D,
+        porque quien lo consume es una lista de menú que se recorre de
+        arriba abajo.
+        """
+        if self._device is None:
+            return 0
+        # `_axis_direction` trabaja en la convención del mando (+1 = arriba,
+        # que es como da los valores el stick); el menos de delante es lo
+        # único que la pasa a la de pantalla (+1 = abajo).
+        return -self._axis_direction(
+            "down", "up",
+            GamepadButton.dpad_down(), GamepadButton.dpad_up(),
+            self._hat_axis_v, InputDevice.Axis.left_y,
+            invert_hat=True,
+        )
 
     def destroy(self) -> None:
         self.ignore_all()

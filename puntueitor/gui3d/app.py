@@ -99,23 +99,33 @@ from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
 from puntueitor.gui3d.fonts import (
     ICON_GAMEPAD_LEFT_RIGHT,
+    ICON_GAMEPAD_SELECT,
     ICON_GAMEPAD_START,
+    ICON_GAMEPAD_UP_DOWN,
+    ICON_KEYBOARD_DOWN,
     ICON_KEYBOARD_ENTER,
     ICON_KEYBOARD_ESCAPE,
     ICON_KEYBOARD_LEFT,
-    ICON_KEYBOARD_Q,
     ICON_KEYBOARD_RIGHT,
     ICON_KEYBOARD_SPACE,
+    ICON_KEYBOARD_TAB,
+    ICON_KEYBOARD_UP,
+    ICON_KEYBOARD_X,
     ICON_XBOX_A,
+    ICON_XBOX_B,
+    ICON_XBOX_X,
     ICON_XBOX_Y,
     icon_font,
     icon_markup,
     ui_font,
 )
+from puntueitor.core.repository.library_repository import LibraryRepository
+from puntueitor.gui3d import menus
 from puntueitor.gui3d.gamepad_input import GamepadInput
+from puntueitor.gui3d.menu import Menu
 from puntueitor.gui3d.real_data import build_real_entries
 from puntueitor.gui3d.sample_data import build_sample_entries
-from puntueitor.gui3d.submenu import Submenu
+from puntueitor.gui3d.store_colors import as_text_color, primary_store_color
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -192,7 +202,11 @@ NAV_MAX_STEPS_PER_FRAME = 4
 # porque son solo texto.
 BACKGROUND_SETTLE_DELAY = 0.18
 
-SUBMENU_OPTIONS = ["Ordenar", "Filtrar", "Configurar", "Enriquecedores", "Salir"]
+# Los menús se navegan con el mismo mecanismo de repetición mantenida que el
+# carrusel, pero más despacio: una lista tiene entre dos y trece elementos,
+# no mil, y a la cadencia del carrusel se pasa de largo constantemente.
+MENU_REPEAT_DELAY = 0.40
+MENU_REPEAT_INTERVAL = 0.16
 
 # Cuánto se sube el carrusel entero para que quede pegado al título.
 CAROUSEL_RAISE = 1.3
@@ -211,11 +225,28 @@ def _build_help_text() -> str:
     kb_lr = ICON_KEYBOARD_LEFT + ICON_KEYBOARD_RIGHT
     return (
         f"{icon_markup(kb_lr)} / {icon_markup(ICON_GAMEPAD_LEFT_RIGHT)}  navegar   -   "
-        f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  seleccionar   -   "
+        f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  juego   -   "
+        f"{icon_markup(ICON_KEYBOARD_TAB)} / {icon_markup(ICON_GAMEPAD_START)}  scoring   -   "
+        f"{icon_markup(ICON_KEYBOARD_X)} / {icon_markup(ICON_XBOX_X)}  filtrar   -   "
         f"{icon_markup(ICON_KEYBOARD_SPACE)} / {icon_markup(ICON_XBOX_Y)}  etiquetas   -   "
-        f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_GAMEPAD_START)}  menu   -   "
-        f"{icon_markup(ICON_KEYBOARD_Q)}  salir"
+        f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_GAMEPAD_SELECT)}  opciones"
     )
+
+
+def _menu_hint(extra: str = "") -> str:
+    """
+    Pista de teclas al pie de un menú: navegar, elegir y volver.
+
+    `extra` se añade al final para los menús con alguna tecla propia (el de
+    scoring, que además configura con X).
+    """
+    kb_ud = ICON_KEYBOARD_UP + ICON_KEYBOARD_DOWN
+    hint = (
+        f"{icon_markup(kb_ud)} / {icon_markup(ICON_GAMEPAD_UP_DOWN)}  navegar   -   "
+        f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  elegir   -   "
+        f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_XBOX_B)}  volver"
+    )
+    return f"{hint}   -   {extra}" if extra else hint
 
 
 class App(ShowBase):
@@ -252,6 +283,12 @@ class App(ShowBase):
         self.background = Background(self)
 
         raw_entries, pending_downloads = build_real_entries() or build_sample_entries()
+
+        # Para guardar los cambios del menú de juego (terminado, oculto...).
+        # Es el mismo repositorio que usa `build_real_entries` para leer, y
+        # solo se le piden escrituras de un juego suelto (`save_game`), que
+        # tocan la tabla de extras y no el pipeline.
+        self.library_repository = LibraryRepository()
         entries = [
             CarouselEntry(
                 key=e["key"], title=e["title"], texture=e["texture"],
@@ -287,16 +324,20 @@ class App(ShowBase):
         self._settle_time = 0.0
         self._labels_visible = True
 
+        # Antes de `_on_selection_changed`: es quien pone el color de acento
+        # de los menús a partir de la tienda del juego elegido, así que los
+        # menús tienen que existir ya.
+        self._setup_menus()
         self._on_selection_changed()
-
-        self.submenu = Submenu(self.aspect2d, SUBMENU_OPTIONS)
 
         self._setup_keyboard()
         self.gamepad = GamepadInput(
             self,
             on_confirm=self._on_confirm,
             on_back=self._on_back,
-            on_menu=self._on_toggle_menu,
+            on_options=self._open_options_menu,
+            on_scoring=self._open_scoring_menu,
+            on_filter=self._open_filter_menu,
             on_labels=self._toggle_labels,
         )
 
@@ -476,24 +517,32 @@ class App(ShowBase):
     def _setup_keyboard(self) -> None:
         # Las flechas se siguen como estado (pulsada / soltada), no como
         # eventos sueltos, para poder repetir mientras se mantengan — ver
-        # `_held_direction`.
-        self._keys_held = {"left": False, "right": False}
-        for key, name in (("arrow_left", "left"), ("arrow_right", "right")):
-            self.accept(key, self._set_key_held, [name, True])
-            self.accept(f"{key}-up", self._set_key_held, [name, False])
+        # `_held_direction`. Las cuatro, no solo las horizontales: las
+        # verticales navegan los menús con la misma mecánica.
+        self._keys_held = dict.fromkeys(("left", "right", "up", "down"), False)
+        for key in ("left", "right", "up", "down"):
+            self.accept(f"arrow_{key}", self._set_key_held, [key, True])
+            self.accept(f"arrow_{key}-up", self._set_key_held, [key, False])
 
         self.accept("enter", self._on_confirm)
-        self.accept("escape", self._on_back)
+        self.accept("escape", self._on_escape_key)
         self.accept("space", self._toggle_labels)
-        self.accept("q", self.userExit)
+        self.accept("tab", self._open_scoring_menu)
+        self.accept("x", self._on_filter_key)
 
     def _set_key_held(self, name: str, held: bool) -> None:
         self._keys_held[name] = held
 
     def _navigate(self, direction: int) -> None:
-        """Un paso a izquierda (-1) o derecha (+1)."""
-        if self.submenu.is_open:
-            self.submenu.move_focus(direction)
+        """
+        Un paso de navegación.
+
+        En el carrusel es horizontal y en un menú vertical, así que `_update_navigation`
+        ya elige de qué eje viene; aquí solo se aplica al que esté al mando.
+        """
+        menu = self.active_menu
+        if menu is not None:
+            menu.move_focus(direction)
         else:
             self.carousel.move(direction)
             self._on_selection_changed()
@@ -502,6 +551,12 @@ class App(ShowBase):
         """
         Dirección que se está pidiendo ahora mismo, de teclado o de mando.
 
+        El eje depende de quién tenga el mando: con un menú abierto se
+        navega en VERTICAL y con el carrusel en HORIZONTAL. Antes esto solo
+        miraba el eje horizontal y los menús se recorrían con izquierda y
+        derecha, que era lo que había cuando lo único que existía era el
+        carrusel.
+
         Se lee como ESTADO en vez de reaccionar a eventos de pulsación,
         porque un evento no dice si la tecla sigue abajo. Se podría usar el
         auto-repeat del sistema (Panda3D emite "arrow_left-repeat"), pero su
@@ -509,6 +564,14 @@ class App(ShowBase):
         con un carrusel; con el estado, el ritmo lo decidimos aquí y sale
         igual en teclado y en mando.
         """
+        if self.active_menu is not None:
+            direction = (1 if self._keys_held["down"] else 0) - (
+                1 if self._keys_held["up"] else 0
+            )
+            if direction:
+                return direction
+            return self.gamepad.direction_v() if self.gamepad else 0
+
         direction = (1 if self._keys_held["right"] else 0) - (
             1 if self._keys_held["left"] else 0
         )
@@ -518,11 +581,13 @@ class App(ShowBase):
 
     def _update_navigation(self, dt: float) -> None:
         direction = self._held_direction()
+        in_menu = self.active_menu is not None
+        delay = MENU_REPEAT_DELAY if in_menu else NAV_REPEAT_DELAY
 
         if direction != self._nav_direction:
             self._nav_direction = direction
             self._nav_held_time = 0.0
-            self._nav_next_repeat = NAV_REPEAT_DELAY
+            self._nav_next_repeat = delay
             if direction:
                 self._navigate(direction)
             return
@@ -535,6 +600,12 @@ class App(ShowBase):
             if self._nav_held_time < self._nav_next_repeat:
                 break
             self._navigate(direction)
+            if in_menu:
+                # Sin aceleración en los menús: son listas cortas y de
+                # longitud fija, así que no hay nada que "recorrer deprisa" —
+                # acelerar solo haría pasarse de la opción buscada.
+                self._nav_next_repeat += MENU_REPEAT_INTERVAL
+                continue
             elapsed = self._nav_held_time - NAV_REPEAT_DELAY
             accel = min(1.0, max(0.0, elapsed / NAV_REPEAT_ACCEL_TIME))
             interval = NAV_REPEAT_INTERVAL + accel * (
@@ -547,27 +618,223 @@ class App(ShowBase):
             # acumula y el carrusel sigue corriendo solo tras soltar.
             self._nav_next_repeat = self._nav_held_time
 
-    def _on_confirm(self) -> None:
-        if self.submenu.is_open:
-            logger.info(f"gui3d: opción de submenú elegida: {self.submenu.focused_option!r}")
-            self.submenu.close()
-        else:
-            logger.info(f"gui3d: seleccionado {self.carousel.selected.title!r}")
-
-    def _on_back(self) -> None:
-        if self.submenu.is_open:
-            self.submenu.close()
-
     def _toggle_labels(self) -> None:
         """Muestra u oculta las etiquetas de todas las cajas (espacio / Y)."""
         self._labels_visible = not self._labels_visible
         self.carousel.set_labels_visible(self._labels_visible)
 
-    def _on_toggle_menu(self) -> None:
-        if self.submenu.is_open:
-            self.submenu.close()
+    # ──────────────────────────────
+    # Menús
+    # ──────────────────────────────
+
+    def _setup_menus(self) -> None:
+        """
+        Construye los menús una vez y los deja ocultos.
+
+        Se crean todos al arrancar en vez de bajo demanda porque construir
+        uno implica generar geometría y atlas de texto, y hacerlo la primera
+        vez que se pulsa el botón se nota como un tirón justo al abrirlo.
+        Ocupan poco: son unas pocas decenas de textos en total.
+        """
+        self._menu_stack: list[Menu] = []
+
+        scoring_hint = _menu_hint(
+            f"{icon_markup(ICON_KEYBOARD_X)} / {icon_markup(ICON_XBOX_X)}  configurar"
+        )
+
+        self.options_menu = Menu(
+            self.aspect2d, menus.OPTIONS_TITLE, menus.OPTIONS_ITEMS, hint=_menu_hint(),
+        )
+        self.quit_menu = Menu(
+            self.aspect2d, menus.QUIT_TITLE, menus.QUIT_ITEMS, hint=_menu_hint(),
+        )
+        self.scoring_menu = Menu(
+            self.aspect2d, menus.SCORING_TITLE, menus.SCORING_ITEMS, hint=scoring_hint,
+        )
+        self.filter_menu = Menu(
+            self.aspect2d, menus.FILTER_TITLE, menus.FILTER_ITEMS, hint=_menu_hint(),
+        )
+        # Sin elementos todavía: los suyos dependen del juego y se rellenan
+        # al abrirlo (ver `_open_game_menu`).
+        self.game_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
+
+    @property
+    def active_menu(self) -> Menu | None:
+        """El menú que tiene el foco, o None si manda el carrusel."""
+        return self._menu_stack[-1] if self._menu_stack else None
+
+    def _push_menu(self, menu: Menu) -> None:
+        """
+        Abre un menú por encima del que hubiera.
+
+        El de debajo se OCULTA. Se probó a dejarlo visible, para que al
+        abrir "Salir" desde Opciones se siguiera viendo de dónde vienes,
+        pero todos los menús se dibujan centrados en el mismo sitio: los dos
+        paneles quedaban uno encima de otro y los textos se superponían
+        letra sobre letra, ilegibles.
+        """
+        if self.active_menu is not None:
+            self.active_menu.close()
+
+        self._refresh_menu_accent()
+        menu.open()
+        self._menu_stack.append(menu)
+        # El foco cambia de dueño, así que se corta la repetición en curso:
+        # si no, la pulsación que abrió el menú seguiría contando como
+        # mantenida y el foco arrancaría ya moviéndose solo.
+        self._reset_navigation()
+
+    def _pop_menu(self) -> None:
+        """Cierra el menú activo y devuelve el foco (y la vista) al anterior."""
+        if not self._menu_stack:
+            return
+        self._menu_stack.pop().close()
+        if self.active_menu is not None:
+            self.active_menu.open()
+        self._reset_navigation()
+
+    def _reset_navigation(self) -> None:
+        self._nav_direction = 0
+        self._nav_held_time = 0.0
+        self._nav_next_repeat = 0.0
+
+    def _refresh_menu_accent(self) -> None:
+        """
+        Pone el color de la tienda del juego actual como color de resaltado
+        de todos los menús (el mismo del estuche y del banner de su
+        carátula, aclarado para que se lea sobre el panel oscuro).
+        """
+        entry = self.carousel.selected
+        accent = as_text_color(primary_store_color(entry.stores))
+        for menu in (
+            self.options_menu, self.quit_menu, self.scoring_menu,
+            self.filter_menu, self.game_menu,
+        ):
+            menu.set_accent_color(accent)
+
+    # ── Aperturas ──
+
+    def _open_options_menu(self) -> None:
+        """Select / Esc sobre el carrusel."""
+        self._push_menu(self.options_menu)
+
+    def _open_scoring_menu(self) -> None:
+        """Start / Tab sobre el carrusel."""
+        if self.active_menu is None:
+            self._push_menu(self.scoring_menu)
+
+    def _open_filter_menu(self) -> None:
+        """X sobre el carrusel."""
+        if self.active_menu is None:
+            self._push_menu(self.filter_menu)
+
+    def _on_filter_key(self) -> None:
+        """
+        La tecla "x". Dentro del menú de scoring configura el sistema
+        enfocado; fuera de cualquier menú, abre el de filtrar y ordenar.
+        """
+        if self.active_menu is self.scoring_menu:
+            self._configure_focused_scoring()
+        elif self.active_menu is None:
+            self._open_filter_menu()
+
+    def _open_game_menu(self) -> None:
+        """A / Enter sobre el carrusel: las opciones del juego seleccionado."""
+        entry = self.carousel.selected
+        if entry.game is None:
+            logger.info("gui3d: el juego seleccionado no tiene ficha, no hay menú")
+            return
+
+        self.game_menu.set_title(entry.title)
+        self.game_menu.set_items(menus.build_game_items(entry.game))
+        self._push_menu(self.game_menu)
+
+    # ── Acciones ──
+
+    def _on_confirm(self) -> None:
+        """A / Enter: elige en el menú activo, o abre el del juego."""
+        menu = self.active_menu
+        if menu is None:
+            self._open_game_menu()
+            return
+
+        item = menu.focused_item
+        if item is None:
+            return
+
+        if item.kind == "check":
+            menu.toggle_focused()
+            self._on_game_flag_toggled(item)
+            return
+
+        self._activate(menu, item.key)
+
+    def _activate(self, menu: Menu, key: str) -> None:
+        """
+        Qué hace elegir un elemento. De momento casi todo se queda en el
+        log: esta pasada es la del sistema de menús y su navegación, y las
+        acciones de verdad (ordenar, filtrar, cambiar de scoring) se
+        conectan después.
+        """
+        if key == "quit":
+            self._push_menu(self.quit_menu)
+        elif key == "quit_yes":
+            self.userExit()
+        elif key == "quit_no":
+            self._pop_menu()
         else:
-            self.submenu.open()
+            logger.info(f"gui3d: elegido {key!r} en el menú {menu.title!r}")
+
+    def _configure_focused_scoring(self) -> None:
+        item = self.scoring_menu.focused_item
+        if item is not None:
+            logger.info(f"gui3d: configurar el scoring {item.key!r} (pendiente)")
+
+    def _on_game_flag_toggled(self, item) -> None:
+        """
+        Persiste una casilla del menú de juego en la base de datos.
+
+        Se guarda al momento, no al cerrar el menú con un "Guardar": el menú
+        se cierra con B, que en el resto de la interfaz significa "volver",
+        y si además descartara los cambios sería una trampa.
+        """
+        entry = self.carousel.selected
+        game = entry.game
+        field = item.payload.get("field")
+        if game is None or field is None:
+            return
+
+        setattr(game, field, item.checked)
+        self.library_repository.save_game(game)
+        logger.info(
+            f"gui3d: {game.title!r}: {field} = {item.checked}"
+        )
+        # Las etiquetas de la caja (favorito, terminado, backlog) salen de
+        # estos mismos campos, así que hay que redibujarlas para que el
+        # cambio se vea al volver al carrusel.
+        self.carousel.rebuild_labels(entry.key, game, self._labels_visible)
+
+    def _on_back(self) -> None:
+        """
+        El botón B: vuelve al menú anterior.
+
+        Sobre el carrusel no hace nada a propósito — es "volver", y en la
+        pantalla principal no hay a dónde volver. Quien abre Opciones ahí es
+        Select (o Esc en el teclado, ver `_on_escape_key`).
+        """
+        if self._menu_stack:
+            self._pop_menu()
+
+    def _on_escape_key(self) -> None:
+        """
+        La tecla Esc hace de B y de Select a la vez, porque el teclado no
+        tiene un equivalente cómodo a los dos: dentro de un menú vuelve, y
+        en la pantalla principal abre Opciones.
+        """
+        if self._menu_stack:
+            self._pop_menu()
+        else:
+            self._open_options_menu()
 
     # ──────────────────────────────
     # Frame
@@ -584,6 +851,7 @@ class App(ShowBase):
         self._settle_time = 0.0
         self._refresh_selection_text()
         self._request_nearby_covers()
+        self._refresh_menu_accent()
 
     def _update_background(self, dt: float) -> None:
         """Pone de fondo la carátula seleccionada, si lleva un rato quieta."""
