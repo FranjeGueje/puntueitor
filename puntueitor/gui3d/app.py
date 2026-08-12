@@ -47,6 +47,7 @@ from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
+from puntueitor.gui3d.fonts import ui_font
 from puntueitor.gui3d.gamepad_input import GamepadInput
 from puntueitor.gui3d.real_data import build_real_entries
 from puntueitor.gui3d.sample_data import build_sample_entries
@@ -68,11 +69,14 @@ TITLE_TEXT_Y = 0.90
 # Con los campos a la izquierda y la sinopsis a la derecha, cada mitad usa el
 # alto entero de la ficha y no hay que recortar nada.
 FICHA_BAR_COLOR = (0, 0, 0, 0.75)
-FICHA_BAR_TOP_Z = -0.36
+# De -0.36 a -0.16: la ficha pasa de un 32% a un 42% de la pantalla. El
+# límite no es arbitrario — por encima de -0.16 empieza a comerse la caja
+# seleccionada del carrusel, no solo su reflejo (comprobado renderizando).
+FICHA_BAR_TOP_Z = -0.16
 
-FICHA_LABEL_SCALE = 0.030
-FICHA_LINE_HEIGHT = 0.042
-FICHA_TOP_MARGIN = 0.070
+FICHA_LABEL_SCALE = 0.034
+FICHA_LINE_HEIGHT = 0.048
+FICHA_TOP_MARGIN = 0.075
 FICHA_SIDE_MARGIN = 0.07
 FICHA_LABEL_COLOR = (0.62, 0.64, 0.72, 1)
 FICHA_VALUE_COLOR = (0.93, 0.93, 0.95, 1)
@@ -89,7 +93,7 @@ FICHA_VALUE_GAP = 0.02
 # muchos géneros se metía por encima del texto de la sinopsis.
 FICHA_FIELDS_COLUMN_FRACTION = 0.55
 DESCRIPTION_COLUMN_GAP = 0.05
-DESCRIPTION_TEXT_SCALE = 0.036
+DESCRIPTION_TEXT_SCALE = 0.040
 
 # Cuántas posiciones a cada lado de la selección se van pidiendo carátulas.
 # Más ancho que el radio visible del carrusel para que la carátula llegue
@@ -243,9 +247,14 @@ class App(ShowBase):
         self.camera.look_at(0, -3, 0.15)
 
     def _setup_hud(self) -> None:
+        # Una sola carga de fuente para todo el HUD (título, ficha, ayuda);
+        # `ui_font()` cachea internamente, así que no hay coste por repetir
+        # la llamada en cada widget.
+        font = ui_font()
+
         self.title_text = OnscreenText(
             text="", pos=(0, TITLE_TEXT_Y), scale=TITLE_TEXT_SCALE,
-            fg=(1, 1, 1, 1), align=TextNode.A_center, mayChange=True,
+            fg=(1, 1, 1, 1), align=TextNode.A_center, mayChange=True, font=font,
         )
 
         # Ficha a todo lo ancho, independiente del aspect ratio de la
@@ -275,23 +284,24 @@ class App(ShowBase):
             self.ficha_label_texts.append(OnscreenText(
                 parent=self.ficha_frame, text=f"{label}:", pos=(0, 0),
                 scale=FICHA_LABEL_SCALE, fg=FICHA_LABEL_COLOR,
-                align=TextNode.A_right, mayChange=False,
+                align=TextNode.A_right, mayChange=False, font=font,
             ))
             self.ficha_value_texts.append(OnscreenText(
                 parent=self.ficha_frame, text="", pos=(0, 0),
                 scale=FICHA_LABEL_SCALE, fg=FICHA_VALUE_COLOR,
-                align=TextNode.A_left, mayChange=True,
+                align=TextNode.A_left, mayChange=True, font=font,
             ))
 
         self.description_text = OnscreenText(
             parent=self.ficha_frame, text="", pos=(0, 0),
             scale=DESCRIPTION_TEXT_SCALE, fg=(0.86, 0.86, 0.89, 1),
-            align=TextNode.A_left, wordwrap=40, mayChange=True,
+            align=TextNode.A_left, wordwrap=40, mayChange=True, font=font,
         )
         self.help_text = OnscreenText(
             parent=self.ficha_frame, text=HELP_TEXT,
             pos=(0, -0.955), scale=0.032,
             fg=(0.55, 0.55, 0.6, 1), align=TextNode.A_center, mayChange=False,
+            font=font,
         )
 
         self._resize_ficha()

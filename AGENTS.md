@@ -455,12 +455,26 @@ hand: duration, Steam and SteamDB scores are not in the IGDB cache at all,
 they live in the extras table and only the repository joins them in. It also
 means the "Golden Rule" no longer has to be restated in `gui3d`.
 
+UI font (`fonts.py`) is Hussar Print (Robert Jablonski, SIL OFL 1.1),
+shipped in `gui3d/assets/fonts/`, loaded once via `ui_font()` and applied to
+every text widget: title, ficha, store banner chips, submenu. `ui_font()`
+returns None if the file is missing so callers fall back to Panda3D's
+default rather than crashing — `case_banner.py` checks for that explicitly
+since `TextNode.set_font` doesn't accept None. `build3d.sh` needs
+`--add-data "puntueitor/gui3d/assets:puntueitor/gui3d/assets"` for
+PyInstaller to bundle the file; without it the dev run works (loads
+straight from the source tree) and the packaged binary silently falls back
+to the default font, which is easy to not notice until someone runs the
+built binary specifically.
+
+No emoji in the labels, unlike the TUI: neither Panda3D's default font nor
+Hussar Print has those glyphs, and both render them as empty boxes (warns on
+stderr, "No definition in for character U+1f3ae"). Accents and ñ are fine in
+both. Cyrillic titles in a few library entries still don't render — Hussar
+Print is Latin-only — and fixing that would need a second, wider-coverage
+font as fallback, not just swapping this one.
+
 Layout notes, each of which came from something that broke:
-- No emoji in the labels, unlike the TUI. Panda3D's default font has no
-  glyphs for them and they render as empty boxes (it warns on stderr, "No
-  definition in for character U+1f3ae"). Accents and ñ are fine. The same
-  gap bites Cyrillic titles in a few library entries — that one is
-  unfixed and would need shipping a font.
 - One `OnscreenText` per row, not one multi-line text per column. Line
   spacing comes from the font and there is no per-node setter — only
   `TextFont.set_line_height`, which is shared with the whole HUD — so
@@ -469,15 +483,26 @@ Layout notes, each of which came from something that broke:
   (`textNode.get_num_rows()` after setting the text) and rows are stacked by
   their real height. With a fixed step, a game with nine genres had the next
   rows drawn on top of it.
-- The description is truncated (`MAX_DESCRIPTION_CHARS`). The TUI can skip
-  this because its panel scrolls; this one does not. Measured over the real
-  1266-game library, the longest storyline needed 107 lines against roughly
-  12 of available height.
+- The description is truncated (`MAX_DESCRIPTION_CHARS`, in `ficha.py`).
+  The TUI can skip this because its panel scrolls; this one does not.
 
-Worth re-running after any change to those constants: the worst case over
-the whole library, not just whatever game happens to be selected. Fields
-peak at 0.378 and description at 0.427 against 0.495 available — there is
-not much headroom, and the peak comes from different games for each column.
+`MAX_DESCRIPTION_CHARS` is coupled to `DESCRIPTION_TEXT_SCALE` in `app.py`
+and NOT an independent constant, and this bit once: raising the ficha's
+text scale (0.036 -> 0.040) while leaving the character budget at 480 pushed
+the worst-case description (a 0.700 measured height) past the taller
+panel's own available height (0.690) — bigger text means fewer characters
+fit per line at the same wrap width, so the same character count needs more
+lines, and total height grows faster than the scale itself. Had to drop the
+budget to 420 to bring it back under. Whenever either constant changes,
+re-measure the worst case over the WHOLE library, not whatever game happens
+to be selected — the peak for fields and the peak for the description come
+from different games, so eyeballing one game in the running app proves
+nothing about the other column or about entries you didn't happen to visit.
+Current worst case: fields 0.432, description 0.650, against 0.690
+available (`FICHA_BAR_TOP_Z = -0.16`, up from -0.36 — the ceiling on how
+much higher this can go is where it starts eating the selected box itself
+instead of just its already-fading reflection, checked by rendering, not
+by eyeballing the constant).
 
 Careful with `Lens.project()` when checking for distortion by hand: it
 returns raw NDC coordinates normalized independently per axis (x by

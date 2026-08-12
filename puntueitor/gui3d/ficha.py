@@ -102,7 +102,12 @@ def build_values(game: Game) -> list[str]:
 # veces el alto disponible. La TUI se permite no recortar porque su panel
 # tiene scroll; aquí no lo hay, así que se corta por la última palabra
 # entera que quepa.
-MAX_DESCRIPTION_CHARS = 480
+#
+# El valor depende de DESCRIPTION_TEXT_SCALE en `app.py`: a más tamaño de
+# letra, menos caracteres caben en el mismo hueco vertical. Si se toca la
+# escala del texto de la ficha, hay que volver a medir el peor caso sobre
+# la biblioteca real y ajustar esto — no es una constante independiente.
+MAX_DESCRIPTION_CHARS = 420
 
 
 def build_description(game: Game) -> str:

@@ -25,6 +25,7 @@ from panda3d.core import (
 )
 
 from puntueitor.core.models import Stores
+from puntueitor.gui3d.fonts import ui_font
 from puntueitor.gui3d.game_case import (
     BANNER_HEIGHT,
     CASE_DEPTH,
@@ -186,6 +187,9 @@ def build_case_banner(
         label.set_text(_STORE_LABELS[store])
         label.set_align(TextNode.A_center)
         label.set_text_color(1, 1, 1, 1)
+        font = ui_font()
+        if font is not None:
+            label.set_font(font)
         label_np = root.attach_new_node(label)
         label_np.set_light_off()
         label_np.set_scale(TEXT_SCALE)

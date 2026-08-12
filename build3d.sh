@@ -27,6 +27,7 @@ pyinstaller \
     --onefile \
     --name "$OUTPUT_NAME" \
     --add-data "$(python -c 'import panda3d; import os; print(os.path.dirname(panda3d.__file__))')/etc:etc" \
+    --add-data "puntueitor/gui3d/assets:puntueitor/gui3d/assets" \
     --collect-all panda3d \
     --collect-all direct \
     --hidden-import igdbpy \

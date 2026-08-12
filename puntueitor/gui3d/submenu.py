@@ -9,6 +9,8 @@ que se reutilizará para los submenús reales (ordenar, filtrar, configurar).
 from direct.gui.DirectGui import DGG, DirectFrame, DirectLabel
 from panda3d.core import NodePath, TextNode
 
+from puntueitor.gui3d.fonts import ui_font
+
 _PANEL_COLOR = (0.05, 0.05, 0.08, 0.92)
 _ITEM_COLOR = (1, 1, 1, 1)
 _ITEM_COLOR_FOCUSED = (1, 0.85, 0.2, 1)
@@ -30,12 +32,15 @@ class Submenu:
         )
         self.frame.hide()
 
+        font = ui_font()
+
         DirectLabel(
             parent=self.frame,
             text="Opciones",
             text_scale=0.06,
             text_fg=(0.6, 0.8, 1, 1),
             text_align=TextNode.A_center,
+            text_font=font,
             pos=(0, 0, 0.06),
             frameColor=(0, 0, 0, 0),
         )
@@ -47,6 +52,7 @@ class Submenu:
                 text=option,
                 text_scale=0.05,
                 text_align=TextNode.A_center,
+                text_font=font,
                 pos=(0, 0, -0.08 - 0.11 * i),
                 frameColor=(0, 0, 0, 0),
             )
