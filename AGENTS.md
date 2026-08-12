@@ -829,6 +829,93 @@ at menu scale. `ui_font_bold()` was deleted outright rather than left unused,
 same call as the case-labels bold removal — see the note above if it needs
 reviving.
 
+## Two databases: extras (cache) vs user status (not cache)
+
+User flags — `finished`, `hidden`, `backlog`, `favorite` — do **not** live
+where the rest of a `Game`'s data lives. There are two stores and picking the
+wrong one fails *silently*:
+
+| Data | Store | Written via |
+|---|---|---|
+| duration, steam/steamdb scores, review counts (`_EXTRA_FIELDS`) | `puntueitor.db`, table `extras` | `LibraryRepository.save_game()` |
+| `finished`/`hidden`/`backlog`/`favorite` | `library.sqlite`, table `user_games` | `LibraryCacher.set_status()` |
+
+They're split on purpose: extras are a regenerable network cache, user flags
+are not, so wiping the cache must never lose your favourites. `LibraryRepository`
+holds both (`.extras_cacher`, `.library_cacher`) and `load()` merges them.
+
+The gui3d game menu first "saved" via `save_game()`, which persisted nothing at
+all — `_extras_row()` only reads `_EXTRA_FIELDS`, so the flags were dropped
+without any error. Use `repo.library_cacher.set_status(...)`, same as
+`gui/app.py:_toggle_game_flag`.
+
+**`set_status` is a whole-row UPSERT.** Pass all four flags every time; sending
+only the one that changed silently resets the other three to `False`.
+
+`LibraryRepository(cache_dir=...)` used to honour that argument for only three
+of its five cachers: `library_cacher` and `unknown_cacher` were constructed
+with no path, so they went to the *real* user files regardless. The test suite
+passes `tmp_path` and still wrote a made-up game (`igdb_id 1001`) into the real
+`library.sqlite` on every run. All five now derive from `cache_dir`; production
+paths are unchanged because `cache_dir` already defaults to `paths.data_dir()`.
+If you add a cacher here, route it through `cache_dir` too.
+
+Testing this must never touch the real DB. `paths.py` reads `XDG_DATA_HOME` on
+every call, so setting it sandboxes everything — but *verify the redirect
+before writing*:
+```python
+assert '/home/deck/.local' not in str(paths.library_db())
+```
+Note `library.sqlite` is in WAL mode: **its md5 does not change when rows do**
+(writes land in `library.sqlite-wal`). Comparing checksums to prove "I didn't
+touch it" is worthless here — query the rows. Learned the hard way: a smoke
+script stubbed `save_game`, the code moved to `set_status`, and the stub
+silently stopped covering the write path. Stub the method actually used *and*
+make the real one raise.
+
+## Carousel filtering (hidden games)
+
+The carousel builds one `CarouselBox` per game up front — 1266 boxes cost ~1.2 s
+and ~270 MB — so filtering must never rebuild them. Instead there's a level of
+indirection: `_order` is the list of box indices currently walkable, in walk
+order, and `_selected_pos` indexes *into `_order`*, not into `_boxes`. Filtering
+is `set_visible_keys(keys)`, which rebuilds `_order` from the full entry list, so
+a game that reappears lands **in its correct place**, never appended at the end.
+The same mechanism is what sorting will use when it gets wired up.
+
+Consequences worth knowing:
+
+- "Neighbouring" entries are neighbours *in the visible order*. Cover preloading
+  must ask the carousel (`neighbour_entries`, `is_near_selection`) rather than
+  doing modular arithmetic on the full `entries` list, or with games filtered out
+  it preloads covers for boxes the user can't reach.
+- `set_visible_keys` **refuses an empty result** and logs instead. There's no
+  "empty carousel" state to draw and the ficha/background/game-menu all assume a
+  selection exists; ignoring the filter beats having no selection.
+- If the selected game is the one being filtered out, selection falls to the next
+  still-visible game *at or after* it, so it stays near where the user was
+  looking instead of jumping to the top of the library.
+- Toggling "Oculto" from the game menu defers the re-filter until that menu
+  closes (`_hidden_filter_dirty`). Applying it immediately yanks the box out from
+  under the open menu and shifts the selection while you're still editing it.
+
+Transient messages go through `notifications.Notifier` (top-right, at the
+title's height): fade in 1 s, hold 2 s, fade out 1 s, driven by one `Sequence`.
+One message at a time and a new one replaces whatever is showing — these are
+"you just did this" acknowledgements, so the newest is the only one worth
+reading. Two details that matter: the text node needs
+`TransparencyAttrib.M_alpha` or the alpha in `set_color_scale` does nothing,
+and a replacing message must `finish()` the running sequence first, otherwise
+its `startColorScale` fights a still-live interval on the same node. `TEXT_Z`
+duplicates `app.TITLE_TEXT_Y` deliberately — importing it would make the
+dependency circular, so moving the title means moving this too.
+
+L2 is **not a button**: on an Xbox pad it's `Axis.left_trigger`, and Panda3D
+doesn't even report the equivalent button as known. It's polled per frame in
+`GamepadInput.update()` with two thresholds (press 0.6 / release 0.35). The
+hysteresis is not optional — analog triggers don't reliably rest at 0, and with a
+single threshold a trigger hovering near it re-fires the toggle every frame.
+
 ## `messenger.accept` overwrites silently — one handler per (object, event)
 
 Closing the window used to leave the process running forever (the window

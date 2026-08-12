@@ -56,6 +56,7 @@ ICON_KEYBOARD_ENTER = chr(0x242E)             # keyboard-enter
 ICON_KEYBOARD_SPACE = chr(0x243A)             # keyboard-space
 ICON_KEYBOARD_ESCAPE = chr(0x242F)            # keyboard-escape
 ICON_KEYBOARD_TAB = chr(0x242B)               # keyboard-tab
+ICON_KEYBOARD_O = chr(0xFF2F)                 # keyboard-o
 ICON_KEYBOARD_Q = chr(0xFF31)                 # keyboard-q
 ICON_KEYBOARD_X = chr(0xFF38)                 # keyboard-x
 # Las cuatro caras van en el orden en que están en el mando, no alfabético:
@@ -74,6 +75,7 @@ ICON_XBOX_A = chr(0x21D3)                     # xbox-a
 ICON_GAMEPAD_LEFT_RIGHT = chr(0x21D4)         # analog-left-right
 ICON_GAMEPAD_UP_DOWN = chr(0x21D5)            # analog-up-down
 ICON_GAMEPAD_START = chr(0x21F8)              # gamepad-start
+ICON_GAMEPAD_L2 = chr(0x21B2)                 # gamepad-l2
 # "Select" y "Back" son el mismo botón físico con dos nombres según la
 # generación del mando; PromptFont solo trae el dibujo rotulado SELECT.
 ICON_GAMEPAD_SELECT = chr(0x21F7)             # gamepad-select

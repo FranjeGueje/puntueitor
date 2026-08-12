@@ -44,6 +44,19 @@ HAT_THRESHOLD = 0.5
 #: Los cuatro lados de la cruceta que se siguen por eventos de pulsar/soltar.
 _DPAD_SIDES = ("left", "right", "up", "down")
 
+# Los gatillos (L2/R2) de un mando tipo Xbox NO son botones: son ejes
+# analógicos (`Axis.left_trigger`), y Panda3D ni siquiera declara conocido su
+# botón equivalente — comprobado en el Xbox Elite 2, donde
+# `find_button(GamepadButton.ltrigger())` no devuelve nada utilizable. Así que
+# hay que sondear el eje y detectar el flanco a mano.
+#
+# Dos umbrales en vez de uno para dar histéresis: con uno solo, un gatillo
+# que se quede rozando el umbral (los analógicos no vuelven siempre a 0 clavado)
+# dispararía el conmutador una y otra vez. Hay que soltarlo por debajo de
+# RELEASE antes de que vuelva a contar como pulsado.
+TRIGGER_PRESS_THRESHOLD = 0.6
+TRIGGER_RELEASE_THRESHOLD = 0.35
+
 
 class GamepadInput(DirectObject):
     """
@@ -62,6 +75,7 @@ class GamepadInput(DirectObject):
         on_scoring: Callable[[], None] | None = None,
         on_filter: Callable[[], None] | None = None,
         on_labels: Callable[[], None] | None = None,
+        on_hidden: Callable[[], None] | None = None,
     ):
         super().__init__()
         self._app = app
@@ -72,7 +86,9 @@ class GamepadInput(DirectObject):
             "scoring": on_scoring,
             "filter": on_filter,
             "labels": on_labels,
+            "hidden": on_hidden,
         }
+        self._left_trigger_held = False
 
         self._device_manager = InputDeviceManager.get_global_ptr()
         self._device: InputDevice | None = None
@@ -262,6 +278,31 @@ class GamepadInput(DirectObject):
             self._hat_axis_v, InputDevice.Axis.left_y,
             invert_hat=True,
         )
+
+    def update(self) -> None:
+        """
+        Sondea lo que no llega como evento. Llamar una vez por frame.
+
+        De momento solo el gatillo izquierdo (L2), que es un eje analógico y
+        por tanto no dispara eventos de botón (ver
+        `TRIGGER_PRESS_THRESHOLD`). Aquí se convierte en un gesto de "recién
+        pulsado", que es lo que espera un conmutador: sin detectar el
+        flanco, mantener L2 apretado un segundo conmutaría sesenta veces.
+        """
+        if self._device is None:
+            return
+
+        axis = self._device.find_axis(InputDevice.Axis.left_trigger)
+        if axis is None:
+            return
+
+        value = axis.value
+        if self._left_trigger_held:
+            if value <= TRIGGER_RELEASE_THRESHOLD:
+                self._left_trigger_held = False
+        elif value >= TRIGGER_PRESS_THRESHOLD:
+            self._left_trigger_held = True
+            self._fire("hidden")
 
     def destroy(self) -> None:
         self.ignore_all()

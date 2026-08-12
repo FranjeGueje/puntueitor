@@ -99,6 +99,7 @@ from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
 from puntueitor.gui3d.fonts import (
+    ICON_GAMEPAD_L2,
     ICON_GAMEPAD_LEFT_RIGHT,
     ICON_GAMEPAD_SELECT,
     ICON_GAMEPAD_START,
@@ -107,6 +108,7 @@ from puntueitor.gui3d.fonts import (
     ICON_KEYBOARD_ENTER,
     ICON_KEYBOARD_ESCAPE,
     ICON_KEYBOARD_LEFT,
+    ICON_KEYBOARD_O,
     ICON_KEYBOARD_RIGHT,
     ICON_KEYBOARD_SPACE,
     ICON_KEYBOARD_TAB,
@@ -124,6 +126,7 @@ from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.gui3d import menus
 from puntueitor.gui3d.gamepad_input import GamepadInput
 from puntueitor.gui3d.menu import Menu
+from puntueitor.gui3d.notifications import Notifier
 from puntueitor.gui3d.real_data import build_real_entries
 from puntueitor.gui3d.sample_data import build_sample_entries
 from puntueitor.gui3d.store_colors import as_text_color, primary_store_color
@@ -240,6 +243,7 @@ def _build_help_text() -> str:
         f"{icon_markup(ICON_KEYBOARD_TAB)} / {icon_markup(ICON_GAMEPAD_START)}  scoring   -   "
         f"{icon_markup(ICON_KEYBOARD_X)} / {icon_markup(ICON_XBOX_X)}  filtrar   -   "
         f"{icon_markup(ICON_KEYBOARD_SPACE)} / {icon_markup(ICON_XBOX_Y)}  etiquetas   -   "
+        f"{icon_markup(ICON_KEYBOARD_O)} / {icon_markup(ICON_GAMEPAD_L2)}  ocultos   -   "
         f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_GAMEPAD_SELECT)}  opciones"
     )
 
@@ -308,10 +312,14 @@ class App(ShowBase):
             for e in raw_entries
         ]
         self.entries = entries
-        self._index_by_key = {entry.key: i for i, entry in enumerate(entries)}
         self.carousel_root = self.render.attach_new_node("carousel-root")
         self.carousel_root.set_z(CAROUSEL_RAISE)
         self.carousel = Carousel(self.carousel_root, entries)
+
+        # Los juegos marcados como ocultos no salen en el carrusel mientras
+        # no se pidan expresamente (L2 / tecla "o").
+        self._show_hidden = False
+        self._apply_hidden_filter()
 
         # Carátulas que aún no están en disco: se descargan en segundo plano
         # y se sustituyen en caliente cuando llegan (ver _update). Se piden
@@ -336,6 +344,10 @@ class App(ShowBase):
         self._labels_visible = True
         # Se pone a True en `destroy()`; ver la guarda de `_update`.
         self._shutting_down = False
+        # Juego sobre el que se abrió el menú de juego (ver `_open_game_menu`).
+        self._game_menu_entry = None
+        # Se marca al cambiar "Oculto" y se resuelve al cerrar ese menú.
+        self._hidden_filter_dirty = False
 
         # Antes de `_on_selection_changed`: es quien pone el color de acento
         # de los menús a partir de la tienda del juego elegido, así que los
@@ -352,6 +364,7 @@ class App(ShowBase):
             on_scoring=self._open_scoring_menu,
             on_filter=self._open_filter_menu,
             on_labels=self._toggle_labels,
+            on_hidden=self._toggle_hidden,
         )
 
         self.task_mgr.add(self._update, "carousel-update")
@@ -407,6 +420,9 @@ class App(ShowBase):
             text="", pos=(0, TITLE_TEXT_Y), scale=TITLE_TEXT_SCALE,
             fg=(1, 1, 1, 1), align=TextNode.A_center, mayChange=True, font=font,
         )
+
+        # Avisos efímeros, a la altura del título y pegados a la derecha.
+        self.notifier = Notifier(self.aspect2d, self.get_aspect_ratio())
 
         # Ficha a todo lo ancho, independiente del aspect ratio de la
         # ventana: aspect2d reescala X según get_aspect_ratio(), así que el
@@ -522,6 +538,7 @@ class App(ShowBase):
         """
         aspect = self.get_aspect_ratio()
         self.ficha_frame["frameSize"] = (-aspect, aspect, -1.0, FICHA_BAR_TOP_Z)
+        self.notifier.resize(aspect)
 
         left = -aspect + FICHA_SIDE_MARGIN
         right = aspect - FICHA_SIDE_MARGIN
@@ -585,6 +602,7 @@ class App(ShowBase):
         self.accept("space", self._toggle_labels)
         self.accept("tab", self._open_scoring_menu)
         self.accept("x", self._on_filter_key)
+        self.accept("o", self._toggle_hidden)
 
     def _set_key_held(self, name: str, held: bool) -> None:
         self._keys_held[name] = held
@@ -679,6 +697,45 @@ class App(ShowBase):
         self._labels_visible = not self._labels_visible
         self.carousel.set_labels_visible(self._labels_visible)
 
+    def _visible_keys(self) -> set:
+        """
+        Qué juegos deben verse en el carrusel ahora mismo.
+
+        Único sitio donde se decide, para que el arranque y el interruptor
+        de ocultos no puedan discrepar. Cuando se conecten los filtros del
+        menú de "Filtrar y ordenar", el resto de condiciones van aquí.
+        """
+        return {
+            entry.key for entry in self.entries
+            if self._show_hidden or not (entry.game and entry.game.hidden)
+        }
+
+    def _apply_hidden_filter(self) -> None:
+        self.carousel.set_visible_keys(self._visible_keys())
+
+    def _toggle_hidden(self) -> None:
+        """
+        Enseña u oculta los juegos marcados como ocultos (L2 / tecla "o").
+
+        Al volver a mostrarlos, cada uno reaparece en su sitio dentro del
+        recorrido, no al final: `Carousel.set_visible_keys` rehace el orden
+        a partir de la lista completa.
+        """
+        self._show_hidden = not self._show_hidden
+        self._apply_hidden_filter()
+        # La selección puede haber cambiado de juego (si el que estaba
+        # delante era justo uno oculto que acaba de desaparecer), así que
+        # hay que refrescar ficha, título y fondo.
+        self._on_selection_changed()
+        self.notifier.show(
+            "Mostrando ocultos" if self._show_hidden else "Ocultando juegos"
+        )
+        logger.info(
+            "gui3d: juegos ocultos "
+            f"{'visibles' if self._show_hidden else 'escondidos'} "
+            f"({self.carousel.visible_count} juegos en el carrusel)"
+        )
+
     # ──────────────────────────────
     # Menús
     # ──────────────────────────────
@@ -749,7 +806,16 @@ class App(ShowBase):
         """Cierra el menú activo y devuelve el foco (y la vista) al anterior."""
         if not self._menu_stack:
             return
-        self._menu_stack.pop().close()
+        closed = self._menu_stack.pop()
+        closed.close()
+
+        # Si en el menú del juego se ha tocado "Oculto", el filtro se aplica
+        # ahora, con el menú ya cerrado (ver `_on_game_flag_toggled`).
+        if closed is self.game_menu and self._hidden_filter_dirty:
+            self._hidden_filter_dirty = False
+            self._apply_hidden_filter()
+            self._on_selection_changed()
+
         if self.active_menu is not None:
             self.active_menu.open()
         else:
@@ -844,6 +910,12 @@ class App(ShowBase):
 
         self.game_menu.set_title(entry.title)
         self.game_menu.set_items(menus.build_game_items(entry.game))
+        # Se recuerda SOBRE QUÉ juego se abrió en vez de volver a mirar
+        # `carousel.selected` al marcar una casilla: hoy da igual (con un
+        # menú abierto la navegación es suya y la selección no se mueve),
+        # pero atarlo aquí evita que un cambio futuro acabe guardando el
+        # estado en el juego equivocado, que es un fallo silencioso y feo.
+        self._game_menu_entry = entry
         self._push_menu(self.game_menu)
 
     # ── Acciones ──
@@ -894,15 +966,33 @@ class App(ShowBase):
         Se guarda al momento, no al cerrar el menú con un "Guardar": el menú
         se cierra con B, que en el resto de la interfaz significa "volver",
         y si además descartara los cambios sería una trampa.
+
+        Van a `library_cacher` (tabla `user_games` de library.db), NO a
+        `save_game()` del repositorio, que fue el primer intento y no
+        guardaba nada: ese solo persiste los "extras" (duración, notas de
+        Steam...) y los estados del usuario viven en OTRA base de datos a
+        propósito — la de extras es caché regenerable y esta no, para que
+        borrar la caché no te borre los terminados y los favoritos.
+
+        Se mandan LOS CUATRO estados, no solo el que se acaba de tocar:
+        `set_status` reescribe la fila entera (es un UPSERT), así que
+        pasarle uno solo pondría los otros tres a False. Es exactamente lo
+        que hace la TUI en `gui/app.py:_toggle_game_flag`.
         """
-        entry = self.carousel.selected
-        game = entry.game
+        entry = self._game_menu_entry
+        game = entry.game if entry else None
         field = item.payload.get("field")
         if game is None or field is None:
             return
 
         setattr(game, field, item.checked)
-        self.library_repository.save_game(game)
+        self.library_repository.library_cacher.set_status(
+            game.igdb_id,
+            finished=game.finished,
+            hidden=game.hidden,
+            backlog=game.backlog,
+            favorite=game.favorite,
+        )
         logger.info(
             f"gui3d: {game.title!r}: {field} = {item.checked}"
         )
@@ -910,6 +1000,13 @@ class App(ShowBase):
         # estos mismos campos, así que hay que redibujarlas para que el
         # cambio se vea al volver al carrusel.
         self.carousel.rebuild_labels(entry.key, game, self._labels_visible)
+
+        if field == "hidden":
+            # No se re-filtra aquí mismo: el menú de este juego sigue
+            # abierto y quitarle la caja de debajo haría que el carrusel se
+            # recolocara y la selección saltara a otro juego mientras lo
+            # estás editando. Se apunta y se aplica al cerrar el menú.
+            self._hidden_filter_dirty = True
 
     def _on_back(self) -> None:
         """
@@ -987,12 +1084,7 @@ class App(ShowBase):
 
     def _is_near_selection(self, key: object) -> bool:
         """¿Está esta caja dentro del radio de precarga de la selección?"""
-        index = self._index_by_key.get(key)
-        if index is None:
-            return False
-        total = len(self.entries)
-        offset = (index - self.carousel.selected_index) % total
-        return min(offset, total - offset) <= COVER_PRELOAD_RADIUS
+        return self.carousel.is_near_selection(key, COVER_PRELOAD_RADIUS)
 
     def _request_nearby_covers(self) -> None:
         """
@@ -1005,13 +1097,13 @@ class App(ShowBase):
         para que la carátula llegue antes de que el usuario se plante en esa
         caja.
         """
-        total = len(self.entries)
-        if not self._pending_covers or not total:
+        if not self._pending_covers:
             return
 
-        center = self.carousel.selected_index
-        for offset in range(-COVER_PRELOAD_RADIUS, COVER_PRELOAD_RADIUS + 1):
-            entry = self.entries[(center + offset) % total]
+        # La vecindad la calcula el carrusel: con juegos ocultos filtrados,
+        # "las de al lado" no son las contiguas en `self.entries` sino las
+        # contiguas en el recorrido visible.
+        for entry in self.carousel.neighbour_entries(COVER_PRELOAD_RADIUS):
             pending = self._pending_covers.get(entry.key)
             if pending is None:
                 continue
@@ -1074,6 +1166,10 @@ class App(ShowBase):
         self._check_lens_aspect_ratio()
 
         dt = globalClock.get_dt()
+        if self.gamepad:
+            # Los gatillos son ejes, no botones: no llegan como eventos y hay
+            # que sondearlos (ver `GamepadInput.update`).
+            self.gamepad.update()
         self._update_navigation(dt)
         self.carousel.update(dt)
 

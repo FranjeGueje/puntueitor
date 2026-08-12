@@ -4,6 +4,7 @@ las cajas reposan en un arco poco profundo frente a la cámara, la
 seleccionada se adelanta y se encara, y todas tienen un balanceo continuo de
 "flotación" además del desplazamiento al navegar.
 """
+import logging
 import math
 from dataclasses import dataclass
 
@@ -15,6 +16,8 @@ from puntueitor.gui3d.case_banner import build_case_banner
 from puntueitor.gui3d.case_labels import build_case_labels
 from puntueitor.gui3d.game_case import build_case_reflection, build_game_case
 from puntueitor.gui3d.store_colors import primary_store_color
+
+logger = logging.getLogger(__name__)
 
 # Geometría del arco. Con más elementos que huecos visibles, los de los
 # extremos quedan fuera de cámara — es intencional, como en un carrusel real,
@@ -261,7 +264,18 @@ class Carousel:
             for i, entry in enumerate(entries)
         ]
         self._boxes_by_key = {box.entry.key: box for box in self._boxes}
-        self._selected_index = 0
+
+        # `_order` son los índices de las cajas que se recorren AHORA MISMO,
+        # en el orden en que se recorren, y `_selected_pos` es una posición
+        # DENTRO de `_order` — no un índice de `_boxes`. Esa indirección es
+        # la que permite filtrar (ocultar juegos marcados como ocultos) y,
+        # el día que se conecte, reordenar, sin reconstruir nada: las cajas
+        # se construyen una sola vez (1,2 s y ~270 MB con la biblioteca
+        # real), así que rehacerlas en cada cambio de filtro daría un tirón
+        # de más de un segundo por pulsación.
+        self._order = list(range(len(entries)))
+        self._pos_by_key = {entry.key: i for i, entry in enumerate(entries)}
+        self._selected_pos = 0
         self._elapsed = 0.0
         self._layout(animate=False)
 
@@ -299,8 +313,13 @@ class Carousel:
     # ──────────────────────────────
 
     @property
+    def _selected_box_index(self) -> int:
+        """Índice en `_boxes` de la caja seleccionada."""
+        return self._order[self._selected_pos]
+
+    @property
     def selected(self) -> CarouselEntry:
-        return self._entries[self._selected_index]
+        return self._entries[self._selected_box_index]
 
     @property
     def selected_texture(self) -> Texture:
@@ -309,24 +328,103 @@ class Carousel:
         diferencia de `selected.texture`, refleja las descargas en caliente
         aplicadas vía `set_texture` (ver `CarouselBox.set_texture`).
         """
-        return self._boxes[self._selected_index].texture
+        return self._boxes[self._selected_box_index].texture
 
     @property
-    def selected_index(self) -> int:
-        return self._selected_index
+    def visible_count(self) -> int:
+        """Cuántos juegos se pueden recorrer ahora mismo."""
+        return len(self._order)
 
     def move(self, direction: int) -> None:
         """direction: -1 (izquierda) o +1 (derecha)."""
-        if len(self._entries) <= 1:
+        if len(self._order) <= 1:
             return
-        self._selected_index = (self._selected_index + direction) % len(self._entries)
+        self._selected_pos = (self._selected_pos + direction) % len(self._order)
         self._layout(animate=True)
+
+    def neighbour_entries(self, radius: int) -> list[CarouselEntry]:
+        """
+        Las entradas visibles a `radius` huecos o menos de la seleccionada.
+
+        Lo resuelve el carrusel, no quien llama, porque la vecindad depende
+        del orden VISIBLE: con juegos filtrados, dos entradas contiguas en
+        la lista completa pueden estar a decenas de huecos una de otra, o
+        no estar. Quien precarga carátulas quiere las que el usuario va a
+        alcanzar navegando, que son estas.
+        """
+        total = len(self._order)
+        if not total:
+            return []
+        radius = min(radius, total // 2)
+        return [
+            self._entries[self._order[(self._selected_pos + offset) % total]]
+            for offset in range(-radius, radius + 1)
+        ]
+
+    def is_near_selection(self, key: object, radius: int) -> bool:
+        """¿Está `key` visible y a `radius` huecos o menos de la selección?"""
+        pos = self._pos_by_key.get(key)
+        if pos is None:
+            return False
+        total = len(self._order)
+        offset = (pos - self._selected_pos) % total
+        return min(offset, total - offset) <= radius
+
+    def set_visible_keys(self, keys: set) -> None:
+        """
+        Restringe el carrusel a `keys`, conservando el orden base.
+
+        Se reconstruye el recorrido a partir de la lista completa, así que
+        un juego que vuelve a aparecer lo hace EN SU SITIO (por orden
+        alfabético, o el que imponga la ordenación cuando se conecte), no
+        al final.
+
+        Si no quedara ningún juego visible no se aplica nada: el carrusel
+        no tiene un estado "vacío" que dibujar y medio programa da por hecho
+        que hay una selección (la ficha, el fondo, el menú de juego). Es
+        preferible ignorar el filtro y avisar que quedarse sin selección.
+        """
+        order = [i for i, entry in enumerate(self._entries) if entry.key in keys]
+        if not order:
+            logger.warning(
+                "gui3d: el filtro dejaría el carrusel vacío; se ignora"
+            )
+            return
+
+        previous_key = self.selected.key
+        previous_box_index = self._selected_box_index
+
+        visible = set(order)
+        for index, box in enumerate(self._boxes):
+            if index not in visible:
+                box.root.hide()
+
+        self._order = order
+        self._pos_by_key = {
+            self._entries[index].key: pos for pos, index in enumerate(order)
+        }
+
+        # Se intenta seguir en el mismo juego. Si es el que acaba de dejar
+        # de verse (te ocultas el juego que tienes delante), se cae al
+        # siguiente que sí se vea a partir de donde estabas, que es lo que
+        # menos desorienta: la selección se queda donde estaba mirando el
+        # usuario en vez de saltar al principio de la biblioteca.
+        pos = self._pos_by_key.get(previous_key)
+        if pos is None:
+            pos = next(
+                (p for p, index in enumerate(order) if index >= previous_box_index),
+                0,
+            )
+        self._selected_pos = pos
+
+        self._layout(animate=False)
 
     def update(self, dt: float) -> None:
         """Llamar cada frame: avanza el balanceo continuo de las cajas."""
         self._elapsed += dt
+        selected = self._selected_box_index
         for i, box in enumerate(self._boxes):
-            box.apply_idle(self._elapsed, dt, rocking=i != self._selected_index)
+            box.apply_idle(self._elapsed, dt, rocking=i != selected)
 
     # ──────────────────────────────
     # Interno
@@ -342,10 +440,13 @@ class Carousel:
         intervalos si el usuario navegaba más rápido que SLIDE_DURATION, que
         seguían intentando animar cajas ya finalizadas por otra vía.
         """
-        n = len(self._boxes)
+        n = len(self._order)
 
-        for i, box in enumerate(self._boxes):
-            offset = self._signed_offset(i, n)
+        # Se recorre el orden VISIBLE, no todas las cajas: las filtradas ya
+        # las escondió `set_visible_keys` y no tienen hueco en el arco.
+        for pos, box_index in enumerate(self._order):
+            box = self._boxes[box_index]
+            offset = self._signed_offset(pos, n)
 
             if abs(offset) > VISIBLE_RADIUS:
                 box.root.hide()
@@ -373,7 +474,7 @@ class Carousel:
 
     def _signed_offset(self, index: int, n: int) -> int:
         """Distancia con signo más corta de `index` a la caja seleccionada."""
-        raw = index - self._selected_index
+        raw = index - self._selected_pos
         half = n / 2.0
         if raw > half:
             raw -= n

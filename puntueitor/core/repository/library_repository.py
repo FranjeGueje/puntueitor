@@ -33,8 +33,19 @@ class LibraryRepository:
         self.igdb_cacher = IGDBCacher(db_path)
         self.extras_cacher = ExtrasCacher(db_path)
         self.resolvers_cacher = ResolversCacher(db_path)
-        self.library_cacher = LibraryCacher()
-        self.unknown_cacher = DesconocidosCacher()
+        # Estos dos también tienen que salir de `cache_dir`. Se construían
+        # sin ruta, así que se iban a su ubicación por defecto (la real del
+        # usuario) IGNORANDO el `cache_dir` recibido: un repositorio
+        # apuntado a un directorio temporal —los tests hacen justo eso—
+        # seguía escribiendo los estados de usuario en
+        # ~/.local/share/puntueitor/library.sqlite. La suite dejaba ahí un
+        # juego inventado (igdb_id 1001) en cada ejecución.
+        #
+        # En producción no cambia nada: `cache_dir` por defecto ya es
+        # `paths.data_dir()`, así que estas dos rutas son exactamente las
+        # mismas que devuelven `paths.library_db()` y `paths.main_db()`.
+        self.library_cacher = LibraryCacher(self.cache_dir / "library.sqlite")
+        self.unknown_cacher = DesconocidosCacher(db_path)
 
     # ──────────────────────────────
     # Guardado
