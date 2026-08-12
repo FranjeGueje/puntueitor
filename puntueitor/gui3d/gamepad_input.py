@@ -56,6 +56,7 @@ class GamepadInput(DirectObject):
         on_confirm: Callable[[], None] | None = None,
         on_back: Callable[[], None] | None = None,
         on_menu: Callable[[], None] | None = None,
+        on_labels: Callable[[], None] | None = None,
     ):
         super().__init__()
         self._app = app
@@ -63,6 +64,7 @@ class GamepadInput(DirectObject):
             "confirm": on_confirm,
             "back": on_back,
             "menu": on_menu,
+            "labels": on_labels,
         }
 
         self._device_manager = InputDeviceManager.get_global_ptr()
@@ -133,6 +135,7 @@ class GamepadInput(DirectObject):
         bindings = {
             "face_a": "confirm",
             "face_b": "back",
+            "face_y": "labels",
             "start": "menu",
         }
         for button, gesture in bindings.items():

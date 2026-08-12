@@ -134,7 +134,7 @@ class CarouselBox:
         self.reflection_cover_np.set_texture(entry.texture)
         self.texture = entry.texture
         build_case_banner(self.root, entry.stores)
-        build_case_labels(self.root, entry.game)
+        self.labels_np = build_case_labels(self.root, entry.game)
         self._base_pos = self.root.get_pos()
         self._base_hpr = self.root.get_hpr()
         self._slide: LerpPosHprInterval | None = None
@@ -251,6 +251,23 @@ class Carousel:
         box = self._boxes_by_key.get(key)
         if box is not None:
             box.set_texture(texture)
+
+    def set_labels_visible(self, visible: bool) -> None:
+        """
+        Muestra u oculta las etiquetas de TODAS las cajas a la vez.
+
+        Se recorren todas, no solo las visibles: una caja fuera del radio
+        visible acabará entrando al navegar, y si no se le hubiera aplicado
+        el estado aparecería con las etiquetas puestas después de haberlas
+        ocultado.
+        """
+        for box in self._boxes:
+            if box.labels_np is None:
+                continue  # juego sin ninguna etiqueta que enseñar
+            if visible:
+                box.labels_np.show()
+            else:
+                box.labels_np.hide()
 
     # ──────────────────────────────
     # Navegación

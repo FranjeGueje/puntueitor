@@ -653,22 +653,59 @@ Same reasoning applies to `BaseCacher.default_path()` being a method rather
 than a `DEFAULT_PATH` attribute. When touching this module, verify isolation
 under a patched `Path.home` *before* running the suite.
 
-Case labels (`case_labels.py`) are five fixed sticker slots on the case
-front — favorite/finished top corners, backlog/score/duration bottom row —
-each only built if its data is truthy (`favorite`/`finished`/`backlog`) or
-present (`steamdb_score`, `duration_hours > 0`; `0` means "no data", same
-convention as `ficha.py`). Never on the reflection, matching the store
-banner. Built once per box at `CarouselBox.__init__`, baked from `entry.game`
-— not rebuilt on selection change, since these are per-game facts that don't
-change while the box exists.
+Case labels (`case_labels.py`) are four fixed sticker slots on the case
+front: favorite top-left, finished-OR-backlog top-right (they share the slot
+and finished wins when both are set), duration bottom-centre, score
+bottom-right. Each only built if its data is truthy
+(`favorite`/`finished`/`backlog`) or present (`steamdb_score`,
+`duration_hours > 0`; `0` means "no data", same convention as `ficha.py`).
+Never on the reflection, matching the store banner. Built once per box at
+`CarouselBox.__init__`, baked from `entry.game` — not rebuilt on selection
+change, since these are per-game facts that don't change while the box
+exists.
 
-Score/duration text size (`_SCORE_TEXT_SCALE`/`_DURATION_TEXT_SCALE`) is
-sized for the real worst case, not the common one: duration in the actual
-1266-game library reaches 169h (7 games are 3-digit), so the digits have to
-fit inside the icon at 3 characters, not 2 — sized generously (0.05) it
-looked fine for "88" but "169" spilled off the clock face entirely. Whoever
-resizes these needs to re-check against a 3-digit value, not just whatever
-game happens to be selected while testing.
+Space / gamepad Y toggles them all (`App._toggle_labels` →
+`Carousel.set_labels_visible`). It walks **every** box, not just the visible
+ones: a box outside `VISIBLE_RADIUS` will scroll into view later and would
+otherwise arrive with its labels still showing after they were hidden.
+
+Careful when testing that visibility: `NodePath.is_hidden()` reports True if
+the node *or any ancestor* is hidden, and off-screen boxes already have
+their root hidden by the carousel's own virtualisation — so counting
+`labels_np.is_hidden()` across all boxes says "1266 hidden" even right after
+showing them. Use `get_hidden_ancestor() == labels_np` to ask about the
+node's own state.
+
+Reported once as "favorite/finished/backlog don't show at all" when the code
+was in fact correct — the real library only had 2 favorites and 15 backlog
+entries out of 1266 (1 in 633 and 1 in 84 boxes), so browsing simply never
+landed on one. Before debugging a "label never appears" report, count how
+many games actually carry that flag; forcing the flag on every game and
+rendering is the fastest way to separate a rendering bug from a data
+frequency artifact.
+
+Score/duration text scale and offsets are expressed as a **fraction of
+`BOTTOM_LABEL_SIZE`**, not in absolute units, so resizing the sticker
+rescales the number and its placement with it instead of needing four
+constants recalibrated by hand.
+
+Three-digit values get shrunk automatically (`_THREE_DIGIT_SCALE`): duration
+in the real 1266-game library reaches 169h (7 games are 3-digit) and score
+can be 100. At a size that looks right for "42" inside a round icon, "169"
+spilled straight off the clock face. Shrinking only that case keeps the
+number large on the ~99% of boxes that show two digits. Anyone resizing
+these must re-check with a 3-digit value, not just whatever game happens to
+be selected while testing.
+
+Numbers are drawn in a faked bold: Hussar Print ships one weight and Panda3D
+has no synthetic bold, so `ui_font_bold()` gives the glyph an outline in its
+own colour (`DynamicTextFont.set_outline`), which reads as a thicker stroke
+rather than a visible border. It needs a **separate font instance** built
+with `DynamicTextFont` directly — outline is a property of the *font*, not
+of the `TextNode`, and `FontPool.load_font` caches by path and returns the
+same object, so setting it on the pooled font would embolden the title,
+ficha and banner too. Same cache-by-name behaviour that forced the move away
+from `TexturePool` for covers.
 
 The top badges are deliberately oversized relative to `BANNER_HEIGHT`
 (0.22 vs 0.11) and positioned to slightly overhang the case's own outer

@@ -137,7 +137,7 @@ BACKGROUND_COLOR = (0.04, 0.04, 0.06, 1)
 
 HELP_TEXT = (
     "<-  /  ->  o mando: navegar   -   Enter/A: seleccionar   -   "
-    "Esc/Start: menu   -   Q: salir"
+    "Espacio/Y: etiquetas   -   Esc/Start: menu   -   Q: salir"
 )
 
 
@@ -208,6 +208,7 @@ class App(ShowBase):
         self._nav_next_repeat = 0.0
         self._background_key = None
         self._settle_time = 0.0
+        self._labels_visible = True
 
         self._on_selection_changed()
 
@@ -219,6 +220,7 @@ class App(ShowBase):
             on_confirm=self._on_confirm,
             on_back=self._on_back,
             on_menu=self._on_toggle_menu,
+            on_labels=self._toggle_labels,
         )
 
         self.task_mgr.add(self._update, "carousel-update")
@@ -401,6 +403,7 @@ class App(ShowBase):
 
         self.accept("enter", self._on_confirm)
         self.accept("escape", self._on_back)
+        self.accept("space", self._toggle_labels)
         self.accept("q", self.userExit)
 
     def _set_key_held(self, name: str, held: bool) -> None:
@@ -473,6 +476,11 @@ class App(ShowBase):
     def _on_back(self) -> None:
         if self.submenu.is_open:
             self.submenu.close()
+
+    def _toggle_labels(self) -> None:
+        """Muestra u oculta las etiquetas de todas las cajas (espacio / Y)."""
+        self._labels_visible = not self._labels_visible
+        self.carousel.set_labels_visible(self._labels_visible)
 
     def _on_toggle_menu(self) -> None:
         if self.submenu.is_open:

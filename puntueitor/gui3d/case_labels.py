@@ -7,18 +7,25 @@ encima de una caja real — y solo en la caja de verdad, nunca en su reflejo
 `game_case.build_case_reflection`; el banner de tiendas tampoco se refleja,
 mismo criterio).
 
-Cinco posiciones fijas, no configurables por juego:
+Cuatro huecos fijos, no configurables por juego:
 
-    favorito     arriba-izquierda   pegatina grande, nivel del banner
-    terminado    arriba-derecha     pegatina grande, nivel del banner
-    backlog      abajo-izquierda    pegatina pequeña
-    puntuación   abajo-derecha      pegatina pequeña, número pintado encima
-    duración     abajo-centro       pegatina pequeña, número pintado encima
+    favorito              arriba-izquierda
+    terminado / backlog   arriba-derecha    (comparten hueco, ver abajo)
+    duración              abajo-centro      número pintado encima
+    puntuación            abajo-derecha     número pintado encima
 
-Cada una solo aparece si el dato correspondiente está presente: favorito,
-terminado y backlog son `True`, puntuación y duración tienen un valor real.
-Un juego recién añadido y sin enriquecer no debería salir con una pegatina
-de "N/A" pegada encima — eso sería ruido, no información.
+Terminado y backlog comparten el mismo hueco y son EXCLUYENTES: si un juego
+está en los dos estados gana "terminado", porque ya haberlo jugado es más
+informativo que tenerlo pendiente — y son estados que en la práctica se
+contradicen.
+
+Cada etiqueta solo aparece si su dato está presente: favorito, terminado y
+backlog son `True`, puntuación y duración tienen un valor real. Un juego
+recién añadido y sin enriquecer no debería salir con una pegatina de "N/A"
+pegada encima — eso sería ruido, no información.
+
+Todas se pueden ocultar de golpe (tecla espacio / botón Y del mando, ver
+`app.App._toggle_labels`), para poder ver la carátula sin nada encima.
 """
 from pathlib import Path
 
@@ -49,10 +56,11 @@ TOP_LABEL_SIZE = 0.22
 TOP_LABEL_TOP_MARGIN = 0.01
 TOP_LABEL_SIDE_MARGIN = 0.02
 
-# Backlog/puntuación/duración: mismo tamaño entre sí (pedido explícito),
-# más pequeñas que las de arriba porque son TRES en la misma franja inferior
-# y tienen que caber sin tocarse.
-BOTTOM_LABEL_SIZE = 0.16
+# Duración y puntuación. Ya no son tres en la franja de abajo (backlog se
+# fue arriba, al hueco de terminado), así que sobra sitio y pueden ir más
+# grandes — que además es lo que interesa, porque son las únicas que llevan
+# un número dentro que hay que poder leer a la distancia del carrusel.
+BOTTOM_LABEL_SIZE = 0.21
 BOTTOM_LABEL_BOTTOM_MARGIN = 0.015
 BOTTOM_LABEL_SIDE_MARGIN = 0.03
 
@@ -63,19 +71,23 @@ BOTTOM_LABEL_SIDE_MARGIN = 0.03
 _LABEL_ICON_Y = -CASE_DEPTH / 2 - 0.007
 _LABEL_TEXT_Y = -CASE_DEPTH / 2 - 0.009
 
-_SCORE_TEXT_SCALE = 0.032
-_DURATION_TEXT_SCALE = 0.042
+# Tamaño del número y su posición dentro del icono, los dos como FRACCIÓN
+# del tamaño del icono en vez de en unidades absolutas: así, al reescalar la
+# pegatina, el número y su encaje se reescalan solos y no hay que recalibrar
+# cuatro constantes a mano cada vez.
+#
+# Ninguno de los dos números va centrado del todo: la estrella tiene las dos
+# puntas de abajo, así que su zona ancha está por encima del centro
+# geométrico y el número pide bajar un poco para verse ópticamente centrado;
+# el reloj tiene la esfera clara algo descentrada en su lienzo de 512x512.
+# Ajustado sobre el render, que es lo único que vale aquí — el centro
+# geométrico del PNG no es el centro visual de un icono con esa forma.
+_SCORE_TEXT_SCALE = BOTTOM_LABEL_SIZE * 0.30
+_DURATION_TEXT_SCALE = BOTTOM_LABEL_SIZE * 0.32
 _LABEL_TEXT_COLOR = (0.05, 0.05, 0.05, 1)
 
-# Dónde cae el número dentro de su icono, respecto al centro del icono.
-# Ninguno de los dos va centrado del todo: la estrella tiene las dos puntas
-# de abajo, así que su zona ancha está por encima del centro geométrico y el
-# número pide bajar un poco para verse ópticamente centrado; el reloj tiene
-# la esfera clara ligeramente descentrada en su lienzo de 512x512. Ajustado
-# sobre el render, que es lo único que vale aquí — el centro geométrico del
-# PNG no es el centro visual de un icono con esa forma.
-_SCORE_TEXT_OFFSET = (0.0, -0.012)
-_DURATION_TEXT_OFFSET = (0.0, -0.008)
+_SCORE_TEXT_OFFSET = (0.0, -BOTTOM_LABEL_SIZE * 0.075)
+_DURATION_TEXT_OFFSET = (0.0, -BOTTOM_LABEL_SIZE * 0.05)
 
 _texture_cache: dict[str, Texture] = {}
 
@@ -160,10 +172,14 @@ def build_case_labels(parent: NodePath, game: Game | None) -> NodePath | None:
 
     if game.favorite:
         _build_icon(root, "favorite", TOP_LABEL_SIZE, -top_x, top_z)
+
+    # Mismo hueco para los dos, y "terminado" tiene prioridad: un juego
+    # marcado a la vez como terminado y pendiente es una contradicción, y de
+    # las dos la que importa es que ya lo has jugado.
     if game.finished:
         _build_icon(root, "finish", TOP_LABEL_SIZE, top_x, top_z)
-    if game.backlog:
-        _build_icon(root, "backlog", BOTTOM_LABEL_SIZE, -bottom_x, bottom_z)
+    elif game.backlog:
+        _build_icon(root, "backlog", TOP_LABEL_SIZE, top_x, top_z)
 
     # Por defecto SteamDB — pendiente de que el menú de opciones permita
     # elegir usuario/crítica/SteamDB (ver conversación de diseño). Cuando
