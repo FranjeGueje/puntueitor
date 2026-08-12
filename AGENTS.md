@@ -53,8 +53,40 @@ dropped 95% of a 1273-game library while the log cheerfully reported all
 to build, and navigation runs at 0.5 ms per move, so nothing justified the
 cap — and box virtualisation/recycling is not needed either.
 
-Covers are the part that does need care: only 67 of 1273 were cached
-locally. Loading is in two tiers, and both matter:
+**Covers are loaded lazily, and this dominates startup time.** Turning a
+cached JPG into a texture costs ~3.4 ms; doing that for all 1266 games at
+startup cost 4.3 s of black window to display nine boxes. The symptom was
+backwards from what you would guess: startup got *slower* as the cover cache
+got *more complete*, because a missing cover was a cheap 2x2 placeholder and
+a present one was a JPEG decode. `build_real_entries` now loads no textures
+at all — every entry starts on a shared per-store placeholder — and the same
+proximity window that drives downloads also drives texture creation. Startup
+went 5.9 s -> 1.5 s, live textures 1266 -> 21.
+
+Three pieces make that work, and they are easy to accidentally undo:
+- `make_placeholder_texture` caches by colour. The palette has five entries,
+  so without the cache a 1266-game library allocated 1266 GPU textures to
+  paint five flat colours.
+- `CoverLoader.poll()` returns **paths, not textures**. If it returned
+  textures, the backfill downloading the whole library would recreate all
+  1266 textures as they landed, quietly restoring the cost that was just
+  removed. `App._on_cover_ready` only builds the texture if the box is near
+  the selection; otherwise the file simply sits on disk until approached.
+- `CoverLoader._download` checks the disk before downloading, so a file
+  already fetched (by an earlier session, or by the TUI, which shares the
+  directory) skips the network entirely.
+
+Measured after the change: 21 covers live at startup, one more per
+navigation step, 277 MB after traversing 204 positions.
+
+The remaining startup cost is `Carousel` building all 1266 boxes eagerly
+(~1.16 s, 7684 GeomNodes for the nine that are visible). Building them on
+demand as they enter `VISIBLE_RADIUS` would amortise it to ~0.9 ms per
+navigation step; it needs `set_texture` to buffer textures for boxes that do
+not exist yet, since `COVER_PRELOAD_RADIUS` (10) reaches further than
+`VISIBLE_RADIUS` (4).
+
+The download side is in two tiers, and both matter:
 - `App._request_nearby_covers` asks for everything within
   `COVER_PRELOAD_RADIUS` of the selection, on every move. This is what makes
   the box you are looking at get its art first.

@@ -141,7 +141,10 @@ class CoverLoader:
 
     def _download(self, key: object, igdb_id: int, cover_url: str) -> None:
         try:
-            path = download_cover(igdb_id, cover_url)
+            # Puede estar ya en disco (descargada en otra sesión, o por la
+            # TUI, que usa el mismo directorio). Entonces no hay nada que
+            # bajar y se anuncia directamente.
+            path = get_cached_cover_path(igdb_id) or download_cover(igdb_id, cover_url)
             if path is not None:
                 self._done.put((key, path))
         finally:
@@ -151,20 +154,23 @@ class CoverLoader:
             with self._inflight_lock:
                 self._inflight -= 1
 
-    def poll(self) -> list[tuple[object, Texture]]:
+    def poll(self) -> list[tuple[object, Path]]:
         """
-        Texturas recién descargadas desde la última llamada, como
-        `(key, texture)`. Pensado para llamarse una vez por frame.
+        Carátulas que han llegado a disco desde la última llamada, como
+        `(key, ruta)`. Pensado para llamarse una vez por frame.
+
+        Devuelve RUTAS, no texturas, a propósito: crear la textura cuesta
+        3,4 ms y solo merece la pena para las cajas que se van a ver. Quien
+        llama decide (`app.App._on_cover_ready`); si el juego está lejos de
+        la selección, basta con que su fichero quede en disco y ya se
+        cargará cuando toque.
         """
         results = []
         while True:
             try:
-                key, path = self._done.get_nowait()
+                results.append(self._done.get_nowait())
             except queue.Empty:
                 break
-            texture = _load_texture(path)
-            if texture is not None:
-                results.append((key, texture))
         return results
 
     def shutdown(self) -> None:

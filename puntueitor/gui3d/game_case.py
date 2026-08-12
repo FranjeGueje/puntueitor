@@ -437,12 +437,24 @@ def build_case_reflection(
     return root, cover_np
 
 
+_PLACEHOLDER_CACHE: dict[tuple[float, float, float], Texture] = {}
+
+
 def make_placeholder_texture(color: tuple[float, float, float]) -> Texture:
     """
     Textura 2x2 de un color sólido, usada como carátula de relleno mientras
     no hay arte real. `NearestFilter` evita que Panda3D intente suavizar un
     color plano de 2x2 con mipmaps.
+
+    Se reutiliza la misma textura para el mismo color. Los colores salen de
+    la paleta de tiendas, o sea que son cinco contados, y sin caché una
+    biblioteca de 1266 juegos creaba 1266 texturas distintas —cada una con
+    su hueco en la GPU— para pintar cinco colores planos.
     """
+    cached = _PLACEHOLDER_CACHE.get(color)
+    if cached is not None:
+        return cached
+
     from panda3d.core import PNMImage
 
     image = PNMImage(2, 2)
@@ -452,4 +464,5 @@ def make_placeholder_texture(color: tuple[float, float, float]) -> Texture:
     tex.load(image)
     tex.set_minfilter(Texture.FT_nearest)
     tex.set_magfilter(Texture.FT_nearest)
+    _PLACEHOLDER_CACHE[color] = tex
     return tex

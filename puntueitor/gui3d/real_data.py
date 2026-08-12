@@ -75,20 +75,23 @@ def build_real_entries(
     pending: list[tuple] = []
 
     for game in (games if limit is None else games[:limit]):
-        # allow_download=False: la descarga de las que faltan se hace en
-        # segundo plano vía CoverLoader, no aquí de forma síncrona.
-        texture = load_cover_texture(game.igdb_id, game.cover_url, allow_download=False)
-
-        if texture is None:
-            texture = make_placeholder_texture(primary_store_color(game.stores))
-            pending.append((game.igdb_id, game.igdb_id, game.cover_url))
-
+        # NINGUNA carátula se carga aquí, ni siquiera las que ya están en
+        # disco: todas arrancan con el color de su tienda y el llamante va
+        # pidiendo las de alrededor de la selección.
+        #
+        # Cargar una carátula cuesta 3,4 ms (decodificar el JPEG y subirlo);
+        # por 1266 juegos son 4,3 segundos de ventana en negro al arrancar,
+        # para acabar enseñando nueve cajas. Las 21 de la primera pantalla
+        # cuestan 0,07 s. Esto es lo que hacía que el arranque tardara más
+        # cuanto MÁS completa estuviera la caché de carátulas, que es justo
+        # al revés de lo que uno espera.
         entries.append({
             "key": game.igdb_id,
             "title": game.title,
-            "texture": texture,
+            "texture": make_placeholder_texture(primary_store_color(game.stores)),
             "stores": frozenset(game.stores),
             "game": game,
         })
+        pending.append((game.igdb_id, game.igdb_id, game.cover_url))
 
     return entries, pending

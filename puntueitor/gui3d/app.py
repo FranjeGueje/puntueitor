@@ -45,7 +45,7 @@ textures-power-2 none
 
 from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
-from puntueitor.gui3d.covers import CoverLoader
+from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
 from puntueitor.gui3d.gamepad_input import GamepadInput
 from puntueitor.gui3d.real_data import build_real_entries
@@ -179,6 +179,7 @@ class App(ShowBase):
             for e in raw_entries
         ]
         self.entries = entries
+        self._index_by_key = {entry.key: i for i, entry in enumerate(entries)}
         self.carousel_root = self.render.attach_new_node("carousel-root")
         self.carousel_root.set_z(CAROUSEL_RAISE)
         self.carousel = Carousel(self.carousel_root, entries)
@@ -511,20 +512,34 @@ class App(ShowBase):
         se están viendo: si se metieran las 1200 de golpe en la cola, una
         carátula recién pedida por navegación tendría que esperar a que
         terminaran todas las de delante.
+
+        Solo baja ficheros a disco. Convertirlos en textura es cosa de
+        `_on_cover_ready`, y solo lo hace con las cercanas.
         """
-        while self._pending_covers and self.cover_loader.inflight < COVER_BACKFILL_INFLIGHT:
-            key, pending = self._pending_covers.popitem()
-            self.cover_loader.request(key, *pending)
+        for key, (igdb_id, cover_url) in self._pending_covers.items():
+            if self.cover_loader.inflight >= COVER_BACKFILL_INFLIGHT:
+                return
+            self.cover_loader.request(key, igdb_id, cover_url)
+
+    def _is_near_selection(self, key: object) -> bool:
+        """¿Está esta caja dentro del radio de precarga de la selección?"""
+        index = self._index_by_key.get(key)
+        if index is None:
+            return False
+        total = len(self.entries)
+        offset = (index - self.carousel.selected_index) % total
+        return min(offset, total - offset) <= COVER_PRELOAD_RADIUS
 
     def _request_nearby_covers(self) -> None:
         """
-        Encola la descarga de las carátulas que faltan alrededor de la
-        selección, y solo esas.
+        Se asegura de que las cajas de alrededor de la selección tengan su
+        carátula de verdad, y solo esas.
 
-        El radio es más ancho que `VISIBLE_RADIUS` a propósito, para que la
-        carátula de una caja llegue antes de que el usuario se plante en
-        ella. Cada clave se pide una sola vez: se saca del diccionario al
-        pedirla, y `CoverLoader` además ignora las repetidas.
+        Si el fichero ya está en disco se carga aquí mismo (3,4 ms, y solo
+        para las que acaban de entrar en el radio); si no, se encarga la
+        descarga. El radio es más ancho que `VISIBLE_RADIUS` a propósito,
+        para que la carátula llegue antes de que el usuario se plante en esa
+        caja.
         """
         total = len(self.entries)
         if not self._pending_covers or not total:
@@ -533,9 +548,37 @@ class App(ShowBase):
         center = self.carousel.selected_index
         for offset in range(-COVER_PRELOAD_RADIUS, COVER_PRELOAD_RADIUS + 1):
             entry = self.entries[(center + offset) % total]
-            pending = self._pending_covers.pop(entry.key, None)
-            if pending is not None:
-                self.cover_loader.request(entry.key, *pending)
+            pending = self._pending_covers.get(entry.key)
+            if pending is None:
+                continue
+
+            igdb_id, cover_url = pending
+            texture = load_cover_texture(igdb_id, cover_url, allow_download=False)
+            if texture is not None:
+                self._apply_cover(entry.key, texture)
+            else:
+                self.cover_loader.request(entry.key, igdb_id, cover_url)
+
+    def _apply_cover(self, key: object, texture) -> None:
+        """Pone la carátula real en su caja y la da por resuelta."""
+        self._pending_covers.pop(key, None)
+        self.carousel.set_texture(key, texture)
+
+    def _on_cover_ready(self, key: object, path) -> None:
+        """
+        Una carátula acaba de llegar a disco.
+
+        Solo se convierte en textura si su caja está cerca de la selección.
+        El relleno de fondo descarga la biblioteca entera, y crear las 1266
+        texturas conforme van cayendo devolvería por la puerta de atrás el
+        gasto de memoria y de CPU que se quita al arrancar. Las lejanas se
+        quedan en disco y ya se cargarán si el usuario llega hasta ellas.
+        """
+        if key not in self._pending_covers or not self._is_near_selection(key):
+            return
+        texture = load_cover_texture(*self._pending_covers[key], allow_download=False)
+        if texture is not None:
+            self._apply_cover(key, texture)
 
     def _refresh_selection_text(self) -> None:
         entry = self.carousel.selected
@@ -558,8 +601,8 @@ class App(ShowBase):
         self._update_navigation(dt)
         self.carousel.update(dt)
 
-        for key, texture in self.cover_loader.poll():
-            self.carousel.set_texture(key, texture)
+        for key, path in self.cover_loader.poll():
+            self._on_cover_ready(key, path)
 
         self._backfill_covers()
         self._update_background(dt)
