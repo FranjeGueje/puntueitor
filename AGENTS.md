@@ -653,6 +653,31 @@ Same reasoning applies to `BaseCacher.default_path()` being a method rather
 than a `DEFAULT_PATH` attribute. When touching this module, verify isolation
 under a patched `Path.home` *before* running the suite.
 
+Case labels (`case_labels.py`) are five fixed sticker slots on the case
+front — favorite/finished top corners, backlog/score/duration bottom row —
+each only built if its data is truthy (`favorite`/`finished`/`backlog`) or
+present (`steamdb_score`, `duration_hours > 0`; `0` means "no data", same
+convention as `ficha.py`). Never on the reflection, matching the store
+banner. Built once per box at `CarouselBox.__init__`, baked from `entry.game`
+— not rebuilt on selection change, since these are per-game facts that don't
+change while the box exists.
+
+Score/duration text size (`_SCORE_TEXT_SCALE`/`_DURATION_TEXT_SCALE`) is
+sized for the real worst case, not the common one: duration in the actual
+1266-game library reaches 169h (7 games are 3-digit), so the digits have to
+fit inside the icon at 3 characters, not 2 — sized generously (0.05) it
+looked fine for "88" but "169" spilled off the clock face entirely. Whoever
+resizes these needs to re-check against a 3-digit value, not just whatever
+game happens to be selected while testing.
+
+The top badges are deliberately oversized relative to `BANNER_HEIGHT`
+(0.22 vs 0.11) and positioned to slightly overhang the case's own outer
+edge, not sit flush inside it — asked for explicitly as a "sticker" look
+rather than a badge neatly inset in the frame. `TOP_LABEL_TOP_MARGIN` keeps
+a sliver of margin from the physical top edge (a sticker flush with the
+edge reads as an render artifact, like it's been cut off, not intentional
+overhang).
+
 ## Environment
 
 - Python 3.14 (from `.venv`)

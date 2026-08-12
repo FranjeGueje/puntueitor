@@ -12,6 +12,7 @@ from panda3d.core import NodePath, Texture
 
 from puntueitor.core.models import Game
 from puntueitor.gui3d.case_banner import build_case_banner
+from puntueitor.gui3d.case_labels import build_case_labels
 from puntueitor.gui3d.game_case import build_case_reflection, build_game_case
 from puntueitor.gui3d.store_colors import primary_store_color
 
@@ -133,6 +134,7 @@ class CarouselBox:
         self.reflection_cover_np.set_texture(entry.texture)
         self.texture = entry.texture
         build_case_banner(self.root, entry.stores)
+        build_case_labels(self.root, entry.game)
         self._base_pos = self.root.get_pos()
         self._base_hpr = self.root.get_hpr()
         self._slide: LerpPosHprInterval | None = None
