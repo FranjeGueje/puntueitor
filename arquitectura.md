@@ -1,272 +1,192 @@
-# Arquitectura y Guía de Diseño de Puntueitor 🏗️
+# Arquitectura de Puntueitor 🏗️
 
-> [!NOTE]
-> Este documento representa la **fusión corregida, unificada y actualizada** de los antiguos archivos de fase temprana `arquitectura.md` y `LEEME.txt`. Se han enmendado todas las discrepancias y desviaciones respecto al código fuente de producción actual de **Puntueitor** (construido sobre Python 3.14 con arquitectura limpia y DDD).
+Puntueitor unifica bibliotecas de varias tiendas (Steam, GOG, Epic, Amazon),
+las identifica contra IGDB, las enriquece con duraciones de HowLongToBeat y
+puntuaciones de Steam, y calcula recomendaciones con criterios combinables.
+
+Este documento explica **por qué** el sistema está montado así. Lo que se
+puede deducir leyendo el código —qué módulos hay, qué campos tiene cada
+clase, qué hace cada función— no está aquí a propósito: esa clase de
+documentación se desincroniza a la primera y entonces miente, que es peor
+que no existir. Para el "qué", el código; aquí el "por qué".
+
+> Este fichero sustituye a `DOC.md` y a la versión anterior de
+> `arquitectura.md`, que eran el mismo documento escrito dos veces y ya
+> habían derivado: entre los dos documentaban un módulo `core/index/`, una
+> clase `LibraryIndex` y un patrón `CompositeGameScorer` que no existen, un
+> campo `steam_score` que en realidad son tres (`steamdb_score`,
+> `review_pos`, `review_neg`), una tabla `desconocidos` que se llama
+> `unknown_games`, y rutas de datos que cambiaron.
 
 ---
 
-## 🗺️ Estructura Real de Módulos (Core)
+## 🏆 La Regla de Oro
 
-En la fase inicial de diseño se plantearon paquetes planos directos (`puntueitor/models/`, `puntueitor/filters/`, etc.). En el sistema en producción, todo el núcleo de lógica de negocio y dominio se encuentra agrupado bajo el módulo encapsulado `core/`, garantizando una separación limpia de la interfaz de usuario (`gui/`):
+Es la invariante central del sistema y de la que dependen el repositorio, la
+carga y los dos frontends:
 
-```text
-puntueitor/
-├── core/
-│   ├── cachers/       # Cachés locales (SQLite) de IGDB, tiendas, estado de librería y HLTB
-│   │                  # Todos sobre BaseCacher: conexión por hilo, esquema y errores
-│   ├── config.py      # Gestor singleton ConfigManager para ~/.config/puntueitor/config.json
-│   ├── enrichers/     # Complemento de metadatos no canónicos (HLTBEnricher)
-│   ├── filters/       # Predicados booleanos puros de juegos (matches)
-│   ├── heroics/       # Lector de librerías de Heroic Games Launcher (GOG, Epic, Amazon)
-│   ├── igdb/          # Cliente y autenticador de la API IGDB (igdbpy)
-│   ├── mappers/       # Conversión stateless de esquemas externos a modelos del dominio
-│   ├── models/        # Entidades inmutables y de dominio (Game, Library, Contexts)
-│   ├── pipeline/      # Orquestación de carga asíncrona concurrente de datos (hilos)
-│   ├── protocols/     # Interfaces y contratos del sistema (PEP 544 Protocols)
-│   ├── raw/           # Estructuras de datos puras de llamadas web (HLTBEntry)
-│   ├── repository/    # Carga y serialización agregada unificando caché y estado de usuario
-│   ├── resolvers/     # Estrategias de correlación por tienda contra IGDB
-│   ├── scoring/       # Algoritmos y coeficientes de recomendación multi-criterio
-│   ├── selector/      # Criterios de desambiguación de candidatos duplicados
-│   ├── services/      # Fachada API para el consumo desde la GUI (LibraryService)
-│   └── sorting/       # Estrategias puras de ordenación
-├── gui/               # Interfaz gráfica TUI basada en Textual (pantallas y widgets)
-└── steampy/           # Submódulo independiente cliente de la API de Steam (rate-limited)
+**La tabla `resolvers` es la única fuente de verdad de qué juegos están en
+la biblioteca.**
+
+La tabla `games` NO lo es, aunque lo parezca. `games` es la caché global de
+*toda* consulta hecha a IGDB, e incluye candidatos de búsqueda descartados
+al resolver otros títulos: buscar por título devuelve varios resultados, se
+cachean todos y solo se elige uno. Recorrer `games` directamente cuela esos
+huérfanos —juegos con carátula pero sin ninguna tienda, que nunca estuvieron
+en la biblioteca. Es un error que ya se ha cometido dos veces; la segunda,
+en el frontend 3D.
+
+Quien quiera leer la biblioteca debe usar `LibraryRepository.load()`, que
+además es el único sitio donde se une todo: resolvers + fichas de IGDB +
+extras + estados del usuario.
+
+---
+
+## 🗄️ Separación de datos
+
+Tres clases de datos con dueños y ciclos de vida distintos, deliberadamente
+en ficheros separados:
+
+| Dato | Dónde | Se puede regenerar |
+|---|---|---|
+| Fichas de IGDB (`games`) | `puntueitor.db` | Sí, volviendo a consultar |
+| Correlaciones (`resolvers`), extras HLTB/Steam, `unknown_games` | `puntueitor.db` | Sí, pero a base de miles de llamadas |
+| Marcas del usuario (`user_games`) | `library.sqlite` | **No** |
+
+Las marcas del usuario (terminado, oculto, pendiente, favorito) viven en su
+propio fichero y no mezcladas con la caché de red, precisamente para que
+borrar lo segundo no se lleve nunca lo primero por delante.
+
+Las dos bases están en `~/.local/share/puntueitor/`, no en `~/.cache`. El
+reparto completo de directorios, y el porqué, está en `core/paths.py`.
+
+Todos los cachers heredan de `BaseCacher`, que aporta conexión por hilo
+(SQLite en modo WAL, para que los enrichers puedan escribir desde el pool
+mientras la interfaz lee), esquema declarado una sola vez y degradación
+controlada: un fallo puntual se registra y sigue, solo un fallo de
+inicialización marca el cacher como no disponible.
+
+---
+
+## 🔄 Flujo de carga
+
+```mermaid
+graph TD
+    A[Tiendas<br>Steam API · Heroic: GOG, Epic, Amazon] --> B[Resolvers<br>identidad externa → IGDB]
+    B --> C[IGDB Service<br>consulta + caché]
+    C --> D[Mappers<br>JSON de IGDB → modelo de dominio]
+    D --> E[Selector<br>desambigua candidatos]
+    E --> F[Enrichers<br>HLTB · Steam reviews]
+    F --> G[Cachers + LibraryRepository]
+    G --> H[LibraryService]
+    H --> I[gui/ TUI · gui3d/ carrusel 3D]
 ```
 
----
-
-## 🎮 1. El Modelo del Dominio (`core/models/`)
-
-El modelo propuesto en fases tempranas planteaba un `GameLibrary` mutable con filtros integrados y una entidad `Game` con IDs en formato `str`. En producción, el modelo se ha depurado bajo principios de inmutabilidad y eficiencia de memoria (`slots=True`):
-
-### Títulos, Identidad y Estados (`game.py`)
-```python
-from __future__ import annotations
-from dataclasses import dataclass, field
-from datetime import date
-from enum import StrEnum
-
-class Stores(StrEnum):
-    STEAM = "steam"
-    EPIC = "epic"
-    GOG = "gog"
-    AMAZON = "amazon"
-
-StoreMap = dict[Stores, str]
-
-@dataclass(slots=True)
-class Game:
-    igdb_id: int                         # Identidad canónica unificada (IGDB)
-    title: str                           # Nombre del juego
-    title_normalized: str = field(init=False)
-
-    genres: tuple[str, ...] = field(default_factory=tuple)
-    storyline: str | None = None
-    release_date: date | None = None
-    cover_url: str | None = None
-
-    critic_score: float | None = None    # 0–100 (IGDB Aggregated Rating)
-    user_score: float | None = None      # 0–100 (IGDB Rating)
-    duration_hours: float | None = None  # Enriquecido desde HLTB u otros cachers
-    steam_score: float | None = None     # 0–100 (Enriquecido desde reseñas de Steam)
-    steam_review: int | None = None      # 0-9 (Categoría de review en Steam)
-
-    stores: StoreMap = field(default_factory=dict) # Enlaces con IDs en tiendas
-
-    # Estados editables locales del perfil de usuario
-    finished: bool = False
-    hidden: bool = False
-    backlog: bool = False
-    favorite: bool = False
-
-    def __post_init__(self) -> None:
-        from .util import normalize_title
-        self.title_normalized = normalize_title(self.title)
-
-    def set_store(self, store: Stores, store_id: str) -> None:
-        if not store_id:
-            raise ValueError("Store id cannot be empty")
-        self.stores[store] = store_id
-```
-
-### Colección de Biblioteca (`library.py`)
-En lugar de la clase mutable `GameLibrary` de la fase de diseño inicial, la biblioteca en producción (`Library`) es un contenedor **inmutable** y congelado:
-```python
-from dataclasses import dataclass
-from collections.abc import Iterable, Iterator
-from .game import Game
-
-@dataclass(frozen=True)
-class Library:
-    games: tuple[Game, ...]
-
-    @classmethod
-    def from_iterable(cls, games: Iterable[Game]) -> Library:
-        return cls(tuple(games))
-
-    def __iter__(self) -> Iterator[Game]:
-        return iter(self.games)
-
-    def __len__(self) -> int:
-        return len(self.games)
-
-    def contains_igdb_id(self, igdb_id: int) -> bool:
-        return any(g.igdb_id == igdb_id for g in self.games)
-```
+`load_steam_library.py` orquesta todo eso sobre un `ThreadPoolExecutor`, con
+callbacks de progreso para que la interfaz vaya mostrando resultados en vez
+de esperar al final. Con bibliotecas de más de mil juegos la diferencia no
+es cosmética.
 
 ---
 
-## 🔌 2. Contratos y Abstracciones (`core/protocols/`)
+## 🎯 Decisiones de diseño
 
-En el diseño temprano, los filtros utilizaban una interfaz pesada basada en lotes (`apply(self, games: Iterable[Game]) -> Iterable[Game]`). En producción, se ha simplificado a predicados unitarios (`matches`) siguiendo el patrón **Filter**, lo que permite combinar filtros con operadores lógicos AND / OR sencillos en pipelines:
+Estas son las que no se deducen del código, y las que conviene entender
+antes de tocar nada.
 
-```python
-from typing import Protocol, runtime_checkable
-from collections.abc import Sequence
-from puntueitor.core.models import Game, ScoringContext, SelectionContext, Library
+**`igdb_id: int` como identidad canónica.** Cada tienda tiene su propio
+identificador y ninguno sirve fuera de ella. IGDB actúa de eje: todo lo
+demás cuelga de ahí, incluidas las marcas del usuario, que así sobreviven a
+que un juego cambie de tienda o se compre dos veces.
 
-class GameFilter(Protocol):
-    """Predicado puro unitario sobre una entidad Game."""
-    def matches(self, game: Game) -> bool: ...
+**`Library` inmutable.** Es una `dataclass` congelada sobre una tupla, sin
+lógica de filtrado dentro. Filtrar, ordenar y puntuar son operaciones que
+devuelven cosas nuevas, no que mutan la colección. Evita toda una familia de
+errores en la que la interfaz y el core dejan de ver lo mismo.
 
-class GameScorer(Protocol):
-    """Calcula una valoración numérica flotante para un juego en un contexto."""
-    def score(self, game: Game, ctx: ScoringContext) -> float: ...
+**Los filtros son predicados unitarios (`matches(game) -> bool`), no
+operaciones por lotes.** Con un predicado se pueden combinar filtros con AND
+y OR trivialmente; con una interfaz `apply(games) -> games` cada composición
+hay que escribirla a mano.
 
-class GameSelector(Protocol):
-    """Resuelve la ambigüedad eligiendo el mejor juego de una lista de candidatos."""
-    def select(self, candidates: Sequence[Game], ctx: SelectionContext) -> Game | None: ...
+**`ScoringContext` y `SelectionContext` están separados** aunque al
+principio fueran uno. Llevan cosas distintas y se usan en momentos
+distintos: el de selección lleva identificadores de procedencia para
+desambiguar (`steam_appid`, `gog_id`, slug, año); el de scoring lleva
+preferencias del usuario (horas disponibles, géneros preferidos y odiados).
+Juntarlos obligaba a construir un objeto enorme y medio vacío en ambos
+casos.
 
-@runtime_checkable
-class GameEnricher(Protocol):
-    """Complementa un juego existente. No debe fallar ni crear nuevas identidades."""
-    def enrich(self, game: Game) -> Game: ...
+**Los mappers son barrera anticorrupción.** `IGMapperGame` es el único sitio
+que sabe cómo es el JSON de IGDB. Si IGDB cambia una clave, se arregla ahí y
+el resto del core ni se entera.
 
-class GameSorter(Protocol):
-    """Ordena una biblioteca de juegos."""
-    def sort(self, library: Library) -> Library: ...
-```
-
----
-
-## 🔍 3. Implementaciones de Filtros (`core/filters/`)
-
-Todos los filtros del sistema implementan `GameFilter` a nivel unitario (`matches`):
-
-* **`NameFilter` (`name_filter.py`)**:
-  Realiza tres comprobaciones jerárquicas:
-  1. ¿El título normalizado de la query está dentro del título normalizado del juego?
-  2. ¿El título normalizado está dentro del título original (por si acaso)?
-  3. Si falla la subcadena, calcula un ratio tipográfico fuzzy (`core/models/util.py:similarity`) evaluando si supera el umbral configurable (por defecto `0.8`).
-* **`DurationFilter` (`duration_filter.py`)**:
-  Retorna `True` si la duración estimada del juego es menor o igual al límite. Si el juego carece de duración, se le permite pasar por defecto (`True`).
-* **`FinishedFilter` / `FavoriteFilter` / `BacklogFilter` / `HiddenFilter`**:
-  Comprueban directamente si el estado booleano de la clase de dominio `Game` coincide con el valor buscado.
+**`steampy/` está fuera del core** y es un cliente HTTP puro, con rate
+limiting propio (ventana temporal + `threading.Lock`) para no quemar la
+clave de API del usuario.
 
 ---
 
-## ⭐ 4. Motor de Scoring y Selección (`core/scoring/` y `core/selector/`)
+## 🔍 Resolvers: una estrategia por tienda
 
-### Contextos en Producción
-El diseño conceptual inicial integraba la lógica de pesos de puntuación en `SelectionContext`. En producción se han separado dos responsabilidades críticas:
-1. **`SelectionContext` (`core/models/selection_context.py`)**: Lleva identificadores informativos de procedencia de red para desambiguar correlaciones (`steam_appid`, `epic_slug`, `gog_id`, `release_year`).
-2. **`ScoringContext` (`core/models/scoring_context.py`)**: Lleva los parámetros del algoritmo (horas de juego disponibles del usuario, géneros preferidos, géneros odiados, y umbrales de duración).
+Esta parte sí merece explicación, porque cada tienda obliga a un truco
+distinto y no es evidente por qué:
 
-### Estrategias de Scoring (`core/scoring/`)
-Todas las estrategias heredan del protocolo `GameScorer`:
-* **`MixedScore`**: Combina tres variables:
-  * Valoración de la crítica (normalizada $0.0 - 1.0$ usando fallback a `steam_score` si no hay IGDB).
-  * Valoración de los usuarios (normalizada $0.0 - 1.0$ usando fallback a `steam_score` si no hay IGDB).
-  * Duración ponderada mediante un decaimiento exponencial: $e^{-\frac{\text{duración}}{\text{escala}}}$.
-* **`WeightedScore`**: Ejecuta una colección configurable de sub-scorers (`CriticScoreScorer`, `UserScoreScorer`, `DurationScoreScorer` todos con soporte para fallback a Steam a través de la función utilitaria `score_or_steam` de `helpers.py`) y multiplica sus retornos por pesos definidos en la configuración de usuario.
-* **`AvailableTimeScorer`**: Puntúa de acuerdo a una ventana temporal libre:
-  * Si la duración es menor o igual a las horas disponibles, otorga una puntuación excelente priorizando los juegos que saquen mayor partido a la ventana.
-  * Si sobrepasa la ventana, aplica penalizaciones lineales proporcionales al exceso.
-* **`GenreScorer`**: Suma peso si el juego contiene géneros preferidos por el usuario, y resta drásticamente (`-1.0`) si incluye géneros marcados como intolerables (odiados).
+| Tienda | Estrategia | Por qué |
+|---|---|---|
+| **Steam** | `external_game_source = 1` + appid | IGDB indexa los appid de Steam directamente |
+| **GOG** | `external_game_source = 5` + id de Heroic | Igual que Steam, con su propia fuente |
+| **Epic** | Extrae el *slug* de la URL y busca por él | Epic no tiene correlación de id estable en IGDB |
+| **Amazon** | Búsqueda por título + compara fecha de lanzamiento | No hay id ni slug; la fecha es lo que separa secuelas y remakes del original |
 
-### Selectores y Desambiguación (`core/selector/`)
-* **`SteamSelector`**: Resuelve colisiones de múltiples candidatos devueltos por consultas generales de IGDB. Utiliza una fórmula híbrida que combina el score básico del juego con el grado de completitud de su ficha técnica (si dispone de carátula, sinopsis, horas y notas), eligiendo la ficha más rica.
-* **`HLTBSelector`**: Heurística para escoger el mejor match devuelto por la API de HowLongToBeat.
+Todos caen a búsqueda por título normalizado si su vía principal falla, y de
+ahí pasan al `Selector`, que elige entre candidatos combinando la nota del
+juego con lo completa que esté su ficha (carátula, sinopsis, duración,
+notas). Lo que no se resuelve va a `unknown_games` para no repetir la
+búsqueda en cada arranque.
 
 ---
 
-## 🗄️ 5. Arquitectura de Datos Separada (`core/cachers/` y `core/repository/`)
+## 💎 Patrones
 
-El diseño inicial de `LEEME.txt` ignoraba las colisiones entre datos globales y locales. En producción, la **Capa de Persistencia** sigue una separación estricta para cumplir con la arquitectura offline-first:
-
-```text
-                                  ┌───────────────────────────┐
-                                  │   ~/.cache/puntueitor/    │
-                                  │       puntueitor.db       │
-                                  └─────────────┬─────────────┘
-                                                │
-                               ┌────────────────┼────────────────┐
-                               ▼                ▼                ▼
-                        ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-                        │    games    │  │  resolvers  │  │   extras    │
-                        │ (Canónicos) │  │(Resolución) │  │   (HLTB)    │
-                        └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-                               │                │                │
-                               └────────┐       │       ┌────────┘
-                                        ▼       ▼       ▼
-                                ┌──────────────────────────┐
-                                │    LibraryRepository     │ <─── [Hidrata en memoria]
-                                └───────────▲──────────────┘
-                                            │
-                               ┌────────────┴────────────┐
-                               │  ~/.config/puntueitor/  │
-                               │     library.sqlite      │
-                               │ (Estados: terminado...) │
-                               └─────────────────────────┘
-```
-
-1. **`puntueitor.db`**: SQLite global que centraliza información pesada inmutable.
-   * `games` (`IGDBCacher`): Respuestas JSON nativas de IGDB. Incluye soporte para el almacenamiento persistente de `steam_id` mapeado a partir de la API de IGDB.
-   * `resolvers` (`ResolversCacher`): Tabla relacional que correlaciona `(store_name, store_game_id)` $\to$ `igdb_id`.
-   * `extras` (`ExtrasCacher`): Duraciones estimadas de juego (HLTB) y valoraciones de Steam (`steam_score`, `steam_review`).
-   * `desconocidos` (`DesconocidosCacher`): Registro de IDs externos que no existen en IGDB para evitar búsquedas repetitivas de red en el inicio.
-2. **`library.sqlite`** (`LibraryCacher`):
-   * Guarda únicamente las columnas editables del usuario (`finished`, `hidden`, `backlog`, `favorite`) indexadas por el `igdb_id` canónico.
-3. **`LibraryRepository.load()`**:
-   * Lee la tabla relacional de resolvers activos.
-   * Carga las especificaciones de juego correspondientes desde la caché global de IGDB.
-   * Inyecta las duraciones estimadas e información de reseñas de Steam desde la caché de extras.
-   * Consulta las banderas de usuario en la base de datos de configuración local.
-   * Instancia e hidrata de forma limpia la colección inmutable `Library`.
+- **Strategy** — scorers, filtros y sorters detrás de `Protocol`s (PEP 544).
+  La interfaz cambia de fórmula en caliente sin tocar el motor.
+- **Facade** — `LibraryService` es el único punto de contacto para los
+  frontends. Ni la TUI ni `gui3d/` conocen cachers ni pipelines.
+- **Repository** — `LibraryRepository` esconde que la biblioteca sale de
+  cuatro tablas en dos ficheros.
+- **Anticorruption layer** — los mappers, arriba.
 
 ---
 
-## 🔄 6. Pipelines y Carga Concurrente (`core/pipeline/`)
+## 🚀 Cómo extender
 
-Las pipelines actúan como casos de uso u orquestadores puros sin estado, encargados de coordinar componentes.
+### Añadir una tienda
+1. Amplía el enum `Stores` en `core/models/game.py`.
+2. Crea un resolver que herede de `BaseResolver` en `core/resolvers/`, con
+   `resolve(raw, refresh) -> Sequence[Game]`. Mira primero si IGDB indexa
+   esa tienda en `external_games`; si no, tocará slug o título + fecha.
+3. Engánchalo en `core/pipeline/load_steam_library.py`.
 
-* **`load_library` (`load_steam_library.py`)**:
-  Orquesta la carga general de juegos a través de un pool de hilos de ejecución concurrentes (`ThreadPoolExecutor`):
-  1. Detecta plataformas activas en la configuración.
-  2. Lanza de forma asíncrona la descarga de juegos en propiedad de Steam (mediante `steampy`) y lee las bases de datos de Heroic Games Launcher para Epic, GOG y Amazon.
-  3. Ejecuta la resolución de identidades a través de los `Resolvers` e invoca al `Selector` para filtrar candidatos falsos.
-  4. Envía de forma paralela peticiones a los enriquecedores activos (como el de HowLongToBeat y el de Steam Reviews **`SteamScoreEnricher`** en background) para actualizar estimaciones y notas de juego, alimentando la interfaz en tiempo real mediante callbacks de progreso y cargando instantáneamente desde el caché local `extras` si los datos ya residen allí.
-* **`EnrichmentPipeline`**: Aplica de manera segura una lista de `GameEnricher` secuenciales sobre los elementos de una biblioteca.
+### Añadir una fórmula de puntuación
+1. Implementa `GameScorer` en `core/scoring/atomic/` (o en `core/scoring/`
+   si compone otras).
+2. `score(game, ctx) -> float`, normalizado.
+3. Regístrala en `_get_scorer` de `core/services/library_service.py`.
+
+### Añadir un enriquecedor
+1. Implementa `GameEnricher` en `core/enrichers/`.
+2. `enrich(game) -> Game`, apoyándote en `dataclasses.replace`.
+3. Añádelo a la lista de enrichers de `load_steam_library.py`.
+4. Si guarda datos nuevos, van a la tabla `extras`, no a `games`: `games`
+   es caché de IGDB y se puede borrar entera.
 
 ---
 
-## 🔌 7. Submódulo de API de Steam (`steampy/`)
+## 📎 Documentos relacionados
 
-Ubicado de forma independiente del núcleo de negocio, actúa como cliente HTTP puro para la plataforma de Valve.
-* **Rate Limiting**: Utiliza un búfer temporal (`threading.Lock` y ventanas de tiempo basado en `time.monotonic()`) para evitar sobrepasar los límites de llamadas de la Steam Web API.
-* **Caché Relacional**: Almacena las respuestas de la lista de juegos del usuario (`owned_games`) directamente en `cache/{steam_id}.sqlite` para mitigar el consumo de red en arranques consecutivos.
-
----
-
-## 🚀 Resumen de Diferencias: Diseño Conceptual vs Implementación Real
-
-| Concepto / Componente | Propuesta en Fase Temprana (`arquitectura.md`/`LEEME.txt`) | Implementación de Producción de Alta Cohesión |
-| :--- | :--- | :--- |
-| **Ubicación del Core** | Módulos planos en la raíz (`puntueitor/models/`, `puntueitor/filters/`) | Encapsulado bajo el módulo coherente `puntueitor/core/` |
-| **Entidad `Game`** | Usaba `id: str` e ignoraba los estados mutables de interacción. | Identidad en `igdb_id: int` canónico, con persistencia aislada de estados del usuario. |
-| **Clase `Library`** | Llamada `GameLibrary`, con lógica interna de filtrado mutable. | `Library` es una `dataclass` inmutable con `tuple[Game]`. Las operaciones se delegan. |
-| **Contrato de Filtros** | Método pesado por lotes `apply(self, games: Iterable[Game])`. | Protocolo unitario `matches(self, game: Game) -> bool` ideal para composición AND/OR. |
-| **Contrato de Scoring** | Método `score(self, game, SelectionContext)` | Protocolo puro `score(self, game, ScoringContext)` desacoplado de IDs de selección. |
-| **Separación de Datos** | Sin estrategia de persistencia (se mezclaban campos locales y externos). | "Golden Rule": Datos de red en base de datos global; estados de usuario en SQLite local. |
-| **Carga de Datos** | Secuencial síncrona en pipelines planos. | Asíncrona con pool de hilos (`ThreadPoolExecutor`) y callbacks dinámicos de progreso. |
+- `README.md` — instalación, configuración y uso.
+- `AGENTS.md` — notas de trabajo: trampas concretas encontradas, cómo se
+  midieron y por qué ciertas constantes valen lo que valen. Es donde va lo
+  que costó horas averiguar y no se puede reconstruir leyendo el código.
+- `CHANGELOG.md` — historial de versiones.

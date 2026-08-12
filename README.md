@@ -202,7 +202,9 @@ Al arrancar por primera vez, pulsa `c` para abrir el diálogo de configuración,
 6. **Enrichers** añaden metadatos (duración HLTB, puntuación SteamDB)
 7. **Pipeline** orquesta todo el flujo de carga, filtrado y enrichment
 
-Para documentación técnica detallada, ver [`DOC.md`](DOC.md) y [`arquitectura.md`](arquitectura.md).
+Para el diseño del sistema y el porqué de sus decisiones, ver
+[`arquitectura.md`](arquitectura.md). Para notas de trabajo y trampas
+concretas encontradas por el camino, [`AGENTS.md`](AGENTS.md).
 
 ---
 
