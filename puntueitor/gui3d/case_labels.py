@@ -33,7 +33,7 @@ from panda3d.core import (
 )
 
 from puntueitor.core.models import Game
-from puntueitor.gui3d.fonts import ui_font
+from puntueitor.gui3d.fonts import ui_font, ui_font_bold
 from puntueitor.gui3d.game_case import CASE_DEPTH, CASE_HEIGHT, CASE_WIDTH
 
 _ASSETS_DIR = Path(__file__).parent / "assets" / "labels"
@@ -64,15 +64,17 @@ _LABEL_ICON_Y = -CASE_DEPTH / 2 - 0.007
 _LABEL_TEXT_Y = -CASE_DEPTH / 2 - 0.009
 
 _SCORE_TEXT_SCALE = 0.032
-_DURATION_TEXT_SCALE = 0.032
+_DURATION_TEXT_SCALE = 0.042
 _LABEL_TEXT_COLOR = (0.05, 0.05, 0.05, 1)
 
-# Centro de la cara "en blanco" de cada icono donde pintar el número, en
-# fracción del tamaño del icono desde su propio centro (0,0 = centro exacto).
-# El reloj no está perfectamente centrado en el lienzo de 512x512 (la esfera
-# clara queda un poco por debajo del centro geométrico) — medido a ojo sobre
-# el PNG, no hay forma de calcularlo del contorno.
-_SCORE_TEXT_OFFSET = (0.0, 0.0)
+# Dónde cae el número dentro de su icono, respecto al centro del icono.
+# Ninguno de los dos va centrado del todo: la estrella tiene las dos puntas
+# de abajo, así que su zona ancha está por encima del centro geométrico y el
+# número pide bajar un poco para verse ópticamente centrado; el reloj tiene
+# la esfera clara ligeramente descentrada en su lienzo de 512x512. Ajustado
+# sobre el render, que es lo único que vale aquí — el centro geométrico del
+# PNG no es el centro visual de un icono con esa forma.
+_SCORE_TEXT_OFFSET = (0.0, -0.012)
 _DURATION_TEXT_OFFSET = (0.0, -0.008)
 
 _texture_cache: dict[str, Texture] = {}
@@ -105,15 +107,28 @@ def _build_icon(parent: NodePath, name: str, size: float, x: float, z: float) ->
     return node
 
 
+# Cuánto se encoge el número cuando tiene tres cifras. El icono es redondo
+# y el hueco útil no da para tres dígitos al tamaño de dos: en la biblioteca
+# real hay 7 juegos que pasan de 100 horas (el más largo, 169) y la
+# puntuación puede llegar a 100. Encogiendo solo esos casos, el número se ve
+# grande en el 99% de las cajas sin que el 1% restante se salga del icono.
+_THREE_DIGIT_SCALE = 0.75
+
+
 def _build_number(
     parent: NodePath, name: str, text: str, scale: float,
     x: float, z: float, offset: tuple[float, float],
 ) -> None:
+    if len(text) >= 3:
+        scale *= _THREE_DIGIT_SCALE
+
     node = TextNode(f"label-text-{name}")
     node.set_text(text)
     node.set_align(TextNode.A_center)
     node.set_text_color(*_LABEL_TEXT_COLOR)
-    font = ui_font()
+    # Negrita: el número tiene que leerse sobre un icono de color y a
+    # tamaño pequeño, donde el trazo fino de Hussar Print se pierde.
+    font = ui_font_bold(_LABEL_TEXT_COLOR) or ui_font()
     if font is not None:
         node.set_font(font)
     label_np = parent.attach_new_node(node)

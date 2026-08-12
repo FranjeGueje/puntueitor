@@ -13,9 +13,24 @@ nada con el resto del estilo "caja de videojuego".
 """
 from pathlib import Path
 
-from panda3d.core import DynamicTextFont, FontPool, TextProperties, TextPropertiesManager
+from panda3d.core import (
+    DynamicTextFont,
+    Filename,
+    FontPool,
+    TextProperties,
+    TextPropertiesManager,
+)
 
 _FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "HussarPrintA.otf"
+
+# Grosor del contorno con el que se simula la negrita (ver `ui_font_bold`),
+# en unidades de la propia fuente. Hussar Print viene en un solo grosor y
+# Panda3D no tiene negrita sintética, así que se engorda el glifo con un
+# contorno de su mismo color. `feather=0` para que el borde salga duro; con
+# feather el contorno se difumina y el número se ve borroso en vez de más
+# gordo.
+_BOLD_OUTLINE_WIDTH = 0.8
+_BOLD_OUTLINE_FEATHER = 0.0
 
 #: Nombre registrado en `TextPropertiesManager` para el superíndice (usado
 #: por la marca "[1]" de la puntuación SteamDB en `ficha.py`). Vive aquí,
@@ -24,6 +39,7 @@ _FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "HussarPrintA.otf"
 SUPERSCRIPT_PROPERTY = "sup"
 
 _cached_font: DynamicTextFont | None = None
+_cached_bold_font: DynamicTextFont | None = None
 
 
 def ui_font() -> DynamicTextFont | None:
@@ -64,3 +80,36 @@ def ui_font() -> DynamicTextFont | None:
         )
 
     return _cached_font
+
+
+def ui_font_bold(color: tuple[float, float, float, float]) -> DynamicTextFont | None:
+    """
+    Variante "negrita" de la fuente, para los números de las etiquetas.
+
+    Hussar Print se distribuye en un solo grosor y Panda3D no genera
+    negrita sintética, así que se engorda el glifo dándole un contorno de
+    su MISMO color: el resultado es un trazo más grueso, no un borde
+    visible. De ahí que haga falta el color como argumento — un contorno
+    de otro color se vería como un perfilado, no como negrita.
+
+    Es una instancia de fuente SEPARADA, cargada con `DynamicTextFont`
+    directamente en vez de con `FontPool.load_font`: el pool cachea por
+    ruta y devuelve el mismo objeto para el mismo fichero (comprobado), así
+    que ponerle el contorno a la fuente del pool se lo pondría también al
+    título, la ficha y el banner, que comparten esa instancia. El contorno
+    es una propiedad de la FUENTE, no del `TextNode`, y por eso no se puede
+    aplicar solo a un texto concreto sin duplicar la fuente.
+    """
+    global _cached_bold_font
+    if _cached_bold_font is None:
+        font = DynamicTextFont(Filename.from_os_specific(str(_FONT_PATH)))
+        if not font.is_valid():
+            import logging
+            logging.getLogger(__name__).warning(
+                f"gui3d: no se pudo cargar la fuente negrita en {_FONT_PATH}"
+            )
+            return None
+        font.set_outline(color, _BOLD_OUTLINE_WIDTH, _BOLD_OUTLINE_FEATHER)
+        _cached_bold_font = font
+
+    return _cached_bold_font
