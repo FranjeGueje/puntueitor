@@ -1,7 +1,6 @@
 import os
 import threading
 import logging
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 from textual.app import App, ComposeResult
@@ -107,21 +106,15 @@ class PuntueitorApp(App):
         except Exception as e:
             self.call_from_thread(self.notify, f"Error cargando librería: {e}", severity="error")
 
-    def _get_filter_state_path(self) -> Path:
-        return Path.home() / ".config" / "puntueitor" / "filter_state.json"
-
     def _save_filter_state(self) -> None:
         if self._is_restoring:
             return
-        import json
-        path = self._get_filter_state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(self._filter_state, f)
+        from puntueitor.core.config import write_json_atomic
+        write_json_atomic(paths.tui_state_file(), self._filter_state)
 
     def _load_filter_state(self) -> dict:
         import json
-        path = self._get_filter_state_path()
+        path = paths.tui_state_file()
         if not path.exists():
             return {}
         try:
@@ -152,7 +145,7 @@ class PuntueitorApp(App):
 
     def _clear_filter_state(self) -> None:
         self._filter_state = {}
-        path = self._get_filter_state_path()
+        path = paths.tui_state_file()
         try:
             path.unlink(missing_ok=True)
         except OSError:
@@ -900,6 +893,13 @@ class PuntueitorApp(App):
         bar.progress = current
 
 if __name__ == "__main__":
+    # Lo PRIMERO, y en particular ANTES de configurar el logging: éste crea
+    # el fichero de log en la ruta nueva (`filemode="w"`), y entonces la
+    # migración lo vería ocupado y dejaría el log antiguo sin traer. Lo
+    # mismo valdría para cualquier base de datos. Ver
+    # `paths.migrate_legacy_paths`.
+    paths.migrate_legacy_paths()
+
     log_path = paths.log_file()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(

@@ -126,14 +126,14 @@ from puntueitor.gui3d.fonts import (
     icon_markup,
     ui_font,
 )
+from puntueitor.core import paths
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS, ConfigManager
 from puntueitor.core.models import Library
 from puntueitor.core.services.library_service import LibraryService
-from puntueitor.gui3d import menus, scoring_config, scoring_info
+from puntueitor.gui3d import menus, scoring_config, scoring_info, state
 from puntueitor.gui3d.filters import (
     TRISTATE_LABELS,
-    Filters,
     cycle_tristate,
     parse_duration,
 )
@@ -379,7 +379,9 @@ class App(ShowBase):
         self._show_hidden = False
         self._sort_criterion = sorting.CRITERIA[sorting.DEFAULT_CRITERION]
         self._groups: list = []
-        self.filters = Filters()
+        # Recuperados de gui3d.json si había algo guardado de la sesión
+        # anterior; `Filters()` (todo sin filtrar) si no.
+        self.filters = state.load_filters()
         self._apply_order()
 
         # Carátulas que aún no están en disco: se descargan en segundo plano
@@ -1394,6 +1396,7 @@ class App(ShowBase):
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
+        state.save_filters(self.filters)
         self.notifier.show(
             f"{self.carousel.visible_count} juegos"
             if self.filters.any_active else "Sin filtros"
@@ -1404,6 +1407,7 @@ class App(ShowBase):
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
+        state.save_filters(self.filters)
         self.notifier.show("Filtros limpiados")
 
     def _apply_sort(self, sort_key: str) -> None:
@@ -2060,6 +2064,12 @@ class App(ShowBase):
 
 
 def main() -> None:
+    # Lo PRIMERO, antes de que nada abra una base de datos: si un cacher
+    # creara antes el fichero destino, la migración lo vería ocupado y
+    # dejaría los datos del usuario huérfanos en la ruta antigua. Ver
+    # `paths.migrate_legacy_paths`.
+    paths.migrate_legacy_paths()
+
     resolution = parse_args(sys.argv[1:])
     if resolution is not None:
         width, height = resolution

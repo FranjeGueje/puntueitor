@@ -45,6 +45,14 @@ versión de este módulo las tenía como constantes, los tests de configuración
 seguían parcheando `Path.home` creyendo que estaban aislados, y al pasar la
 suite sobrescribieron el config.json real del usuario y le borraron las
 claves de API.
+
+Por la misma razón, IMPORTAR ESTE MÓDULO NO TOCA EL DISCO. Ni crea
+directorios ni mueve nada: la migración de rutas antiguas
+(`migrate_legacy_paths`) hay que pedirla explícitamente desde el punto de
+entrada de cada frontend. Antes se ejecutaba sola al importar, y como
+importar esto lo hace medio proyecto, bastaba con arrancar `pytest` para que
+se movieran ficheros del `$HOME` real antes de que ningún aislamiento
+pudiera actuar.
 """
 import logging
 import os
@@ -117,6 +125,34 @@ def log_file() -> Path:
     return state_dir() / "puntueitor.log"
 
 
+def tui_state_file() -> Path:
+    """
+    Estado de la TUI recordado entre sesiones (hoy, solo los filtros de
+    biblioteca; pensado para acoger cualquier otro ajuste de la TUI más
+    adelante sin cambiar de fichero).
+
+    En `STATE_DIR`, no en `CONFIG_DIR`: es estado que conviene que sobreviva
+    a reinicios, pero no un ajuste que el usuario vaya a editar a mano ni le
+    vaya a preocupar respaldar — la misma categoría que `log_file()`.
+
+    Se llamó `filter_state.json` hasta que gui3d empezó a necesitar su
+    propio fichero de estado (`gui3d_state_file()`): un nombre genérico deja
+    claro de un vistazo a qué frontend pertenece cada uno.
+    """
+    return state_dir() / "tui.json"
+
+
+def gui3d_state_file() -> Path:
+    """
+    Estado del frontend 3D recordado entre sesiones (filtros del carrusel
+    hoy; sitio para más ajustes de gui3d más adelante). Hermano de
+    `tui_state_file()`, uno por frontend — no comparten fichero porque sus
+    modelos de filtrado son distintos (acumulativo por nombre en la TUI,
+    tri-estado evaluado contra la biblioteca completa en gui3d).
+    """
+    return state_dir() / "gui3d.json"
+
+
 def _legacy_moves() -> tuple[tuple[Path, Path], ...]:
     """(origen, destino) de la reorganización de directorios."""
     home = Path.home()
@@ -124,6 +160,7 @@ def _legacy_moves() -> tuple[tuple[Path, Path], ...]:
         (home / ".cache" / APP_NAME / "puntueitor.db", main_db()),
         (home / ".config" / APP_NAME / "library.sqlite", library_db()),
         (home / ".cache" / APP_NAME / "puntueitor.log", log_file()),
+        (home / ".config" / APP_NAME / "filter_state.json", tui_state_file()),
     )
 
 # SQLite en modo WAL (ver `base_cacher`) deja dos ficheros satélite junto al
@@ -152,13 +189,25 @@ def migrate_legacy_paths() -> None:
     """
     Traslada los ficheros que estaban en la ubicación antigua.
 
-    Se ejecuta al importar este módulo, y ese detalle es justo lo que la
-    hace segura: cualquier código que vaya a abrir una base de datos tiene
-    que pedirle antes la ruta a este módulo. Si se llamara más tarde, un
-    cacher podría haber creado ya una base vacía en el destino, la migración
-    vería el destino ocupado, se saltaría el traslado, y el usuario se
-    encontraría la biblioteca a cero con sus datos intactos pero huérfanos
-    en la ruta vieja.
+    HAY QUE LLAMARLA A MANO, y como PRIMERA sentencia del punto de entrada
+    de cada frontend (`gui/app.py` y `gui3d/app.py`, que son además los dos
+    que empaqueta PyInstaller). Dos condiciones que cumplir al hacerlo:
+
+    1. Antes de que nada abra una base de datos o un log. Si un cacher creara
+       primero el fichero destino, `_move` lo vería ocupado, se saltaría el
+       traslado, y el usuario se encontraría la biblioteca a cero con sus
+       datos intactos pero huérfanos en la ruta vieja.
+    2. Antes de configurar el logging, por lo mismo: `logging.basicConfig`
+       con `filemode="w"` crea el log en el destino y dejaría el antiguo sin
+       migrar.
+
+    Durante mucho tiempo se llamaba sola al importar este módulo, que
+    garantizaba (1) y (2) gratis. Se quitó porque el precio era inaceptable:
+    importar `puntueitor.core.paths` —cosa que hace casi todo el proyecto,
+    incluido `conftest.py` a través de `ConfigManager`— MOVÍA ficheros del
+    `$HOME` real. En la suite de tests eso ocurría antes de que el fixture de
+    aislamiento pudiera actuar, así que cada `pytest` manoseaba los ficheros
+    reales del usuario. Un módulo que se importa no debe tocar el disco.
 
     Nunca borra nada ni sobrescribe: si el destino ya existe, no toca el
     origen. Y cualquier fallo se registra sin propagarse — que no se pueda
@@ -170,6 +219,3 @@ def migrate_legacy_paths() -> None:
                 logger.info(f"Migrado {source} -> {destination}")
         except Exception as e:
             logger.warning(f"No se pudo migrar {source} a {destination}: {e}")
-
-
-migrate_legacy_paths()
