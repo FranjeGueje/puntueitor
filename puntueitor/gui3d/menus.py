@@ -22,15 +22,15 @@ from puntueitor.gui3d.menu import MenuItem
 OPTIONS_TITLE = "Opciones"
 OPTIONS_ITEMS = [
     MenuItem("config", "Configuración"),
-    MenuItem("gui3d", "GUI3D"),
+    MenuItem("gui3d", "Puntueitor3D"),
     MenuItem("quit", "Salir"),
 ]
 
 # ──────────────────────────────
-# GUI3D (Opciones -> GUI3D)
+# Puntueitor3D (Opciones -> Puntueitor3D)
 # ──────────────────────────────
 
-GUI3D_TITLE = "GUI3D"
+GUI3D_TITLE = "Puntueitor3D"
 
 #: Cómo se llama de cara al usuario cada valor de `state.SCORE_SOURCES`.
 SCORE_SOURCE_LABELS = {
@@ -44,9 +44,13 @@ YES_NO_LABELS = {True: "Sí", False: "No"}
 
 def build_gui3d_items(prefs) -> list[MenuItem]:
     """
-    Los ajustes propios del frontend 3D, con sus valores actuales.
+    Los ajustes propios del frontend 3D, con los valores EN EDICIÓN.
 
-    Los dos son `kind="cycle"`, el mismo tipo que los filtros de tres
+    `prefs` es la copia que se está editando, no la que está en uso: como en
+    el menú de Configuración y en los formularios de scoring, nada se aplica
+    hasta pulsar "Guardar" (ver `app.App._open_gui3d_menu`).
+
+    Los dos ajustes son `kind="cycle"`, el mismo tipo que los filtros de tres
     estados, así que heredan el cambio con izquierda/derecha sin tocar el
     widget de menú.
     """
@@ -56,9 +60,14 @@ def build_gui3d_items(prefs) -> list[MenuItem]:
             value=SCORE_SOURCE_LABELS.get(prefs.score_source, prefs.score_source),
         ),
         MenuItem(
-            "set3d:save_filters", "Guardar filtros", kind="cycle",
-            value=YES_NO_LABELS[bool(prefs.save_filters)],
+            # No dice "guardar" porque no es eso lo que decide: los filtros
+            # se guardan al aplicarlos, y esto elige si se recuperan en el
+            # siguiente arranque.
+            "set3d:remember_filters", "Cargar filtros al inicio", kind="cycle",
+            value=YES_NO_LABELS[bool(prefs.remember_filters)],
         ),
+        MenuItem("sec3d_end", "", kind="header"),
+        MenuItem("set3d:save", "Guardar"),
     ]
 
 # ──────────────────────────────
@@ -241,7 +250,7 @@ def build_settings_items(values: dict) -> list[MenuItem]:
 GAME_FLAGS = (
     ("finished", "Terminado"),
     ("hidden", "Oculto"),
-    ("backlog", "Pendiente (Backlog)"),
+    ("backlog", "Pendiente de jugar"),
     ("favorite", "Favorito"),
 )
 

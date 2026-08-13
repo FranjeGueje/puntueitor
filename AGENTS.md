@@ -907,7 +907,7 @@ Consequences worth knowing:
   closes (`_hidden_filter_dirty`). Applying it immediately yanks the box out from
   under the open menu and shifts the selection while you're still editing it.
 
-## GUI3D menu (Opciones → GUI3D) y `gui3d.json`
+## Puntueitor3D menu (Opciones → Puntueitor3D) y `gui3d.json`
 
 Dos ajustes propios del frontend 3D, en `state.Preferences`, persistidos en
 `gui3d.json` bajo la clave `"preferences"` (los filtros van bajo `"filters"`;
@@ -919,17 +919,23 @@ Dos ajustes propios del frontend 3D, en `state.Preferences`, persistidos en
   guarda el nombre del campo, para que renombrarlo en el modelo no invalide
   los ficheros ya escritos. `load_preferences` valida contra `SCORE_SOURCES`
   porque el fichero es editable a mano.
-- **Guardar filtros** — en `No` los filtros **no se borran**, solo se dejan de
-  leer al arrancar y de escribir. Reactivarlo recupera los de la última vez.
+- **Cargar filtros al inicio** (`Preferences.remember_filters`) — en `No` los
+  filtros **no se borran**, solo se dejan de leer al arrancar y de escribir.
+  Reactivarlo recupera los de la última vez. El rótulo nombra la mitad que se
+  nota; el campo nombra las dos, porque gobierna también `_persist_filters`.
 
-Cambiar la puntuación obliga a repintar **todas** las cajas
-(`Carousel.set_score_source`), no solo las visibles: una caja fuera del radio
-acabará entrando al navegar y se vería con la nota anterior — el mismo motivo
-que documenta `set_labels_visible`.
+Como el menú de Configuración, se edita sobre una **copia**
+(`_gui3d_prefs = dataclasses.replace(self.prefs)`) y solo se aplica al pulsar
+"Guardar", así que salir con B descarta. Antes se guardaba en el acto y era el
+único menú que se comportaba así.
 
-Estos dos se guardan **en el acto** al cambiarlos, sin "Guardar": son
-interruptores sueltos, no un formulario que haya que cuadrar antes de aplicar
-(al revés que los pesos de scoring, que deben sumar 100).
+El repintado de las cajas va en el Guardar, no al cambiar el valor:
+`Carousel.set_score_source` recorre **todas** las cajas, no solo las visibles
+—una caja fuera del radio acabará entrando al navegar y se vería con la nota
+anterior, el mismo motivo que documenta `set_labels_visible`— y hasta el
+Guardar la copia es solo intención, no hay nada que pintar. Además
+`set_score_source` corta en seco si la nota no ha cambiado, así que guardar sin
+haber tocado esa opción no cuesta el recorrido.
 
 Al probar gui3d, **aislar con `HOME`, no enumerando variables `XDG_*`**. Ya
 pasó: un lote de pruebas sandboxeó `XDG_DATA_HOME`/`CONFIG`/`CACHE` pero se

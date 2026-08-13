@@ -13,6 +13,7 @@ Ejecutar con:
     python -m puntueitor.gui3d.app --fhd
 """
 import argparse
+import dataclasses
 import logging
 import re
 import sys
@@ -386,10 +387,10 @@ class App(ShowBase):
         self._sort_criterion = sorting.CRITERIA[sorting.DEFAULT_CRITERION]
         self._groups: list = []
         # Recuperados de gui3d.json, salvo que se haya pedido no hacerlo en
-        # Opciones -> GUI3D. Lo guardado NO se borra al desactivarlo: sigue
+        # Opciones -> Puntueitor3D. Lo guardado NO se borra al desactivarlo: sigue
         # ahí y vuelve si se reactiva.
         self.filters = (
-            state.load_filters() if self.prefs.save_filters else Filters()
+            state.load_filters() if self.prefs.remember_filters else Filters()
         )
         self._apply_order()
 
@@ -1308,6 +1309,8 @@ class App(ShowBase):
             self._clear_filters()
         elif key.startswith("cfg:"):
             self._activate_config(key)
+        elif key == "set3d:save":
+            self._save_gui3d_settings()
         elif key.startswith("set:"):
             self._activate_setting(key)
         elif menu is self.scoring_menu:
@@ -1539,47 +1542,66 @@ class App(ShowBase):
         """
         Guarda los filtros, si el usuario quiere que se recuerden.
 
-        Con "Guardar filtros" en No NO se borra lo que ya hubiera guardado,
-        solo se deja de escribir: así, al volver a activarlo, se recuperan
-        los de la última vez en lugar de empezar de cero.
+        Con "Cargar filtros al inicio" en No NO se borra lo que ya hubiera
+        guardado, solo se deja de escribir: así, al volver a activarlo, se
+        recuperan los de la última vez en lugar de empezar de cero.
         """
-        if self.prefs.save_filters:
+        if self.prefs.remember_filters:
             state.save_filters(self.filters)
 
     def _open_gui3d_menu(self) -> None:
-        """"GUI3D" dentro de Opciones: los ajustes propios del carrusel."""
-        self.gui3d_menu.set_items(menus.build_gui3d_items(self.prefs))
+        """
+        "Puntueitor3D" dentro de Opciones: los ajustes propios del carrusel.
+
+        Se edita sobre una COPIA y solo se aplica al dar a "Guardar", igual
+        que el menú de Configuración y los formularios de scoring. Así salir
+        con B descarta, que es lo que espera quien ya conoce el resto de
+        menús — antes estos dos ajustes se aplicaban al instante y eran la
+        excepción.
+        """
+        self._gui3d_prefs = dataclasses.replace(self.prefs)
+        self.gui3d_menu.set_items(menus.build_gui3d_items(self._gui3d_prefs))
         self._push_menu(self.gui3d_menu)
 
     def _adjust_gui3d_setting(self, item, direction: int) -> None:
-        """
-        Rota el ajuste enfocado con izquierda/derecha.
-
-        A diferencia de los formularios de scoring y de configuración, aquí
-        se guarda EN EL ACTO: son dos interruptores sueltos, no un formulario
-        que haya que cuadrar antes de aplicar, así que un "Guardar" aparte
-        sería un paso de más.
-        """
+        """Rota el ajuste enfocado, SOLO en la copia en edición."""
         if item.key == "set3d:score_source":
             fuentes = state.SCORE_SOURCES
-            actual = fuentes.index(self.prefs.score_source)
-            self.prefs.score_source = fuentes[(actual + direction) % len(fuentes)]
-            # Repinta las cajas para que el cambio se vea sin salir del menú.
-            self.carousel.set_score_source(
-                self.prefs.score_source, self._labels_visible,
+            actual = fuentes.index(self._gui3d_prefs.score_source)
+            self._gui3d_prefs.score_source = fuentes[
+                (actual + direction) % len(fuentes)
+            ]
+        elif item.key == "set3d:remember_filters":
+            self._gui3d_prefs.remember_filters = (
+                not self._gui3d_prefs.remember_filters
             )
-        elif item.key == "set3d:save_filters":
-            self.prefs.save_filters = not self.prefs.save_filters
         else:
             return
 
-        state.save_preferences(self.prefs)
         self._refresh_gui3d_menu()
+
+    def _save_gui3d_settings(self) -> None:
+        """
+        Aplica los ajustes editados: los guarda y repinta las cajas.
+
+        El repintado va aquí y no al cambiar el valor porque hasta ahora no
+        había nada que aplicar: la copia era solo intención. `set_score_source`
+        no hace nada si la nota no ha cambiado, así que guardar sin haber
+        tocado esa opción no cuesta recorrer las cajas.
+        """
+        self.prefs = self._gui3d_prefs
+        state.save_preferences(self.prefs)
+        self.carousel.set_score_source(
+            self.prefs.score_source, self._labels_visible,
+        )
+        self.notifier.show("Configuración guardada")
+        logger.info(f"gui3d: ajustes guardados: {self.prefs}")
+        self._pop_menu()
 
     def _refresh_gui3d_menu(self) -> None:
         """Repinta los valores sin rehacer el menú, para no perder el foco."""
         nuevos = {
-            item.key: item for item in menus.build_gui3d_items(self.prefs)
+            item.key: item for item in menus.build_gui3d_items(self._gui3d_prefs)
         }
         for item in self.gui3d_menu.items:
             nuevo = nuevos.get(item.key)

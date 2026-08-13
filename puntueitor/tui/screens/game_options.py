@@ -24,7 +24,7 @@ class GameOptionsScreen(ModalScreen[dict | None]):
                     yield Label(f"Opciones de: {self.game.title}", id="game-options-title")
                     yield Checkbox("Terminado", value=self.game.finished, id="cb-finished")
                     yield Checkbox("Oculto", value=self.game.hidden, id="cb-hidden")
-                    yield Checkbox("Pendiente (Backlog)", value=self.game.backlog, id="cb-backlog")
+                    yield Checkbox("Pendiente de jugar", value=self.game.backlog, id="cb-backlog")
                     yield Checkbox("Favorito", value=self.game.favorite, id="cb-favorite")
                     with Horizontal(id="game-options-buttons"):
                         yield Button("Guardar", variant="primary", id="save")

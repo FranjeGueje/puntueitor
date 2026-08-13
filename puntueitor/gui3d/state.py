@@ -30,7 +30,7 @@ _FILTERS_KEY = "filters"
 _PREFERENCES_KEY = "preferences"
 
 #: Qué nota se pinta dentro de la estrella de cada caja, y el orden en que
-#: rota al pulsar izquierda/derecha en el menú GUI3D. Cada valor es la mitad
+#: rota al pulsar izquierda/derecha en el menú Puntueitor3D. Cada valor es la mitad
 #: de un nombre de campo de `Game`: "user" -> `user_score` (ver
 #: `case_labels.score_field`).
 SCORE_SOURCES = ("steamdb", "user", "critic")
@@ -45,10 +45,15 @@ class Preferences:
     #: Cuál de las tres notas se enseña en la pegatina de la caja.
     score_source: str = DEFAULT_SCORE_SOURCE
 
-    #: Si los filtros del carrusel se recuperan al arrancar. En False no se
-    #: BORRA lo guardado, solo se deja de leer y de escribir: volver a
-    #: activarlo recupera los filtros de la última vez.
-    save_filters: bool = True
+    #: Si los filtros del carrusel se recuerdan de una sesión a otra. En
+    #: False no se BORRA lo guardado, solo se deja de leer al arrancar y de
+    #: escribir al aplicar: volver a activarlo recupera los filtros de la
+    #: última vez.
+    #:
+    #: En el menú se llama "Cargar filtros al inicio", que es la mitad que
+    #: se nota; aquí el nombre recoge las dos, porque gobierna también si se
+    #: sobrescribe lo guardado (ver `app.App._persist_filters`).
+    remember_filters: bool = True
 
 
 def _read() -> dict:

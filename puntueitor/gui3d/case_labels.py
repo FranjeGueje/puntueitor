@@ -184,7 +184,7 @@ def build_case_labels(
     incompletos, aunque en la práctica ambos rellenan `game` siempre.
 
     `score_source` elige cuál de las tres notas se pinta en la estrella (ver
-    el menú GUI3D en Opciones).
+    el menú Puntueitor3D en Opciones).
     """
     if game is None:
         return None
@@ -216,7 +216,7 @@ def build_case_labels(
         _build_icon(root, "backlog", TOP_LABEL_SIZE, top_x, top_z)
 
     # Cuál de las tres notas se enseña lo decide el usuario en Opciones ->
-    # GUI3D. Un juego que no tenga LA ELEGIDA se queda sin pegatina, igual
+    # Puntueitor3D. Un juego que no tenga LA ELEGIDA se queda sin pegatina, igual
     # que hasta ahora si le faltaba la de SteamDB: la alternativa (caer a
     # otra nota) pintaría números que no son el criterio que se pidió ver, y
     # no habría forma de saber cuál estás mirando en cada caja.
