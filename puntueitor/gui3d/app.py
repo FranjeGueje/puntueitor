@@ -98,6 +98,7 @@ def parse_args(argv: list[str] | None = None) -> tuple[int, int] | None:
 from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
+from puntueitor.gui3d.enrichment import EnrichWorker
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
 from puntueitor.gui3d.fonts import (
     ICON_GAMEPAD_L1,
@@ -128,9 +129,13 @@ from puntueitor.gui3d.fonts import (
     ui_font,
 )
 from puntueitor.core import paths
-from puntueitor.core.repository.library_repository import LibraryRepository
+from puntueitor.core.repository.library_repository import (
+    EXTRA_FIELDS,
+    LibraryRepository,
+)
 from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS, ConfigManager
 from puntueitor.core.models import Library
+from puntueitor.core.services.game_actions import forget_game
 from puntueitor.core.services.library_service import LibraryService
 from puntueitor.gui3d import menus, scoring_config, scoring_info, state
 from puntueitor.gui3d.filters import (
@@ -404,6 +409,9 @@ class App(ShowBase):
         self._pending_covers = {
             key: (igdb_id, cover_url) for key, igdb_id, cover_url in pending_downloads
         }
+        # Enriquecer un juego va a la red y tarda varios segundos, así que
+        # también se hace en su propio hilo y se recoge en `_update`.
+        self.enrich_worker = EnrichWorker(self.library_repository)
 
         self._setup_hud()
 
@@ -426,6 +434,9 @@ class App(ShowBase):
         self._game_menu_entry = None
         # Se marca al cambiar "Oculto" y se resuelve al cerrar ese menú.
         self._hidden_filter_dirty = False
+        # Qué se ejecuta si se contesta "Sí" en `confirm_menu`. None = no
+        # hay ninguna confirmación en curso (ver `_ask_confirm`).
+        self._confirm_action = None
         # Sistema de scoring que se está configurando y sus valores en
         # edición (ver `_open_scoring_config`).
         self._config_scorer = None
@@ -1026,6 +1037,10 @@ class App(ShowBase):
         self.gui3d_menu = Menu(
             self.aspect2d, menus.GUI3D_TITLE, [], hint=_value_menu_hint(),
         )
+        # Uno solo para todas las preguntas de sí/no sobre el juego: título
+        # e items se rehacen en cada apertura (ver `_ask_confirm`). El de
+        # salir se queda aparte porque es fijo y no va sobre ningún juego.
+        self.confirm_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
 
         #: Todos los menús, para lo que haya que aplicarles a todos (de
         #: momento el color de acento). Añadir uno nuevo aquí y no en cada
@@ -1033,7 +1048,7 @@ class App(ShowBase):
         self._menus = (
             self.options_menu, self.quit_menu, self.scoring_menu,
             self.scoring_config_menu, self.filter_menu, self.game_menu,
-            self.settings_menu, self.gui3d_menu,
+            self.settings_menu, self.gui3d_menu, self.confirm_menu,
         )
 
     @property
@@ -1076,6 +1091,12 @@ class App(ShowBase):
             return
         closed = self._menu_stack.pop()
         closed.close()
+
+        # Salir de una confirmación con B no pasa por `_activate`, así que
+        # el "qué hacer si dice que sí" se olvida aquí; si no, se quedaría
+        # vivo reteniendo un juego que ya no interesa a nadie.
+        if closed is self.confirm_menu:
+            self._confirm_action = None
 
         # Si en el menú del juego se ha tocado "Oculto", el filtro se aplica
         # ahora, con el menú ya cerrado (ver `_on_game_flag_toggled`).
@@ -1309,6 +1330,15 @@ class App(ShowBase):
             self._clear_filters()
         elif key.startswith("cfg:"):
             self._activate_config(key)
+        elif key == menus.ENRICH_KEY:
+            self._confirm_enrich()
+        elif key == menus.FORGET_KEY:
+            self._confirm_forget()
+        elif key == menus.CONFIRM_NO_KEY:
+            self._confirm_action = None
+            self._pop_menu()
+        elif key == menus.CONFIRM_YES_KEY:
+            self._run_confirmed_action()
         elif key == "set3d:save":
             self._save_gui3d_settings()
         elif key.startswith("set:"):
@@ -1952,6 +1982,119 @@ class App(ShowBase):
             # estás editando. Se apunta y se aplica al cerrar el menú.
             self._hidden_filter_dirty = True
 
+    # ── Acciones avanzadas del menú de juego ──
+
+    def _ask_confirm(self, title, question_lines, yes_label, on_yes) -> None:
+        """
+        Abre una pregunta de sí/no encima del menú actual.
+
+        Se recuerda QUÉ hacer, no sobre qué: cada acción se guarda ya atada a
+        su juego (con un `lambda`), así que la confirmación no tiene que
+        saber nada de lo que va a ejecutar y sirve igual para lo siguiente
+        que haga falta preguntar.
+        """
+        self._confirm_action = on_yes
+        self.confirm_menu.set_title(title)
+        self.confirm_menu.set_items(
+            menus.build_confirm_items(question_lines, yes_label)
+        )
+        self._push_menu(self.confirm_menu)
+
+    def _run_confirmed_action(self) -> None:
+        """Se ha dicho que sí: cerrar los menús y ejecutar lo pendiente."""
+        action = self._confirm_action
+        # Se olvida ANTES de ejecutar, no después: es lo que impide que una
+        # segunda pulsación repita la acción.
+        self._confirm_action = None
+        # Y se cierra todo antes de actuar: las dos acciones avisan por el
+        # notificador y cambian el carrusel, y dejar menús abiertos encima
+        # taparía justo el resultado que se acaba de pedir ver.
+        self._close_all_menus()
+        if action is not None:
+            action()
+
+    def _confirm_enrich(self) -> None:
+        entry = self._game_menu_entry
+        if entry is None or entry.game is None:
+            return
+        self._ask_confirm(
+            entry.title, menus.ENRICH_QUESTION, menus.ENRICH_YES,
+            lambda e=entry: self._start_enrich(e),
+        )
+
+    def _start_enrich(self, entry) -> None:
+        """Encola el enriquecido de un juego y avisa de que ha empezado."""
+        if not self.enrich_worker.request(entry.key, entry.game):
+            self.notifier.show(f"Ya se está enriqueciendo {entry.title}")
+            return
+        self.notifier.show(f"Enriqueciendo {entry.title}...")
+
+    def _on_enrich_done(self, key, result) -> None:
+        """
+        Aplica lo que ha traído el hilo de enriquecido, en el hilo principal.
+
+        La entrada se busca por `key` en vez de guardarse desde el principio:
+        entre que se pidió y llegó el resultado el juego puede haber
+        desaparecido del carrusel (desconocido, sin ir más lejos).
+        """
+        entry = next((e for e in self.entries if e.key == key), None)
+        if entry is None or entry.game is None:
+            return
+
+        if not result.ok:
+            self.notifier.show(f"Error enriqueciendo: {result.error}")
+            return
+        if not result.found:
+            self.notifier.show(f"Sin datos para {entry.title}")
+            return
+
+        # Los datos se copian ENCIMA del juego que ya está en la entrada, en
+        # vez de sustituir la entrada por otra con el juego nuevo:
+        # `CarouselEntry` es inmutable y el carrusel guarda sus propias
+        # referencias, así que cambiarla dejaría a `carousel.selected.game`
+        # y a `self.entries` enseñando datos distintos. `Game` sí es mutable
+        # y es lo que ya hace `_on_game_flag_toggled` con las casillas.
+        for field in EXTRA_FIELDS:
+            setattr(entry.game, field, getattr(result.game, field))
+
+        # La caja enseña la nota y la duración, así que hay que repintarla.
+        self.carousel.rebuild_labels(entry.key, entry.game, self._labels_visible)
+        if self.carousel.selected.key == key:
+            self._refresh_selection_text()
+        self.notifier.show(f"Enriquecido: {entry.title}")
+
+    def _forget_game(self, entry) -> None:
+        """
+        Saca el juego de la biblioteca y del carrusel.
+
+        No se destruye su caja: basta con dejar de listarlo, porque
+        `Carousel.set_order` esconde todo lo que no esté en el orden. Y sin
+        `reset_selection` la selección se queda en el juego siguiente al que
+        acaba de irse, en vez de saltar al principio de la biblioteca.
+        """
+        forget_game(self.library_repository, entry.game)
+        self.entries = [e for e in self.entries if e.key != entry.key]
+
+        if not self._visible_entries():
+            # `set_order` ignora un orden vacío (dejaría el carrusel sin
+            # nada que enseñar), así que la caja del juego recién borrado se
+            # quedaría delante como si no hubiera pasado nada.
+            self.notifier.show(f"Desconocido: {entry.title} (reinicia para verlo)")
+            return
+
+        self._apply_order()
+        self._on_selection_changed()
+        self.notifier.show(f"Desconocido: {entry.title}")
+
+    def _confirm_forget(self) -> None:
+        entry = self._game_menu_entry
+        if entry is None or entry.game is None:
+            return
+        self._ask_confirm(
+            entry.title, menus.FORGET_QUESTION, menus.FORGET_YES,
+            lambda e=entry: self._forget_game(e),
+        )
+
     def _on_back(self) -> None:
         """
         El botón B: vuelve al menú anterior.
@@ -2127,6 +2270,9 @@ class App(ShowBase):
         for key, path in self.cover_loader.poll():
             self._on_cover_ready(key, path)
 
+        for key, result in self.enrich_worker.poll():
+            self._on_enrich_done(key, result)
+
         self._backfill_covers()
         self._update_background(dt)
         return task.cont
@@ -2153,6 +2299,7 @@ class App(ShowBase):
         self._shutting_down = True
         self.task_mgr.remove("carousel-update")
         self.cover_loader.shutdown()
+        self.enrich_worker.shutdown()
         self.gamepad.destroy()
         super().destroy()
 

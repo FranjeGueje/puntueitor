@@ -12,7 +12,10 @@ from puntueitor.core.models import Game, Library
 
 logger = logging.getLogger(__name__)
 
-_EXTRA_FIELDS = (
+#: Los campos de `Game` que NO son canónicos y viven en la tabla de extras.
+#: Público porque también son los que puede traer un enriquecido, y quien
+#: aplica su resultado necesita saber cuáles copiar (`gui3d.app`).
+EXTRA_FIELDS = (
     "duration_hours", "steam_review", "steamdb_score", "review_pos", "review_neg",
 )
 _STATUS_FIELDS = ("finished", "hidden", "backlog", "favorite")
@@ -54,7 +57,7 @@ class LibraryRepository:
     @staticmethod
     def _extras_row(game: Game) -> tuple | None:
         """Fila de extras del juego, o None si no hay nada que guardar."""
-        values = tuple(getattr(game, field) for field in _EXTRA_FIELDS)
+        values = tuple(getattr(game, field) for field in EXTRA_FIELDS)
         if all(value is None for value in values):
             return None
         return (game.igdb_id, *values)
@@ -111,7 +114,7 @@ class LibraryRepository:
             game.stores = dict(stores)
 
             extras = all_extras.get(igdb_id, {})
-            for field in _EXTRA_FIELDS:
+            for field in EXTRA_FIELDS:
                 setattr(game, field, extras.get(field))
 
             status = all_statuses.get(igdb_id, {})

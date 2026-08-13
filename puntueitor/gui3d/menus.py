@@ -254,17 +254,36 @@ GAME_FLAGS = (
     ("favorite", "Favorito"),
 )
 
+#: Las dos acciones de "AVANZADO". Van separadas de las casillas porque no
+#: son un estado que se marca y se desmarca: una tarda (va a la red) y la
+#: otra saca el juego de la biblioteca, así que las dos preguntan antes.
+ENRICH_KEY = "game:enrich"
+FORGET_KEY = "game:forget"
+
+ENRICH_QUESTION = (
+    "¿Seguro que quieres buscar",
+    "información extra para este juego?",
+)
+ENRICH_YES = "Sí, enriquecer"
+
+FORGET_QUESTION = (
+    "¿Seguro que quieres olvidar este juego",
+    "y moverlo a desconocidos?",
+)
+FORGET_YES = "Sí, desconocer"
+
 
 def build_game_items(game: Game) -> list[MenuItem]:
     """
-    Las casillas del menú de un juego, con el estado que tiene ahora.
+    El menú de un juego: sus estados y las acciones avanzadas.
 
-    Se reconstruyen cada vez que se abre el menú en vez de crearlas una vez
-    y actualizarlas: el menú se abre sobre un juego distinto cada vez, y
+    Se reconstruye cada vez que se abre en vez de crearlo una vez y
+    actualizarlo: el menú se abre sobre un juego distinto cada vez, y
     arrastrar las casillas del anterior es justo el fallo que haría marcar
     como terminado al juego equivocado.
     """
-    return [
+    items = [MenuItem("sec_flags", "ESTADOS", kind="header")]
+    items += [
         MenuItem(
             key=f"flag:{field}",
             label=label,
@@ -274,3 +293,50 @@ def build_game_items(game: Game) -> list[MenuItem]:
         )
         for field, label in GAME_FLAGS
     ]
+    items += [
+        MenuItem("sec_advanced", "AVANZADO", kind="header"),
+        MenuItem(ENRICH_KEY, "Enriquecer"),
+        MenuItem(FORGET_KEY, "Desconocer"),
+    ]
+    return items
+
+
+# ──────────────────────────────
+# Confirmación (¿seguro?)
+# ──────────────────────────────
+
+CONFIRM_NO_KEY = "confirm_no"
+CONFIRM_YES_KEY = "confirm_yes"
+
+
+def build_confirm_items(
+    question_lines: tuple[str, ...],
+    yes_label: str,
+    no_label: str = "No, cancelar",
+) -> list[MenuItem]:
+    """
+    Las filas de una confirmación: la pregunta y las dos salidas.
+
+    La pregunta va como rótulos de sección, UNO POR LÍNEA: un rótulo no
+    admite saltos de línea (su alto está fijado en `HEADER_HEIGHT` y dos
+    líneas se solaparían con la fila siguiente).
+
+    Y va aquí y no en el título del menú porque no cabe: el título se dibuja
+    a `TITLE_SCALE`, y una frase entera pide más ancho del que permite
+    `PANEL_MAX_HALF_WIDTH`. El título lleva el nombre del juego, que es lo
+    que hace falta para saber sobre qué se está confirmando.
+
+    El "No" va primero a propósito, como en el menú de salir: `set_items`
+    deja el foco en la primera fila enfocable, así que la opción que viene
+    marcada de serie es la que no hace nada.
+    """
+    items = [
+        MenuItem(f"confirm_q{index}", line, kind="header")
+        for index, line in enumerate(question_lines)
+    ]
+    items += [
+        MenuItem("confirm_sep", "", kind="header"),
+        MenuItem(CONFIRM_NO_KEY, no_label),
+        MenuItem(CONFIRM_YES_KEY, yes_label),
+    ]
+    return items

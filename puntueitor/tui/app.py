@@ -21,6 +21,7 @@ from puntueitor.tui.screens.game_options import GameOptionsScreen
 from puntueitor.tui.screens.unknown_menu import UnknownMenuScreen
 from puntueitor.tui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
+from puntueitor.core.services.game_actions import enrich_game, forget_game
 from puntueitor.core.models import Library, Game
 from puntueitor import __version__
 
@@ -196,26 +197,27 @@ class PuntueitorApp(App):
         self.push_screen(GameOptionsScreen(game), handle_options)
 
     def _enrich_single_game(self, game: Game) -> None:
+        """
+        Busca datos extra para este juego, sin bloquear la interfaz.
+
+        El qué se busca vive en `core.services.game_actions`, compartido con
+        el carrusel 3D; aquí solo queda el hilo y cómo se avisa de cada uno
+        de los tres desenlaces.
+        """
         def worker():
-            try:
-                from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
-                from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-                from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-                hltb_resolver = HLTBResolver()
-                hltb = HLTBEnricher(
-                    client=hltb_resolver,
-                    overwrite=True,
-                    extras_cacher=self.repo.extras_cacher,
+            result = enrich_game(self.repo, game)
+            if not result.ok:
+                self.call_from_thread(
+                    self.notify, f"Error enriqueciendo: {result.error}",
+                    severity="error",
                 )
-                steam = SteamScoreEnricher(overwrite=True, igdb_cacher=self.repo.igdb_cacher)
-                enriched = steam.enrich(hltb.enrich(game))
-                if enriched.duration_hours is not None or enriched.steam_review is not None or enriched.steamdb_score is not None:
-                    self.repo.save_game(enriched)
-                    self.call_from_thread(self._on_single_enriched, enriched)
-                else:
-                    self.call_from_thread(self.notify, f"No se encontraron datos para {game.title}", severity="warning")
-            except Exception as e:
-                self.call_from_thread(self.notify, f"Error enriqueciendo: {e}", severity="error")
+            elif result.found:
+                self.call_from_thread(self._on_single_enriched, result.game)
+            else:
+                self.call_from_thread(
+                    self.notify, f"No se encontraron datos para {game.title}",
+                    severity="warning",
+                )
         self.notify(f"Enriqueciendo {game.title}...")
         t = threading.Thread(target=worker, daemon=True)
         t.start()
@@ -232,11 +234,7 @@ class PuntueitorApp(App):
 
     def _delete_game(self, game: Game) -> None:
         igdb_id = game.igdb_id
-        stores = self.repo.resolvers_cacher.get_stores_for_igdb_id(igdb_id)
-        self.repo.resolvers_cacher.remove_igdb_id(igdb_id)
-        if stores:
-            for store_name, store_id in stores.items():
-                self.repo.unknown_cacher.save_unknown(store_name, game.title, str(store_id))
+        forget_game(self.repo, game)
         self.full_library = Library.from_iterable(
             g for g in self.full_library.games if g.igdb_id != igdb_id
         )

@@ -907,6 +907,73 @@ Consequences worth knowing:
   closes (`_hidden_filter_dirty`). Applying it immediately yanks the box out from
   under the open menu and shifts the selection while you're still editing it.
 
+## Game menu: ESTADOS y AVANZADO (enriquecer / desconocer)
+
+El menú de un juego (A sobre el carrusel) tiene dos secciones: **ESTADOS**, las
+cuatro casillas que se guardan al momento (ver la sección de las dos bases de
+datos), y **AVANZADO**, con dos acciones que **preguntan antes**: una tarda y va
+a la red, la otra saca el juego de la biblioteca.
+
+La lógica de las dos vive en **`core/services/game_actions.py`**, compartida con
+la TUI, que antes la tenía escrita a mano dentro de `tui/app.py`:
+
+- `enrich_game(repo, game) -> EnrichResult`. **Bloquea** (hace red) y **nunca
+  lanza**: devuelve los tres desenlaces —datos / sin datos / error— en el
+  resultado. Son tres y hay que distinguirlos: "no se encontró nada" es normal,
+  un error es un fallo que el usuario querrá ver. Y no lanza porque quien la
+  llama está siempre dentro de un hilo, donde una excepción se pierde sin dejar
+  rastro. Va con `overwrite=True`: se ha pedido a mano sobre ese juego, así que
+  rehace la búsqueda aunque ya hubiera datos o ya se hubiera buscado sin éxito
+  (`extras.hltb_checked`), al revés que el pipeline.
+- `forget_game(repo, game) -> {tienda: id}`. Borra la relación en `resolvers`
+  (la fuente de verdad de qué está en la biblioteca) y apunta cada id de tienda
+  en `unknown_games` para que el siguiente escaneo no lo vuelva a resolver al
+  mismo juego. Hay que LEER las tiendas antes de borrar la relación. La ficha en
+  la caché de IGDB se queda: es una caché global de todo lo consultado y no
+  representa posesión.
+
+En gui3d, enriquecer va por **`gui3d/enrichment.py`** (`EnrichWorker`), calcado
+de `covers.CoverLoader` y por el mismo motivo: hilo propio `daemon=True`, nunca
+`ThreadPoolExecutor`. Un solo hilo (esto se pide a mano, no en ráfagas), colas
+`_pending`/`_done`, y `poll()` drenado desde `_update`. `request()` devuelve
+False si ese juego ya está en vuelo: enriquecer tarda varios segundos sin que el
+carrusel dé señal de estar haciendo nada, y volver a entrar y pulsar otra vez es
+lo natural.
+
+Al aplicar el resultado, `_on_enrich_done` **copia los campos sobre el `Game`
+que ya está en la entrada** (`EXTRA_FIELDS` del repositorio) en vez de sustituir
+la entrada: `CarouselEntry` es `frozen` y el carrusel guarda sus propias
+referencias, así que cambiarla dejaría a `carousel.selected.game` y a
+`self.entries` enseñando datos distintos. Y busca la entrada **por `key`**: entre
+la petición y la respuesta el juego puede haber desaparecido.
+
+Desconocer es síncrono: `forget_game`, quitar la entrada de `self.entries` y
+`_apply_order()`. No se destruye ninguna caja — `set_order` esconde lo que no
+esté en el orden. Caso límite: si era el último visible, `set_order` ignora un
+orden vacío y la caja se quedaría en pantalla, así que se detecta antes y se
+avisa en vez de reordenar.
+
+### El menú de confirmación
+
+`confirm_menu` es **uno solo para todas las preguntas de sí/no**: título e items
+se rehacen en cada apertura (`_ask_confirm`), y lo que se recuerda es el
+callback ya atado a su juego, no el juego. El de salir se queda aparte porque es
+fijo y no va sobre nada.
+
+- La pregunta va en **rótulos de sección, uno por línea** (`build_confirm_items`),
+  no en el título: un rótulo no admite saltos de línea (su alto está fijado en
+  `HEADER_HEIGHT`) y el título se dibuja a `TITLE_SCALE`, donde una frase entera
+  se pasa de `PANEL_MAX_HALF_WIDTH`. El título lleva el nombre del juego.
+- El **"No" va primero**: `set_items` deja el foco en la primera fila enfocable,
+  así que la opción marcada de serie es la que no hace nada. Mismo criterio que
+  `QUIT_ITEMS`.
+- `confirm_yes` olvida el callback **antes** de ejecutarlo (es lo que impide que
+  una segunda pulsación repita la acción) y hace `_close_all_menus()` antes de
+  actuar: las dos acciones avisan por el notificador y cambian el carrusel, y
+  dejar menús encima taparía justo el resultado.
+- Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
+  `_confirm_action` cuando el menú cerrado es `confirm_menu`.
+
 ## Puntueitor3D menu (Opciones → Puntueitor3D) y `gui3d.json`
 
 Dos ajustes propios del frontend 3D, en `state.Preferences`, persistidos en
