@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white" alt="Python 3.14">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/plataforma-linux-lightgrey" alt="Linux">
-  <img src="https://img.shields.io/badge/versión-1.1.0-orange" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/versión-2.0.0-orange" alt="Version 2.0.0">
 </p>
 
 <h1 align="center">🎮 Puntueitor</h1>
@@ -66,8 +66,8 @@
 Descarga la última versión desde [Releases](https://github.com/FranjeGueje/puntueitor/releases):
 
 ```bash
-chmod +x puntueitor-1.1.0-x86_64-linux
-./puntueitor-1.1.0-x86_64-linux
+chmod +x puntueitor-2.0.0-x86_64-linux
+./puntueitor-2.0.0-x86_64-linux
 ```
 
 ### Desde fuente
@@ -78,21 +78,37 @@ cd puntueitor
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m puntueitor.tui.app
 ```
+
+Con el entorno activado, cada interfaz se lanza con su módulo:
+
+```bash
+python -m puntueitor.tui.app      # interfaz de terminal (Textual)
+python -m puntueitor.gui3d.app    # interfaz 3D (Panda3D)
+```
+
+> Los dos comandos necesitan el virtualenv activado (`source
+> .venv/bin/activate`). Lanzarlos con el Python del sistema falla con
+> `ModuleNotFoundError: No module named 'textual'` o `'panda3d'`, porque las
+> dependencias se instalan dentro del entorno.
 
 ### Interfaz 3D
 
-Además de la TUI hay un frontend 3D: un carrusel de cajas de juego con la
-ficha del seleccionado, navegable con teclado o con mando.
+Un carrusel de cajas de juego con la ficha del seleccionado, navegable con
+teclado o con mando. Acepta la resolución de ventana al arrancar:
 
 ```bash
-python -m puntueitor.gui3d.app
+python -m puntueitor.gui3d.app --hd            # 1280x720
+python -m puntueitor.gui3d.app --fhd           # 1920x1080
+python -m puntueitor.gui3d.app --wxga          # 1280x800  (16:10)
+python -m puntueitor.gui3d.app --wuxga         # 1920x1200 (16:10)
+python -m puntueitor.gui3d.app --resolution 2560x1440
 ```
 
-Lee la misma biblioteca cacheada que la TUI y no modifica nada: lo único
-que descarga son las carátulas que falten, y en segundo plano según vas
-navegando. Necesita una GPU con OpenGL.
+Lee la misma biblioteca cacheada que la TUI: comparten los juegos, las
+marcas de usuario (terminado, favorito, backlog, oculto) y la configuración
+de scoring. Lo único que descarga son las carátulas que falten, en segundo
+plano según vas navegando. Necesita una GPU con OpenGL.
 
 ---
 
@@ -105,10 +121,10 @@ Al arrancar por primera vez, pulsa `c` para abrir el diálogo de configuración,
 >
 > | Directorio | Contenido |
 > |---|---|
-> | `~/.config/puntueitor/` | `config.json` |
+> | `~/.config/puntueitor/` | `config.json` (credenciales y tiendas) y `scoring.json` (pesos de los sistemas de puntuación) |
 > | `~/.local/share/puntueitor/` | biblioteca y marcas de usuario (`puntueitor.db`, `library.sqlite`) |
 > | `~/.cache/puntueitor/` | carátulas y datos re-descargables |
-> | `~/.local/state/puntueitor/` | log |
+> | `~/.local/state/puntueitor/` | log y estado de cada interfaz (`tui.json`, `gui3d.json`) |
 >
 > La biblioteca ya no vive en `~/.cache`: ahí un limpiador de disco podía
 > borrarla, y casi nadie incluye esa carpeta en sus copias de seguridad.
@@ -215,7 +231,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-238 tests (unitarios + integración) que cubren:
+249 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -228,14 +244,15 @@ python -m pytest tests/
 
 ## 📦 Build
 
-Genera un binario único auto-contenido:
+Un binario único auto-contenido por interfaz:
 
 ```bash
-./build.sh
-# → dist/puntueitor-1.1.0-x86_64-linux  (25 MB)
+./build.sh      # → dist/puntueitor-2.0.0-x86_64-linux    (TUI)
+./build3d.sh    # → dist/puntueitor3d-2.0.0-x86_64-linux  (interfaz 3D)
 ```
 
-El nombre incluye versión, arquitectura y sistema automáticamente.
+El nombre incluye versión, arquitectura y sistema automáticamente; la
+versión sale de `puntueitor/__init__.py`.
 
 ---
 
