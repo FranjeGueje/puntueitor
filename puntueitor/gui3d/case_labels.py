@@ -42,7 +42,12 @@ from panda3d.core import (
 
 from puntueitor.core.models import Game
 from puntueitor.gui3d.fonts import ui_font
-from puntueitor.gui3d.game_case import CASE_DEPTH, CASE_HEIGHT, CASE_WIDTH
+from puntueitor.gui3d.game_case import (
+    CASE_DEPTH,
+    CASE_HEIGHT,
+    CASE_WIDTH,
+    cover_geometry,
+)
 
 _ASSETS_DIR = Path(__file__).parent / "assets" / "labels"
 
@@ -93,6 +98,10 @@ _LABEL_TEXT_Y = -CASE_DEPTH / 2 - 0.009
 _SCORE_TEXT_SCALE = BOTTOM_LABEL_SIZE * 0.30
 _DURATION_TEXT_SCALE = BOTTOM_LABEL_SIZE * 0.32
 _LABEL_TEXT_COLOR = (0.05, 0.05, 0.05, 1)
+
+#: El título de un desconocido, en blanco: la caja va negra y no hay
+#: carátula debajo con la que pueda competir.
+_CAPTION_TEXT_COLOR = (1, 1, 1, 1)
 
 _SCORE_TEXT_OFFSET = (0.0, -BOTTOM_LABEL_SIZE * 0.075)
 _DURATION_TEXT_OFFSET = (0.0, -BOTTOM_LABEL_SIZE * 0.05)
@@ -238,3 +247,75 @@ def build_case_labels(
         )
 
     return root
+
+
+# ──────────────────────────────
+# Rótulo sobre la carátula (modo desconocidos)
+# ──────────────────────────────
+
+#: Delante de la carátula y del banner, igual que las pegatinas.
+_CAPTION_Y = -CASE_DEPTH / 2 - 0.009
+
+#: Tamaño de partida del título. Baja solo si no cabe (ver abajo).
+_CAPTION_SCALE = 0.075
+
+#: Cuánto del ancho de la carátula puede ocupar el texto. No el 100%: a ras
+#: del borde se lee como si estuviera cortado.
+_CAPTION_WIDTH_FRACTION = 0.88
+
+#: A partir de cuántas líneas se empieza a encoger el texto. Cuatro caben de
+#: sobra en el hueco de la carátula; los títulos largos de verdad ("The
+#: Legend of Heroes: Trails of Cold Steel III") pasan de ahí y se reducen en
+#: proporción, mismo criterio que `_THREE_DIGIT_SCALE` con los números.
+_CAPTION_MAX_ROWS = 4
+
+#: Separación entre líneas de `TextNode`, para centrar el bloque a ojo.
+_CAPTION_LINE_HEIGHT = 1.0
+
+
+def build_cover_caption(parent: NodePath, title: str) -> NodePath:
+    """
+    El título escrito en blanco SOBRE la carátula.
+
+    Para las cajas de los juegos desconocidos: no tienen ficha en IGDB, así
+    que tampoco tienen arte, y una caja negra sin nada no se distingue de la
+    de al lado. El nombre es lo único que las identifica, así que la propia
+    caja hace de pizarra.
+
+    Va como `TextNode` hijo y no pintado en la textura: `make_placeholder_texture`
+    genera un color plano de 2x2 y está cacheada por color — meterle texto
+    obligaría a una textura por juego, que es justo lo que ese caché evita.
+    """
+    cover_w, _cover_h, _radius, cover_z = cover_geometry()
+
+    node = TextNode("cover-caption")
+    node.set_text(title)
+    node.set_align(TextNode.A_center)
+    node.set_text_color(*_CAPTION_TEXT_COLOR)
+    font = ui_font()
+    if font is not None:
+        node.set_font(font)
+
+    # El ancho de corte va en unidades del TEXTO (antes de escalar), así que
+    # el ancho disponible se divide por la escala.
+    scale = _CAPTION_SCALE
+    node.set_wordwrap(cover_w * _CAPTION_WIDTH_FRACTION / scale)
+
+    rows = node.get_num_rows()
+    if rows > _CAPTION_MAX_ROWS:
+        # Encoge lo justo para que quepa; el corte de línea se recalcula solo
+        # al volver a fijar el ancho con la escala nueva.
+        scale *= _CAPTION_MAX_ROWS / rows
+        node.set_wordwrap(cover_w * _CAPTION_WIDTH_FRACTION / scale)
+        rows = node.get_num_rows()
+
+    caption_np = parent.attach_new_node(node)
+    caption_np.set_light_off()
+    caption_np.set_scale(scale)
+    # `TextNode` crece hacia abajo desde su primera línea, así que para que
+    # el bloque quede centrado en la carátula hay que subirlo media altura.
+    caption_np.set_pos(
+        0.0, _CAPTION_Y,
+        cover_z + (rows - 1) * 0.5 * scale * _CAPTION_LINE_HEIGHT,
+    )
+    return caption_np

@@ -99,6 +99,8 @@ from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.enrichment import EnrichWorker
+from puntueitor.gui3d.game_case import make_placeholder_texture
+from puntueitor.gui3d.unknowns import ADOPT, SEARCH, STORE, UnknownJob, UnknownWorker
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
 from puntueitor.gui3d.fonts import (
     ICON_GAMEPAD_L1,
@@ -134,7 +136,8 @@ from puntueitor.core.repository.library_repository import (
     LibraryRepository,
 )
 from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS, ConfigManager
-from puntueitor.core.models import Library
+from puntueitor.core.models import Library, Stores
+from puntueitor.core.services import unknown_actions
 from puntueitor.core.services.game_actions import forget_game
 from puntueitor.core.services.library_service import LibraryService
 from puntueitor.gui3d import menus, scoring_config, scoring_info, state
@@ -207,6 +210,17 @@ FICHA_VALUE_COLOR = (0.93, 0.93, 0.95, 1)
 # larga que sea cada etiqueta.
 FICHA_LABEL_COLUMN = 0.38
 FICHA_VALUE_GAP = 0.02
+
+# Los dos únicos datos que se saben de un juego desconocido: de qué tienda
+# viene y con qué identificador. Es justo lo que hace falta para reconocerlo
+# y para buscarlo a mano si la identificación automática no acierta.
+UNKNOWN_FIELD_LABELS = ("Tienda", "ID")
+
+# Cajas negras: un desconocido no tiene ficha en IGDB y por tanto tampoco
+# carátula, así que la caja hace de pizarra para su título. No negro puro —
+# 0.02 deja ver el canto del estuche contra el fondo, que también es oscuro.
+UNKNOWN_BODY_COLOR = (0.02, 0.02, 0.02)
+UNKNOWN_COVER_COLOR = (0.05, 0.05, 0.06)
 
 # Reparto horizontal: qué fracción del ancho útil se lleva la columna de
 # campos. El resto es para la sinopsis. Los valores se parten en varias
@@ -290,6 +304,40 @@ def _build_help_text() -> str:
         f"{icon_markup(ICON_KEYBOARD_SPACE)} / {icon_markup(ICON_XBOX_Y)}  etiquetas   -   "
         f"{icon_markup(ICON_KEYBOARD_O)} / {icon_markup(ICON_GAMEPAD_L2)}  ocultos   -   "
         f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_GAMEPAD_SELECT)}  opciones"
+    )
+
+
+def _store_set(store: str) -> frozenset:
+    """
+    La tienda de un desconocido, como el conjunto que espera el carrusel.
+
+    `unknown_games` guarda el nombre en texto, y el banner y los colores
+    trabajan con el enum: una tienda que el enum no conozca (o un valor
+    corrupto en la base de datos) daría un `ValueError` en mitad del
+    arranque del modo, así que se cae a "sin tienda", que ya está
+    contemplado (`primary_store_color` tiene su color por defecto).
+    """
+    try:
+        return frozenset({Stores(store)})
+    except ValueError:
+        logger.warning(f"gui3d: tienda desconocida {store!r} en unknown_games")
+        return frozenset()
+
+
+def _build_unknown_help_text() -> str:
+    """
+    La barra de ayuda del modo desconocidos.
+
+    Es un texto aparte, en su propio widget, y no una reescritura de la
+    normal: `help_text` se creó con `mayChange=False` (nunca cambia mientras
+    recorres la biblioteca) y ponerlo a True encarece cada frame de todas
+    las sesiones por un modo en el que casi no se entra.
+    """
+    kb_lr = ICON_KEYBOARD_LEFT + ICON_KEYBOARD_RIGHT
+    return (
+        f"{icon_markup(kb_lr)} / {icon_markup(ICON_GAMEPAD_LEFT_RIGHT)}  navegar   -   "
+        f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  identificar   -   "
+        f"{icon_markup(ICON_KEYBOARD_DOWN)} / {icon_markup(ICON_XBOX_B)}  volver a la biblioteca"
     )
 
 
@@ -437,6 +485,19 @@ class App(ShowBase):
         # Qué se ejecuta si se contesta "Sí" en `confirm_menu`. None = no
         # hay ninguna confirmación en curso (ver `_ask_confirm`).
         self._confirm_action = None
+
+        # Modo desconocidos (arriba sobre el carrusel). El carrusel y su
+        # hilo se construyen la primera vez que se entra, no al arrancar:
+        # son 48 cajas más y un hilo que la mayoría de sesiones no usa.
+        self._unknown_mode = False
+        self._unknown_carousel = None
+        self._unknown_root = None
+        self._unknown_entries: list[CarouselEntry] = []
+        self.unknown_worker = None
+        # Último valor del eje vertical, para disparar solo en el flanco.
+        self._mode_v_direction = 0
+        # Sobre qué desconocido se está buscando o adoptando ahora mismo.
+        self._unknown_job_target = None
         # Sistema de scoring que se está configurando y sus valores en
         # edición (ver `_open_scoring_config`).
         self._config_scorer = None
@@ -602,7 +663,53 @@ class App(ShowBase):
             font=font,
         )
 
+        self._setup_unknown_hud(font)
         self._resize_ficha()
+
+    def _setup_unknown_hud(self, font) -> None:
+        """
+        La franja del modo desconocidos: de qué tienda viene, con qué id, y
+        por dónde vas.
+
+        Frame aparte en la misma banda, como `scoring_frame`, en vez de
+        reescribir la ficha: sus etiquetas son ocho y se crearon con
+        `mayChange=False` porque no cambian nunca. Aquí solo hay tres datos,
+        y de paso este frame se trae su propia barra de ayuda, que si no
+        habría que hacer variable la de la biblioteca por lo mismo.
+        """
+        self.unknown_frame = DirectFrame(
+            parent=self.aspect2d,
+            frameColor=FICHA_BAR_COLOR,
+            frameSize=(-1, 1, -1.0, FICHA_BAR_TOP_Z),
+            pos=(0, 0, 0),
+        )
+        self.unknown_frame.hide()
+
+        self.unknown_label_texts = []
+        self.unknown_value_texts = []
+        for label in UNKNOWN_FIELD_LABELS:
+            self.unknown_label_texts.append(OnscreenText(
+                parent=self.unknown_frame, text=f"{label}:", pos=(0, 0),
+                scale=FICHA_LABEL_SCALE, fg=FICHA_LABEL_COLOR,
+                align=TextNode.A_right, mayChange=False, font=font,
+            ))
+            self.unknown_value_texts.append(OnscreenText(
+                parent=self.unknown_frame, text="", pos=(0, 0),
+                scale=FICHA_LABEL_SCALE, fg=FICHA_VALUE_COLOR,
+                align=TextNode.A_left, mayChange=True, font=font,
+            ))
+
+        self.unknown_count_text = OnscreenText(
+            parent=self.unknown_frame, text="", pos=(0, 0),
+            scale=FICHA_LABEL_SCALE, fg=FICHA_LABEL_COLOR,
+            align=TextNode.A_left, mayChange=True, font=font,
+        )
+        self.unknown_help_text = OnscreenText(
+            parent=self.unknown_frame, text=_build_unknown_help_text(),
+            pos=(0, -0.955), scale=0.032,
+            fg=(0.55, 0.55, 0.6, 1), align=TextNode.A_center, mayChange=False,
+            font=font,
+        )
 
     def _on_window_event(self, window) -> None:
         """
@@ -667,6 +774,9 @@ class App(ShowBase):
         # La franja de la descripción del scoring comparte sitio con la ficha
         # y se recoloca igual.
         self.scoring_frame["frameSize"] = (-aspect, aspect, -1.0, FICHA_BAR_TOP_Z)
+        # Y la del modo desconocidos, por lo mismo.
+        self.unknown_frame["frameSize"] = (-aspect, aspect, -1.0, FICHA_BAR_TOP_Z)
+        self._layout_unknown_rows(aspect)
         top = FICHA_BAR_TOP_Z - SCORING_TITLE_TOP_MARGIN
         self.scoring_title_text.set_pos(0, 0, top)
         desc_x = -aspect + SCORING_SIDE_MARGIN
@@ -717,6 +827,27 @@ class App(ShowBase):
             value_text.set_pos(self._ficha_value_x, 0, z)
             rows = max(1, value_text.textNode.get_num_rows())
             z -= rows * FICHA_LINE_HEIGHT
+
+    def _layout_unknown_rows(self, aspect: float) -> None:
+        """
+        Coloca las filas del modo desconocidos, con el mismo encaje que la
+        ficha para que al cambiar de modo el ojo no tenga que recolocarse.
+
+        Son datos de una línea (una tienda, un identificador), así que aquí
+        sí vale el paso fijo que la ficha no puede usar.
+        """
+        label_x = -aspect + FICHA_SIDE_MARGIN + FICHA_LABEL_COLUMN
+        value_x = label_x + FICHA_VALUE_GAP
+        z = FICHA_BAR_TOP_Z - FICHA_TOP_MARGIN
+        for label_text, value_text in zip(
+            self.unknown_label_texts, self.unknown_value_texts,
+        ):
+            label_text.set_pos(label_x, 0, z)
+            value_text.set_pos(value_x, 0, z)
+            z -= FICHA_LINE_HEIGHT
+        # Separado del par de datos por una fila en blanco: es de otra cosa
+        # (dónde estás en la lista, no qué juego es).
+        self.unknown_count_text.set_pos(value_x, 0, z - FICHA_LINE_HEIGHT)
 
     # ──────────────────────────────
     # Entrada
@@ -797,7 +928,7 @@ class App(ShowBase):
                 # La descripción sigue al foco, como en la TUI.
                 self._refresh_scoring_description()
         else:
-            self.carousel.move(direction)
+            self.active_carousel.move(direction)
             self._on_selection_changed()
 
     def _held_direction(self) -> int:
@@ -916,7 +1047,7 @@ class App(ShowBase):
 
     def _toggle_labels(self) -> None:
         """Muestra u oculta las etiquetas de todas las cajas (espacio / Y)."""
-        if self._typing:
+        if self._typing or self._blocked_in_unknown_mode("Etiquetas"):
             return
         self._labels_visible = not self._labels_visible
         self.carousel.set_labels_visible(self._labels_visible)
@@ -963,7 +1094,7 @@ class App(ShowBase):
         recorrido, no al final: `_apply_order` rehace filtro y ordenación
         enteros a partir de la lista completa.
         """
-        if self._typing:
+        if self._typing or self._blocked_in_unknown_mode("Ocultos"):
             return
         self._show_hidden = not self._show_hidden
         self._apply_hidden_filter()
@@ -1041,6 +1172,9 @@ class App(ShowBase):
         # e items se rehacen en cada apertura (ver `_ask_confirm`). El de
         # salir se queda aparte porque es fijo y no va sobre ningún juego.
         self.confirm_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
+        # Los dos del modo desconocidos: título e items dinámicos.
+        self.unknown_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
+        self.unknown_results_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
 
         #: Todos los menús, para lo que haya que aplicarles a todos (de
         #: momento el color de acento). Añadir uno nuevo aquí y no en cada
@@ -1049,6 +1183,7 @@ class App(ShowBase):
             self.options_menu, self.quit_menu, self.scoring_menu,
             self.scoring_config_menu, self.filter_menu, self.game_menu,
             self.settings_menu, self.gui3d_menu, self.confirm_menu,
+            self.unknown_menu, self.unknown_results_menu,
         )
 
     @property
@@ -1127,6 +1262,10 @@ class App(ShowBase):
         self._nav_direction = 0
         self._nav_held_time = 0.0
         self._nav_next_repeat = 0.0
+        # También el eje vertical: si no, al cerrar un cuadro de texto con
+        # el stick a medio soltar quedaría un flanco pendiente y se
+        # cambiaría de modo solo.
+        self._mode_v_direction = 0
 
     def _animate_ficha(self, visible: bool) -> None:
         """
@@ -1166,7 +1305,7 @@ class App(ShowBase):
         de todos los menús (el mismo del estuche y del banner de su
         carátula, aclarado para que se lea sobre el panel oscuro).
         """
-        entry = self.carousel.selected
+        entry = self.active_carousel.selected
         accent = as_text_color(primary_store_color(entry.stores))
         # Sobre `self._menus`, no sobre una lista escrita a mano: la de antes
         # se quedó sin actualizar al añadir el menú de configuración, y ese
@@ -1221,6 +1360,8 @@ class App(ShowBase):
 
     def _open_scoring_menu(self) -> None:
         """Start / Tab sobre el carrusel."""
+        if self._blocked_in_unknown_mode("Puntueitor"):
+            return
         self._toggle_root_menu(self.scoring_menu, "scoring")
 
     def _open_filter_menu(self) -> None:
@@ -1241,7 +1382,7 @@ class App(ShowBase):
             return
         if self.active_menu is self.scoring_menu:
             self._configure_focused_scoring()
-        else:
+        elif not self._blocked_in_unknown_mode("Filtrar"):
             self._open_filter_menu()
 
     def _open_game_menu(self) -> None:
@@ -1278,7 +1419,10 @@ class App(ShowBase):
 
         menu = self.active_menu
         if menu is None:
-            self._open_game_menu()
+            if self._unknown_mode:
+                self._open_unknown_menu()
+            else:
+                self._open_game_menu()
             return
 
         item = menu.focused_item
@@ -1330,6 +1474,12 @@ class App(ShowBase):
             self._clear_filters()
         elif key.startswith("cfg:"):
             self._activate_config(key)
+        elif key == menus.UNKNOWN_TITLE_KEY:
+            self._prompt_unknown_search()
+        elif key == menus.UNKNOWN_STORE_KEY:
+            self._resolve_by_store()
+        elif key.startswith(menus.UNKNOWN_RESULT_PREFIX):
+            self._adopt_selected_result(menu.focused_item)
         elif key == menus.ENRICH_KEY:
             self._confirm_enrich()
         elif key == menus.FORGET_KEY:
@@ -1556,7 +1706,11 @@ class App(ShowBase):
         No hace nada con un menú abierto: ahí las mismas teclas no pintan
         nada y mover el carrusel por detrás solo desconcierta.
         """
-        if self._typing or self.active_menu is not None:
+        if (
+            self._typing
+            or self.active_menu is not None
+            or self._blocked_in_unknown_mode("Saltar")
+        ):
             return
         if not self.carousel.jump_to_group(direction):
             return
@@ -2074,6 +2228,9 @@ class App(ShowBase):
         """
         forget_game(self.library_repository, entry.game)
         self.entries = [e for e in self.entries if e.key != entry.key]
+        # Acaba de aparecer en `unknown_games`: el carrusel de desconocidos
+        # que hubiera construido ya no coincide con lo que hay en disco.
+        self._invalidate_unknown_carousel()
 
         if not self._visible_entries():
             # `set_order` ignora un orden vacío (dejaría el carrusel sin
@@ -2095,6 +2252,336 @@ class App(ShowBase):
             lambda e=entry: self._forget_game(e),
         )
 
+    # ──────────────────────────────
+    # Modo desconocidos
+    # ──────────────────────────────
+
+    @property
+    def active_carousel(self):
+        """
+        El carrusel que se está viendo.
+
+        Casi todo lo que dice `self.carousel` quiere decir en realidad
+        "el de delante". Las excepciones son las carátulas
+        (`_request_nearby_covers`, `_on_cover_ready`, `_backfill_covers`) y
+        todo lo que ordena o filtra: esas cosas son de la biblioteca y
+        siguen apuntando al principal aunque estés en desconocidos.
+        """
+        return self._unknown_carousel if self._unknown_mode else self.carousel
+
+    def _build_unknown_carousel(self) -> bool:
+        """
+        Construye el carrusel de desconocidos. False si no hay ninguno.
+
+        Perezoso: son unas decenas de cajas más y un hilo, y la mayoría de
+        las sesiones no entran aquí. Con la biblioteca real son 48 cajas,
+        unos 50 ms de tirón la primera vez que se pulsa arriba.
+        """
+        unknowns = unknown_actions.list_unknowns(self.library_repository)
+        if not unknowns:
+            # `Carousel` no sabe existir vacío (ver su constructor), y
+            # tampoco habría nada que enseñar.
+            self.notifier.show("No hay juegos desconocidos")
+            return False
+
+        # Una sola textura para todas: `make_placeholder_texture` cachea por
+        # color, así que las 48 cajas comparten la misma de 2x2.
+        texture = make_placeholder_texture(UNKNOWN_COVER_COLOR)
+        self._unknown_entries = [
+            CarouselEntry(
+                key=unknown.key,
+                title=unknown.title,
+                texture=texture,
+                stores=_store_set(unknown.store),
+                game=None,
+            )
+            for unknown in unknowns
+        ]
+
+        self._unknown_root = self.render.attach_new_node("unknown-carousel-root")
+        self._unknown_root.set_z(CAROUSEL_RAISE)
+        self._unknown_root.hide()
+        self._unknown_carousel = Carousel(
+            self._unknown_root, self._unknown_entries,
+            body_color=UNKNOWN_BODY_COLOR, cover_caption=True,
+        )
+        if self.unknown_worker is None:
+            self.unknown_worker = UnknownWorker(self.library_repository)
+        logger.info(f"gui3d: {len(self._unknown_entries)} juegos desconocidos")
+        return True
+
+    def _invalidate_unknown_carousel(self) -> None:
+        """
+        Tira el carrusel de desconocidos para que se rehaga con la lista de
+        verdad la próxima vez.
+
+        Se usa cuando la tabla ha cambiado por detrás (al desconocer un
+        juego de la biblioteca): rehacer 48 cajas cuesta 50 ms y solo pasa
+        tras esa acción, mientras que mantenerlo sincronizado a mano sería
+        una fuente de listas que no coinciden con lo que hay en disco.
+        """
+        if self._unknown_root is not None:
+            self._unknown_root.remove_node()
+        self._unknown_root = None
+        self._unknown_carousel = None
+        self._unknown_entries = []
+
+    def _enter_unknown_mode(self) -> None:
+        if self._unknown_carousel is None and not self._build_unknown_carousel():
+            return
+        self._unknown_mode = True
+        self.carousel_root.hide()
+        self._unknown_root.show()
+        self.ficha_frame.hide()
+        self.unknown_frame.show()
+        self._on_selection_changed()
+        self.notifier.show(f"{len(self._unknown_entries)} juegos desconocidos")
+
+    def _exit_unknown_mode(self) -> None:
+        if not self._unknown_mode:
+            return
+        self._unknown_mode = False
+        if self._unknown_root is not None:
+            self._unknown_root.hide()
+        self.carousel_root.show()
+        self.unknown_frame.hide()
+        self.ficha_frame.show()
+        self._on_selection_changed()
+
+    def _vertical_direction(self) -> int:
+        """
+        Arriba/abajo SOBRE EL CARRUSEL, de teclado o de mando.
+
+        Devuelve 0 con un menú abierto o escribiendo: allí el eje vertical
+        es la navegación del menú (la lee `_held_direction`), y si no,
+        subir por una lista de opciones cambiaría de modo por detrás.
+        """
+        if self._typing or self.active_menu is not None:
+            return 0
+        direction = (
+            (1 if self._keys_held["down"] else 0)
+            - (1 if self._keys_held["up"] else 0)
+        )
+        if direction:
+            return direction
+        return self.gamepad.direction_v() if self.gamepad else 0
+
+    def _update_mode_switch(self, dt: float) -> None:
+        """
+        Entra y sale del modo desconocidos con arriba y abajo.
+
+        Solo en el FLANCO y sin repetición: cambiar de modo no es recorrer
+        una lista, y dejar arriba pulsado no debe hacer nada más que entrar
+        una vez.
+
+        Se sondea el estado (como `_update_menu_cycle`) en vez de escuchar
+        el evento de tecla para que el teclado y el mando sigan el mismo
+        camino: el stick no emite eventos, solo se puede leer su posición.
+        """
+        direction = self._vertical_direction()
+        if direction == self._mode_v_direction:
+            return
+        self._mode_v_direction = direction
+
+        if direction < 0:
+            if not self._unknown_mode:
+                self._enter_unknown_mode()
+        elif direction > 0:
+            self._exit_unknown_mode()
+
+    def _blocked_in_unknown_mode(self, gesture: str = "") -> bool:
+        """
+        Los gestos que no significan nada sobre un desconocido: no tiene
+        estados, ni nota, ni entra en los filtros ni en el orden.
+
+        Se avisa en vez de ignorar en silencio: pulsar y que no pase nada
+        parece que la aplicación se ha colgado.
+        """
+        if not self._unknown_mode:
+            return False
+        if gesture:
+            self.notifier.show(f"{gesture}: solo en la biblioteca")
+        return True
+
+    def _refresh_unknown_text(self) -> None:
+        """El título arriba y, abajo, de dónde sale y por dónde vas."""
+        carousel = self._unknown_carousel
+        if carousel is None:
+            return
+        entry = carousel.selected
+        store, store_id = entry.key
+        self.title_text.setText(entry.title)
+        self.unknown_value_texts[0].setText(store)
+        self.unknown_value_texts[1].setText(store_id)
+        self.unknown_count_text.setText(
+            f"{carousel.selected_position + 1} de {carousel.visible_count}"
+        )
+
+    def _open_unknown_menu(self) -> None:
+        """A sobre un desconocido: las dos formas de identificarlo."""
+        carousel = self._unknown_carousel
+        if carousel is None:
+            return
+        entry = carousel.selected
+        self.unknown_menu.set_title(entry.title)
+        self.unknown_menu.set_items(menus.build_unknown_items(entry))
+        self._unknown_menu_entry = entry
+        self._push_menu(self.unknown_menu)
+
+    def _selected_unknown(self):
+        """El `Unknown` sobre el que se abrió el menú, o None."""
+        entry = getattr(self, "_unknown_menu_entry", None)
+        if entry is None:
+            return None
+        store, store_id = entry.key
+        return unknown_actions.Unknown(store=store, title=entry.title, id=store_id)
+
+    def _prompt_unknown_search(self) -> None:
+        """
+        Pide el texto a buscar, con el título del juego ya escrito.
+
+        Prellenado y no en blanco porque casi siempre el título es correcto
+        y lo que falla es un subtítulo o una edición: se corrige lo que
+        sobra en vez de teclearlo entero con un mando.
+        """
+        unknown = self._selected_unknown()
+        if unknown is None:
+            return
+        self._open_text_prompt(
+            "Buscar en IGDB", unknown.title,
+            lambda text, u=unknown: self._start_unknown_job(
+                UnknownJob(kind=SEARCH, unknown=u, query=text),
+                f"Buscando {text}...",
+            ),
+        )
+
+    def _start_unknown_job(self, job, message: str) -> None:
+        """
+        Encola una gestión lenta y cierra los menús.
+
+        Se cierran porque tarda segundos y el menú se quedaría ahí quieto
+        sin decir nada, que se lee como un cuelgue; el aviso del notificador
+        sí dice qué está pasando.
+        """
+        if not job.query and job.kind == SEARCH:
+            return
+        if self.unknown_worker is None or not self.unknown_worker.request(job):
+            self.notifier.show(f"Ya se está buscando {job.unknown.title}")
+            return
+        self._close_all_menus()
+        self.notifier.show(message)
+
+    def _on_unknown_job_done(self, job, result) -> None:
+        """Recoge en el hilo principal lo que ha traído el de trabajo."""
+        if job.kind == SEARCH:
+            self._on_search_done(job, *result)
+        else:
+            self._on_adopt_done(result)
+
+    def _on_search_done(self, job, results, error) -> None:
+        if error is not None:
+            self.notifier.show(f"Error buscando: {error}")
+            return
+        if not results:
+            self.notifier.show("Sin resultados en IGDB")
+            return
+        if not self._unknown_mode:
+            # Se ha vuelto a la biblioteca mientras se buscaba; abrir aquí
+            # un menú de resultados sería aparecerse encima de otra cosa.
+            self.notifier.show("Búsqueda cancelada")
+            return
+
+        # El menú se abre para el desconocido sobre el que se PIDIÓ, aunque
+        # el usuario haya navegado a otro mientras tanto: es su búsqueda, y
+        # descartarla por haber movido el stick sería perder los segundos de
+        # espera. Mismo criterio que `_game_menu_entry`.
+        self._unknown_search_target = job.unknown
+        self.unknown_results_menu.set_title(job.unknown.title)
+        self.unknown_results_menu.set_items(menus.build_search_result_items(results))
+        self._push_menu(self.unknown_results_menu)
+
+    def _adopt_selected_result(self, item) -> None:
+        unknown = getattr(self, "_unknown_search_target", None)
+        result = item.payload.get("result")
+        if unknown is None or result is None:
+            return
+        self._start_unknown_job(
+            UnknownJob(kind=ADOPT, unknown=unknown, result=result),
+            f"Añadiendo {result.title}...",
+        )
+
+    def _resolve_by_store(self) -> None:
+        unknown = self._selected_unknown()
+        if unknown is None:
+            return
+        self._start_unknown_job(
+            UnknownJob(kind=STORE, unknown=unknown),
+            f"Buscando {unknown.title} en {unknown.store}...",
+        )
+
+    def _on_adopt_done(self, result) -> None:
+        """Ha terminado un intento de identificar: se avisa y, si salió, se
+        mete el juego en el carrusel de la biblioteca."""
+        if result.unsupported:
+            self.notifier.show(f"{result.unknown.store}: hay que buscarlo por título")
+            return
+        if result.error is not None:
+            self.notifier.show(f"Error: {result.error}")
+            return
+        if result.game is None:
+            # `unknown_actions` ya lo ha devuelto a la tabla.
+            self.notifier.show(f"Sin resultados para {result.unknown.title}")
+            return
+
+        self._add_adopted_game(result.game)
+        self._remove_unknown_entry(result.unknown)
+        self.notifier.show(f"Añadido: {result.game.title}")
+
+    def _add_adopted_game(self, game) -> None:
+        """
+        Mete en el carrusel el juego recién identificado, sin reiniciar.
+
+        La caja se construye ahora (una sola, ~1 ms) y entra en el recorrido
+        por `_apply_order`, con el filtro y la ordenación que haya puestos —
+        así que si hay un filtro activo que no cumple, no se verá hasta
+        quitarlo, igual que cualquier otro juego.
+        """
+        stores = frozenset(game.stores)
+        texture = load_cover_texture(game.igdb_id, game.cover_url, allow_download=False)
+        if texture is None:
+            texture = make_placeholder_texture(primary_store_color(stores))
+            if game.cover_url:
+                # Que la pida `_request_nearby_covers` cuando toque, igual
+                # que las de cualquier otro juego sin carátula en disco.
+                self._pending_covers[game.igdb_id] = (game.igdb_id, game.cover_url)
+
+        entry = CarouselEntry(
+            key=game.igdb_id, title=game.title, texture=texture,
+            stores=stores, game=game,
+        )
+        self.entries.append(entry)
+        self.carousel.add_entry(entry)
+        self._apply_order()
+
+    def _remove_unknown_entry(self, unknown) -> None:
+        """Saca de los desconocidos al que se acaba de identificar."""
+        if self._unknown_carousel is None:
+            return
+        self._unknown_entries = [
+            entry for entry in self._unknown_entries if entry.key != unknown.key
+        ]
+        if not self._unknown_entries:
+            # Era el último: el carrusel no sabe quedarse vacío, así que se
+            # sale del modo y se desmonta entero.
+            self._exit_unknown_mode()
+            self._invalidate_unknown_carousel()
+            self.notifier.show("No quedan juegos desconocidos")
+            return
+
+        self._unknown_carousel.remove_entry(unknown.key)
+        if self._unknown_mode:
+            self._refresh_unknown_text()
+
     def _on_back(self) -> None:
         """
         El botón B: vuelve al menú anterior.
@@ -2108,6 +2595,10 @@ class App(ShowBase):
             return
         if self._menu_stack:
             self._pop_menu()
+        elif self._unknown_mode:
+            # Aquí sí hay a dónde volver: a la biblioteca. Es lo mismo que
+            # hace abajo, y "volver" es justo lo que se espera de B.
+            self._exit_unknown_mode()
 
     def _on_escape_key(self) -> None:
         """
@@ -2137,7 +2628,10 @@ class App(ShowBase):
         """
         self._settle_time = 0.0
         self._refresh_selection_text()
-        self._request_nearby_covers()
+        if not self._unknown_mode:
+            # Los desconocidos no tienen carátula que pedir: no están en
+            # IGDB, que es de donde salen.
+            self._request_nearby_covers()
         self._refresh_menu_accent()
 
     def _update_background(self, dt: float) -> None:
@@ -2146,8 +2640,8 @@ class App(ShowBase):
         if self._settle_time < BACKGROUND_SETTLE_DELAY:
             return
 
-        key = self.carousel.selected.key
-        texture = self.carousel.selected_texture
+        key = self.active_carousel.selected.key
+        texture = self.active_carousel.selected_texture
         # También hay que reaccionar a que llegue la carátula real de la que
         # ya está seleccionada, no solo a que cambie la selección: de ahí
         # que se compare la textura además de la clave.
@@ -2230,6 +2724,10 @@ class App(ShowBase):
             self._apply_cover(key, texture)
 
     def _refresh_selection_text(self) -> None:
+        if self._unknown_mode:
+            self._refresh_unknown_text()
+            return
+
         entry = self.carousel.selected
         self.title_text.setText(entry.title)
 
@@ -2265,13 +2763,18 @@ class App(ShowBase):
             self.gamepad.update()
         self._update_navigation(dt)
         self._update_menu_cycle(dt)
-        self.carousel.update(dt)
+        self._update_mode_switch(dt)
+        self.active_carousel.update(dt)
 
         for key, path in self.cover_loader.poll():
             self._on_cover_ready(key, path)
 
         for key, result in self.enrich_worker.poll():
             self._on_enrich_done(key, result)
+
+        if self.unknown_worker is not None:
+            for job, result in self.unknown_worker.poll():
+                self._on_unknown_job_done(job, result)
 
         self._backfill_covers()
         self._update_background(dt)
@@ -2300,6 +2803,8 @@ class App(ShowBase):
         self.task_mgr.remove("carousel-update")
         self.cover_loader.shutdown()
         self.enrich_worker.shutdown()
+        if self.unknown_worker is not None:
+            self.unknown_worker.shutdown()
         self.gamepad.destroy()
         super().destroy()
 

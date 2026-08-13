@@ -79,3 +79,42 @@ class TestConfirmMenu:
             assert len(question) >= 1
             assert all(line.strip() for line in question)
             assert yes.startswith("Sí,")
+
+
+class FakeResult:
+    """Lo justo que `build_search_result_items` mira de un `SearchResult`."""
+
+    def __init__(self, igdb_id, title, year):
+        self.igdb_id, self.title, self.year = igdb_id, title, year
+
+
+class TestUnknownMenus:
+    def test_two_ways_to_identify(self):
+        items = menus.build_unknown_items(object())
+        assert [i.key for i in items] == [
+            menus.UNKNOWN_TITLE_KEY, menus.UNKNOWN_STORE_KEY,
+        ]
+        # Las mismas que la TUI y en el mismo orden.
+        assert [i.label for i in items] == [
+            "Buscar por título", "Volver a buscar por tienda",
+        ]
+
+    def test_results_show_the_year_apart(self):
+        items = menus.build_search_result_items([
+            FakeResult(1, "Doom", 1993), FakeResult(2, "Doom", None),
+        ])
+        assert [i.display_label() for i in items] == [
+            "Doom  <1993>", "Doom  <—>",
+        ]
+
+    def test_result_carries_itself_in_the_payload(self):
+        result = FakeResult(42, "Doom", 1993)
+        item = menus.build_search_result_items([result])[0]
+        assert item.payload["result"] is result
+        assert item.key.startswith(menus.UNKNOWN_RESULT_PREFIX)
+
+    def test_results_fit_without_scrolling(self):
+        """La búsqueda pide 15 y el menú enseña 16 filas de una vez."""
+        from puntueitor.core.services.unknown_actions import SEARCH_LIMIT
+        from puntueitor.gui3d.menu import MAX_VISIBLE_ITEMS
+        assert SEARCH_LIMIT <= MAX_VISIBLE_ITEMS

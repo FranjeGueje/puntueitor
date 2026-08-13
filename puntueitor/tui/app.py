@@ -22,13 +22,19 @@ from puntueitor.tui.screens.unknown_menu import UnknownMenuScreen
 from puntueitor.tui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.services.game_actions import enrich_game, forget_game
+from puntueitor.core.services.unknown_actions import (
+    SearchResult,
+    Unknown,
+    adopt_result,
+    resolve_by_store,
+    search_igdb,
+)
 from puntueitor.core.models import Library, Game
 from puntueitor import __version__
 
 from puntueitor.core.config import ConfigManager
 from puntueitor.core import paths
 from puntueitor.core.igdb.service import IGDBService
-from puntueitor.core.mappers import IGMapperGame
 from puntueitor.core.services.library_service import LibraryService
 
 class PuntueitorApp(App):
@@ -277,86 +283,53 @@ class PuntueitorApp(App):
         )
 
     def _do_igdb_search(self, query: str, unknown: dict) -> None:
-        try:
-            igdb = IGDBService()
-            results = igdb.search_by_title(query, limit=15)
-            if not results:
-                self.notify("Sin resultados en IGDB", severity="warning")
-                return
+        results, error = search_igdb(query)
+        if error is not None:
+            self.notify(f"Error en búsqueda IGDB: {error}", severity="error")
+            return
+        if not results:
+            self.notify("Sin resultados en IGDB", severity="warning")
+            return
 
-            def handle_result(raw: dict | None) -> None:
-                if raw:
-                    self._add_igdb_result(unknown, raw["id"], raw)
+        def handle_result(raw: dict | None) -> None:
+            if raw:
+                self._add_igdb_result(unknown, raw["id"], raw)
 
-            self.push_screen(IGDBSearchResults(results), handle_result)
-        except Exception as e:
-            self.notify(f"Error en búsqueda IGDB: {e}", severity="error")
+        # La pantalla de resultados sigue trabajando con los crudos de IGDB,
+        # que es lo que `SearchResult` lleva dentro.
+        self.push_screen(IGDBSearchResults([r.raw for r in results]), handle_result)
 
     def _add_igdb_result(self, unknown: dict, igdb_id: int, raw: dict) -> None:
-        store = unknown["store"]
-        store_id = unknown["id"]
-        self.repo.resolvers_cacher.set_igdb_ids(store, store_id, [igdb_id])
-        self.repo.unknown_cacher.remove_unknown(store, store_id)
-        game = IGMapperGame.map_to_game(raw)
-        from puntueitor.core.models import Stores
-        game.set_store(Stores(store), store_id)
-        self._finish_add_game(game)
+        result = adopt_result(
+            self.repo, Unknown.from_row(unknown), SearchResult.from_raw(raw),
+        )
+        if not result.ok:
+            self.notify(f"Error añadiendo: {result.error}", severity="error")
+            return
+        self._finish_add_game(result.game)
 
     def _resolve_unknown_by_store(self, unknown: dict) -> None:
-        store = unknown["store"]
-        store_id = unknown["id"]
-        title = unknown["title"]
-        self.repo.unknown_cacher.remove_unknown(store, store_id)
-        igdb = IGDBService()
-        cache_path = self.repo.cache_dir / "puntueitor.db"
-
-        try:
-            if store == "steam":
-                from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
-                resolver = SteamIGDBResolver(igdb, cache_path)
-                raw = {"appid": int(store_id), "name": title}
-            elif store == "epic":
-                from puntueitor.core.resolvers.epic_resolver import EpicHeroicResolver
-                resolver = EpicHeroicResolver(igdb, cache_path)
-                raw = {"app_name": store_id, "title": title}
-            elif store == "gog":
-                from puntueitor.core.resolvers.gog_resolver import GOGHeroicResolver
-                resolver = GOGHeroicResolver(igdb, cache_path)
-                raw = {"app_name": store_id, "title": title}
-            else:
-                self.repo.unknown_cacher.save_unknown(store, title, store_id)
-                self.notify(f"Tienda no soportada: {store}", severity="error")
-                return
-
-            games = resolver.resolve(raw, refresh=True)
-            if not games:
-                self.repo.unknown_cacher.save_unknown(store, title, store_id)
-                self.notify(f"No se encontró en IGDB para {store}", severity="warning")
-                return
-
-            self._finish_add_game(games[0])
-
-        except Exception as e:
-            self.repo.unknown_cacher.save_unknown(store, title, store_id)
-            self.notify(f"Error resolviendo {store}: {e}", severity="error")
+        result = resolve_by_store(self.repo, Unknown.from_row(unknown))
+        if result.unsupported:
+            self.notify(f"Tienda no soportada: {unknown['store']}", severity="error")
+        elif result.error is not None:
+            self.notify(
+                f"Error resolviendo {unknown['store']}: {result.error}",
+                severity="error",
+            )
+        elif result.game is None:
+            self.notify(
+                f"No se encontró en IGDB para {unknown['store']}",
+                severity="warning",
+            )
+        else:
+            self._finish_add_game(result.game)
 
     def _finish_add_game(self, game: Game) -> None:
-        try:
-            from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
-            from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-            from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-            hltb_resolver = HLTBResolver()
-            hltb = HLTBEnricher(
-                client=hltb_resolver,
-                extras_cacher=self.repo.extras_cacher,
-            )
-            steam = SteamScoreEnricher(igdb_cacher=self.repo.igdb_cacher)
-            enriched = steam.enrich(hltb.enrich(game))
-            if enriched.duration_hours is not None or enriched.steamdb_score is not None:
-                game = enriched
-                self.repo.save_game(game)
-        except Exception:
-            pass
+        """
+        El juego ya está en la base de datos (y enriquecido): solo queda
+        meterlo en las listas de la pantalla.
+        """
         new_games = list(self.full_library.games) + [game]
         self.full_library = Library.from_iterable(new_games)
         self.current_library = self.full_library

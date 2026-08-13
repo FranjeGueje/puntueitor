@@ -974,6 +974,87 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Modo desconocidos (arriba sobre el carrusel)
+
+Los juegos de `unknown_games` (los que no se pudieron casar con IGDB) tienen su
+propio carrusel: **arriba** entra, **abajo** o **B** vuelve. Cajas negras
+(`UNKNOWN_BODY_COLOR`) con el título escrito encima, porque sin ficha de IGDB no
+hay carátula y una caja negra sin nada no se distingue de la de al lado.
+
+La lógica vive en **`core/services/unknown_actions.py`**, compartida con la TUI
+(mismo contrato que `game_actions.py`: sin UI, imports de red dentro de la
+función, nunca lanza). Lo delicado, que costó descubrir la primera vez:
+
+- `resolve_by_store` **quita el desconocido de la tabla antes** de resolver,
+  porque `BaseResolver.resolve` se salta lo ya marcado y si no devolvería vacío
+  sin intentarlo. Como consecuencia, **los tres caminos de fallo tienen que
+  volver a apuntarlo** (tienda no soportada, sin resultados, excepción): si se
+  pierde ahí, el juego desaparece de las dos listas y no hay forma de volver a
+  él. Hay un test por camino.
+- `adopt_result` escribe `resolvers` **antes** de quitar de `unknown_games`: al
+  revés, un fallo en medio dejaría el juego fuera de las dos.
+- `AdoptResult.unsupported` no es un error: esa tienda (Amazon) no tiene
+  resolver propio y lo que hay que decir es "búscalo por título".
+
+### El carrusel secundario
+
+`Carousel` toma `body_color` y `cover_caption` — dos parámetros, no una
+subclase, porque es lo único que cambia. Con `cover_caption` la caja lleva
+`case_labels.build_cover_caption` (un `TextNode` blanco) **en vez de** las
+pegatinas de estado: un desconocido no está en la biblioteca y no tiene estados.
+El texto no se pinta en la textura porque `make_placeholder_texture` genera un
+color plano de 2×2 cacheado **por color**, y meterle texto obligaría a una
+textura por juego.
+
+Se construye **perezosamente** al entrar (48 cajas ≈ 50 ms) y **no se entra si
+no hay ninguno**: `Carousel` lanza `ValueError` con lista vacía. Lo mismo al
+adoptar el último: se sale del modo y se desmonta antes de que `remove_entry` lo
+deje vacío. `_invalidate_unknown_carousel()` lo tira cuando la tabla cambia por
+detrás (al desconocer un juego), en vez de mantenerlo sincronizado a mano.
+
+Las claves son la tupla `(store, id)`, que no puede chocar con los `igdb_id`
+enteros del carrusel principal.
+
+**`Carousel` copia la lista de entradas** (`list(entries)`). Antes la compartía
+con `app.entries`, y al adoptar un juego el `append` de App dejaba una entrada
+sin caja: `_layout` se salía de `_boxes` por el final con un `IndexError`.
+`add_entry` solo hace *append* por la misma razón que `_order` guarda índices:
+insertar en medio los invalidaría todos.
+
+### El modo en `app.py`
+
+`active_carousel` (propiedad) es lo que evita bifurcar veinte métodos. Sustituye
+a `self.carousel` **solo** en lo que sigue a lo que se ve: navegar, la ficha, el
+fondo, el acento de los menús y el `update(dt)`. Las carátulas
+(`_request_nearby_covers`, `_on_cover_ready`, `_backfill_covers`) y todo lo que
+ordena o filtra siguen apuntando **al principal**: con `active_carousel`
+machacarían los placeholders negros.
+
+El flanco de arriba/abajo se **sondea** en `_update_mode_switch` (como
+`_update_menu_cycle`) en vez de escucharse como evento: el stick no emite
+eventos, solo se puede leer su posición, y así teclado y mando siguen el mismo
+camino. Devuelve 0 con un menú abierto —allí el eje vertical es del menú— y
+`_reset_navigation` limpia `_mode_v_direction`, o al cerrar un cuadro de texto
+con el stick a medio soltar se cambiaría de modo solo.
+
+Filtros, orden, scoring, etiquetas, ocultos y saltos de grupo quedan inertes
+(`_blocked_in_unknown_mode`), avisando en vez de callando: pulsar y que no pase
+nada parece un cuelgue. Opciones sigue disponible — hay que poder salir.
+
+La franja de abajo es un `unknown_frame` hermano, como `scoring_frame`, con
+Tienda / ID / "N de M" y **su propia barra de ayuda**: así no hay que hacer
+variable `help_text`, que es `mayChange=False` porque no cambia nunca.
+
+### La búsqueda
+
+Va en un hilo (`gui3d/unknowns.py`, `UnknownWorker`, mismo patrón que
+`EnrichWorker`): la TUI puede permitirse bloquear su hilo mientras IGDB
+contesta, pero aquí serían segundos a 0 fps con las cajas paradas a media
+animación. Al encolar se cierran los menús y se avisa. El trabajo recuerda
+**sobre qué desconocido** se pidió, así que navegar mientras tanto no rompe nada
+—los resultados se abren para el original, como `_game_menu_entry`—; si se ha
+salido del modo, se descarta.
+
 ## Puntueitor3D menu (Opciones → Puntueitor3D) y `gui3d.json`
 
 Dos ajustes propios del frontend 3D, en `state.Preferences`, persistidos en

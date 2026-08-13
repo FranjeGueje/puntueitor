@@ -14,7 +14,7 @@ from panda3d.core import NodePath, Texture
 
 from puntueitor.core.models import Game
 from puntueitor.gui3d.case_banner import build_case_banner
-from puntueitor.gui3d.case_labels import build_case_labels
+from puntueitor.gui3d.case_labels import build_case_labels, build_cover_caption
 from puntueitor.gui3d.game_case import build_case_reflection, build_game_case
 from puntueitor.gui3d.store_colors import primary_store_color
 
@@ -128,11 +128,14 @@ class CarouselBox:
     def __init__(
         self, parent: NodePath, entry: CarouselEntry, phase: float,
         score_source: str = "steamdb",
+        body_color: tuple[float, float, float] | None = None,
+        cover_caption: bool = False,
     ):
         self.entry = entry
         self.phase = phase  # desfase para que no todas floten al unísono
         self.root = parent.attach_new_node(f"case-{entry.key}")
-        body_color = primary_store_color(entry.stores)
+        if body_color is None:
+            body_color = primary_store_color(entry.stores)
         _case_np, self.cover_np = build_game_case(self.root, body_color=body_color)
         self.cover_np.set_texture(entry.texture)
         _reflection_root, self.reflection_cover_np = build_case_reflection(
@@ -141,7 +144,16 @@ class CarouselBox:
         self.reflection_cover_np.set_texture(entry.texture)
         self.texture = entry.texture
         build_case_banner(self.root, entry.stores)
-        self.labels_np = build_case_labels(self.root, entry.game, score_source)
+        # O pegatinas de estado, o el título escrito encima: nunca las dos
+        # cosas. Un juego desconocido no tiene estados que enseñar (no está
+        # en la biblioteca), y lo que necesita es que se lea su nombre.
+        self.caption_np = (
+            build_cover_caption(self.root, entry.title) if cover_caption else None
+        )
+        self.labels_np = (
+            None if cover_caption
+            else build_case_labels(self.root, entry.game, score_source)
+        )
         self._base_pos = self.root.get_pos()
         self._base_hpr = self.root.get_hpr()
         self._slide: LerpPosHprInterval | None = None
@@ -262,16 +274,32 @@ class Carousel:
     def __init__(
         self, parent: NodePath, entries: list[CarouselEntry],
         score_source: str = "steamdb",
+        body_color: tuple[float, float, float] | None = None,
+        cover_caption: bool = False,
     ):
+        """
+        `body_color` y `cover_caption` se pasan tal cual a cada caja: con
+        los dos puestos sale el carrusel de juegos DESCONOCIDOS (cajas
+        negras con el título escrito encima), y sin ellos el de la
+        biblioteca. Dos parámetros en vez de una subclase porque es lo
+        único que cambia: todo lo demás —arco, navegación, orden— es
+        idéntico.
+        """
         if not entries:
             raise ValueError("Carousel requiere al menos un juego")
 
         self._parent = parent
-        self._entries = entries
+        # Copia, no la lista de quien llama: el carrusel mantiene la suya en
+        # correspondencia 1:1 con `_boxes` (`_order` guarda índices de las
+        # dos), mientras que quien llama añade y quita a su ritmo. Con la
+        # lista compartida, un `append` suyo dejaba una entrada sin caja y
+        # `_layout` se salía de `_boxes` por el final.
+        self._entries = list(entries)
         self._score_source = score_source
+        self._body_color = body_color
+        self._cover_caption = cover_caption
         self._boxes = [
-            CarouselBox(parent, entry, phase=i / max(len(entries), 1),
-                        score_source=score_source)
+            self._make_box(entry, phase=i / max(len(entries), 1))
             for i, entry in enumerate(entries)
         ]
         self._boxes_by_key = {box.entry.key: box for box in self._boxes}
@@ -292,6 +320,72 @@ class Carousel:
         self._group_starts: list[int] = [0]
         self._elapsed = 0.0
         self._layout(animate=False)
+
+    def _make_box(self, entry: CarouselEntry, phase: float) -> CarouselBox:
+        return CarouselBox(
+            self._parent, entry, phase=phase, score_source=self._score_source,
+            body_color=self._body_color, cover_caption=self._cover_caption,
+        )
+
+    def add_entry(self, entry: CarouselEntry) -> bool:
+        """
+        Añade una caja a un carrusel ya construido. False si esa clave ya
+        estaba.
+
+        Existe por la adopción de un juego desconocido: rehacer el carrusel
+        entero para una caja más costaría 1,2 s y 270 MB con la biblioteca
+        real.
+
+        La caja nace OCULTA y fuera del recorrido — quién se ve y en qué
+        orden lo decide siempre `set_order`, que es quien conoce los filtros
+        y la ordenación.
+
+        Se añade al final de `_boxes` y solo al final: `_order` guarda
+        índices de esa lista, así que un *append* no invalida ninguno,
+        mientras que insertar en medio los desplazaría todos.
+        """
+        if entry.key in self._boxes_by_key:
+            return False
+
+        box = self._make_box(entry, phase=len(self._boxes) / max(len(self._boxes), 1))
+        box.root.hide()
+        self._entries.append(entry)
+        self._boxes.append(box)
+        self._boxes_by_key[entry.key] = box
+        return True
+
+    def remove_entry(self, key: object) -> bool:
+        """
+        Quita una caja y DESTRUYE su geometría. False si no estaba.
+
+        Al contrario que ocultar un juego de la biblioteca (que solo deja de
+        listarlo, ver `app._forget_game`), aquí se borra de verdad: es para
+        el carrusel de desconocidos, del que un juego se va cuando ya se ha
+        identificado y no va a volver.
+
+        `_order` se rehace entero a partir de las claves que sobreviven, sin
+        reindexar a mano: quitar una caja del medio desplaza todos los
+        índices posteriores.
+
+        OJO: no sabe quedarse vacío (`set_order` ignora un orden vacío
+        porque no hay un carrusel sin selección que dibujar). Quien llama
+        tiene que mirar `visible_count` ANTES y desmontar el carrusel entero
+        si era el último.
+        """
+        box = self._boxes_by_key.pop(key, None)
+        if box is None:
+            return False
+
+        surviving = [
+            self._entries[index].key
+            for index in self._order
+            if self._entries[index].key != key
+        ]
+        box.root.remove_node()
+        self._boxes.remove(box)
+        self._entries = [entry for entry in self._entries if entry.key != key]
+        self.set_order(surviving)
+        return True
 
     def set_texture(self, key: object, texture: Texture) -> None:
         """Actualiza la carátula del juego `key`, si sigue en el carrusel."""
@@ -362,6 +456,11 @@ class Carousel:
     def visible_count(self) -> int:
         """Cuántos juegos se pueden recorrer ahora mismo."""
         return len(self._order)
+
+    @property
+    def selected_position(self) -> int:
+        """Por dónde vas del recorrido, empezando en 0."""
+        return self._selected_pos
 
     def move(self, direction: int) -> None:
         """direction: -1 (izquierda) o +1 (derecha)."""

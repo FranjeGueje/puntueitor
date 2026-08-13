@@ -302,6 +302,53 @@ def build_game_items(game: Game) -> list[MenuItem]:
 
 
 # ──────────────────────────────
+# Juegos desconocidos (arriba sobre el carrusel)
+# ──────────────────────────────
+
+UNKNOWN_TITLE_KEY = "unk:title"
+UNKNOWN_STORE_KEY = "unk:store"
+
+#: Prefijo de las filas de resultados de IGDB. El id va en el `payload`, no
+#: en la clave: la clave solo tiene que ser única dentro del menú.
+UNKNOWN_RESULT_PREFIX = "unkres:"
+
+UNKNOWN_RESULTS_TITLE = "Resultados de IGDB"
+
+
+def build_unknown_items(unknown) -> list[MenuItem]:
+    """
+    Las dos formas de identificar un juego desconocido, las mismas que la
+    TUI (`tui/screens/unknown_menu.py`) y en el mismo orden.
+
+    "Volver" no está: se sale con B, como en todos los menús de aquí.
+    """
+    return [
+        MenuItem(UNKNOWN_TITLE_KEY, "Buscar por título"),
+        MenuItem(UNKNOWN_STORE_KEY, "Volver a buscar por tienda"),
+    ]
+
+
+def build_search_result_items(results) -> list[MenuItem]:
+    """
+    Un elemento por resultado de IGDB.
+
+    El año va en la columna de la derecha (`value`) y no pegado al título:
+    con quince resultados de nombres casi iguales —remasterizaciones,
+    ediciones de oro, la trilogía— el año alineado es lo que deja
+    distinguirlos de un vistazo.
+    """
+    return [
+        MenuItem(
+            f"{UNKNOWN_RESULT_PREFIX}{result.igdb_id}",
+            result.title,
+            value=str(result.year) if result.year else "—",
+            payload={"result": result},
+        )
+        for result in results
+    ]
+
+
+# ──────────────────────────────
 # Confirmación (¿seguro?)
 # ──────────────────────────────
 
