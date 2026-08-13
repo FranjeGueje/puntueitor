@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="puntueitor"
-ENTRY_POINT="puntueitor/gui/app.py"
+ENTRY_POINT="puntueitor/tui/app.py"
 
 cd "$(dirname "$0")"
 
@@ -25,7 +25,7 @@ echo "==> Ejecutando PyInstaller..."
 pyinstaller \
     --onefile \
     --name "$OUTPUT_NAME" \
-    --add-data "puntueitor/gui/styles.tcss:." \
+    --add-data "puntueitor/tui/styles.tcss:." \
     --collect-all textual \
     --hidden-import igdbpy \
     --hidden-import howlongtobeatpy \

@@ -7,12 +7,12 @@
 source .venv/bin/activate
 
 # Run the Textual TUI app
-python -m puntueitor.gui.app
+python -m puntueitor.tui.app
 ```
 
 Or directly:
 ```bash
-python -c "from puntueitor.gui.app import PuntueitorApp; app = PuntueitorApp(); app.run()"
+python -c "from puntueitor.tui.app import PuntueitorApp; app = PuntueitorApp(); app.run()"
 ```
 
 ## Dependencies
@@ -444,7 +444,7 @@ which produced confidently wrong conclusions:
   immediately that it worked.
 
 The bottom panel ("ficha") shows the same fields as the TUI's
-`gui/widgets/game_detail.py`, minus the cover URL (a clickable link there,
+`tui/widgets/game_detail.py`, minus the cover URL (a clickable link there,
 useless here, and the cover is already on screen at size). The game's title
 is not repeated either — it is already the largest thing on screen above the
 carousel.
@@ -568,7 +568,7 @@ puntueitor/
 │   ├── mappers/    # Raw → Game transformation
 │   ├── pipeline/   # Orchestration pipelines
 │   └── repository/ # Library persistence
-└── gui/            # Textual TUI
+└── tui/            # Textual TUI
     ├── app.py      # Main app entry
     ├── screens/    # TUI screens
     └── widgets/    # Reusable widgets
@@ -785,7 +785,7 @@ Three modules, split by what they know about:
   nothing about games or scoring.
 - `menus.py` — just the *contents* (which rows, which keys). `MenuItem.key`
   is the contract with `app.py`, and the keys deliberately match the TUI's
-  (`gui/screens/scoring.py`, `sorting.py`, `filtering.py`).
+  (`tui/screens/scoring.py`, `sorting.py`, `filtering.py`).
 
 Item kinds are `action`, `check` (toggles in place) and `header` (a section
 label that `move_focus` skips — its loop is bounded to one full pass so a
@@ -855,7 +855,7 @@ holds both (`.extras_cacher`, `.library_cacher`) and `load()` merges them.
 The gui3d game menu first "saved" via `save_game()`, which persisted nothing at
 all — `_extras_row()` only reads `_EXTRA_FIELDS`, so the flags were dropped
 without any error. Use `repo.library_cacher.set_status(...)`, same as
-`gui/app.py:_toggle_game_flag`.
+`tui/app.py:_toggle_game_flag`.
 
 **`set_status` is a whole-row UPSERT.** Pass all four flags every time; sending
 only the one that changed silently resets the other three to `False`.
@@ -909,7 +909,7 @@ Consequences worth knowing:
 
 ## Settings menu (Opciones → Configuración)
 
-Same fields and order as `gui/screens/configuration.py`: IGDB id/secret, Steam
+Same fields and order as `tui/screens/configuration.py`: IGDB id/secret, Steam
 user id/API key, the four store checkboxes, and the Heroic folder (labelled
 "Carpeta de Heroic o Relic"; empty shows as `auto`, not `N/A`, because blank
 means auto-detect rather than unset).
@@ -940,7 +940,7 @@ the 2.0 available), so that's the ceiling.
 
 ## Scoring menu (scoring_info.py, scoring_config.py)
 
-Mirrors the TUI's `gui/screens/scoring.py` + `scoring_config.py`: the four
+Mirrors the TUI's `tui/screens/scoring.py` + `scoring_config.py`: the four
 systems listed, the focused one's description in a bar along the bottom, A
 applies it, X opens its config form.
 

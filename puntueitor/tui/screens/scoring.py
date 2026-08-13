@@ -4,7 +4,7 @@ from textual.containers import Vertical, Horizontal, Center, Middle, Container
 from textual.widgets import Label, Static, Footer, ListItem, ListView
 from textual import on
 
-from puntueitor.gui.screens.scoring_config import ScoringConfigScreen
+from puntueitor.tui.screens.scoring_config import ScoringConfigScreen
 
 SCORING_INFO = {
     "weighted": {

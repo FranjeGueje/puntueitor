@@ -78,7 +78,7 @@ cd puntueitor
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m puntueitor.gui.app
+python -m puntueitor.tui.app
 ```
 
 ### Interfaz 3D

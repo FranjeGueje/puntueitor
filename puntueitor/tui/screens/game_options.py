@@ -4,7 +4,7 @@ from textual.containers import Vertical, Horizontal, Center, Middle
 from textual.widgets import Label, Checkbox, Button
 
 from puntueitor.core.models import Game
-from puntueitor.gui.screens.delete_confirmation import DeleteConfirmationScreen
+from puntueitor.tui.screens.delete_confirmation import DeleteConfirmationScreen
 
 
 class GameOptionsScreen(ModalScreen[dict | None]):

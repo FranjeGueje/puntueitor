@@ -8,18 +8,18 @@ from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar
 from textual.containers import Horizontal, Center, Middle, Vertical, Container
 from textual import work
 
-from puntueitor.gui.widgets.game_list import GameList
-from puntueitor.gui.widgets.game_detail import GameDetail
-from puntueitor.gui.screens.configuration import ConfigurationScreen
-from puntueitor.gui.screens.quit_confirmation import QuitConfirmation
-from puntueitor.gui.screens.sorting import SortingScreen
-from puntueitor.gui.screens.filtering import FilteringScreen
-from puntueitor.gui.screens.filter_input import FilterInputScreen
-from puntueitor.gui.screens.reload_confirmation import ReloadConfirmationScreen
-from puntueitor.gui.screens.scoring import ScoringScreen
-from puntueitor.gui.screens.game_options import GameOptionsScreen
-from puntueitor.gui.screens.unknown_menu import UnknownMenuScreen
-from puntueitor.gui.screens.igdb_search_results import IGDBSearchResults
+from puntueitor.tui.widgets.game_list import GameList
+from puntueitor.tui.widgets.game_detail import GameDetail
+from puntueitor.tui.screens.configuration import ConfigurationScreen
+from puntueitor.tui.screens.quit_confirmation import QuitConfirmation
+from puntueitor.tui.screens.sorting import SortingScreen
+from puntueitor.tui.screens.filtering import FilteringScreen
+from puntueitor.tui.screens.filter_input import FilterInputScreen
+from puntueitor.tui.screens.reload_confirmation import ReloadConfirmationScreen
+from puntueitor.tui.screens.scoring import ScoringScreen
+from puntueitor.tui.screens.game_options import GameOptionsScreen
+from puntueitor.tui.screens.unknown_menu import UnknownMenuScreen
+from puntueitor.tui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.models import Library, Game
 from puntueitor import __version__
