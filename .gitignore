@@ -218,4 +218,3 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Añadimos cosas extras por parte del autor:
-tests/
