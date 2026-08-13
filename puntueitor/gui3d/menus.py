@@ -22,8 +22,44 @@ from puntueitor.gui3d.menu import MenuItem
 OPTIONS_TITLE = "Opciones"
 OPTIONS_ITEMS = [
     MenuItem("config", "Configuración"),
+    MenuItem("gui3d", "GUI3D"),
     MenuItem("quit", "Salir"),
 ]
+
+# ──────────────────────────────
+# GUI3D (Opciones -> GUI3D)
+# ──────────────────────────────
+
+GUI3D_TITLE = "GUI3D"
+
+#: Cómo se llama de cara al usuario cada valor de `state.SCORE_SOURCES`.
+SCORE_SOURCE_LABELS = {
+    "steamdb": "SteamDB",
+    "user": "Usuarios",
+    "critic": "Crítica",
+}
+
+YES_NO_LABELS = {True: "Sí", False: "No"}
+
+
+def build_gui3d_items(prefs) -> list[MenuItem]:
+    """
+    Los ajustes propios del frontend 3D, con sus valores actuales.
+
+    Los dos son `kind="cycle"`, el mismo tipo que los filtros de tres
+    estados, así que heredan el cambio con izquierda/derecha sin tocar el
+    widget de menú.
+    """
+    return [
+        MenuItem(
+            "set3d:score_source", "Puntuación mostrada", kind="cycle",
+            value=SCORE_SOURCE_LABELS.get(prefs.score_source, prefs.score_source),
+        ),
+        MenuItem(
+            "set3d:save_filters", "Guardar filtros", kind="cycle",
+            value=YES_NO_LABELS[bool(prefs.save_filters)],
+        ),
+    ]
 
 # ──────────────────────────────
 # Salir (confirmación)

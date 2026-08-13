@@ -907,6 +907,35 @@ Consequences worth knowing:
   closes (`_hidden_filter_dirty`). Applying it immediately yanks the box out from
   under the open menu and shifts the selection while you're still editing it.
 
+## GUI3D menu (Opciones → GUI3D) y `gui3d.json`
+
+Dos ajustes propios del frontend 3D, en `state.Preferences`, persistidos en
+`gui3d.json` bajo la clave `"preferences"` (los filtros van bajo `"filters"`;
+`save_*` conserva las claves ajenas, así que ambos conviven):
+
+- **Puntuación mostrada** — cuál de las tres notas se pinta en la estrella de
+  la caja. El valor guardado es `"steamdb"`/`"user"`/`"critic"`, y
+  `case_labels.score_field()` lo traduce al campo de `Game`; a propósito no se
+  guarda el nombre del campo, para que renombrarlo en el modelo no invalide
+  los ficheros ya escritos. `load_preferences` valida contra `SCORE_SOURCES`
+  porque el fichero es editable a mano.
+- **Guardar filtros** — en `No` los filtros **no se borran**, solo se dejan de
+  leer al arrancar y de escribir. Reactivarlo recupera los de la última vez.
+
+Cambiar la puntuación obliga a repintar **todas** las cajas
+(`Carousel.set_score_source`), no solo las visibles: una caja fuera del radio
+acabará entrando al navegar y se vería con la nota anterior — el mismo motivo
+que documenta `set_labels_visible`.
+
+Estos dos se guardan **en el acto** al cambiarlos, sin "Guardar": son
+interruptores sueltos, no un formulario que haya que cuadrar antes de aplicar
+(al revés que los pesos de scoring, que deben sumar 100).
+
+Al probar gui3d, **aislar con `HOME`, no enumerando variables `XDG_*`**. Ya
+pasó: un lote de pruebas sandboxeó `XDG_DATA_HOME`/`CONFIG`/`CACHE` pero se
+dejó `XDG_STATE_HOME`, y como `gui3d.json` vive en `state_dir()` acabó escrito
+en el directorio real del usuario. `HOME` cubre las cuatro de una vez.
+
 ## Settings menu (Opciones → Configuración)
 
 Same fields and order as `tui/screens/configuration.py`: IGDB id/secret, Steam

@@ -134,6 +134,7 @@ from puntueitor.core.services.library_service import LibraryService
 from puntueitor.gui3d import menus, scoring_config, scoring_info, state
 from puntueitor.gui3d.filters import (
     TRISTATE_LABELS,
+    Filters,
     cycle_tristate,
     parse_duration,
 )
@@ -370,18 +371,26 @@ class App(ShowBase):
             for e in raw_entries
         ]
         self.entries = entries
+        # Antes del carrusel: de aquí sale qué nota se pinta en las cajas,
+        # y las etiquetas se construyen al crearlas.
+        self.prefs = state.load_preferences()
         self.carousel_root = self.render.attach_new_node("carousel-root")
         self.carousel_root.set_z(CAROUSEL_RAISE)
-        self.carousel = Carousel(self.carousel_root, entries)
+        self.carousel = Carousel(
+            self.carousel_root, entries, score_source=self.prefs.score_source,
+        )
 
         # Los juegos marcados como ocultos no salen en el carrusel mientras
         # no se pidan expresamente (L2 / tecla "o").
         self._show_hidden = False
         self._sort_criterion = sorting.CRITERIA[sorting.DEFAULT_CRITERION]
         self._groups: list = []
-        # Recuperados de gui3d.json si había algo guardado de la sesión
-        # anterior; `Filters()` (todo sin filtrar) si no.
-        self.filters = state.load_filters()
+        # Recuperados de gui3d.json, salvo que se haya pedido no hacerlo en
+        # Opciones -> GUI3D. Lo guardado NO se borra al desactivarlo: sigue
+        # ahí y vuelve si se reactiva.
+        self.filters = (
+            state.load_filters() if self.prefs.save_filters else Filters()
+        )
         self._apply_order()
 
         # Carátulas que aún no están en disco: se descargan en segundo plano
@@ -1011,6 +1020,11 @@ class App(ShowBase):
         self.settings_menu = Menu(
             self.aspect2d, menus.SETTINGS_TITLE, [], hint=_menu_hint(),
         )
+        # Sus dos ajustes se cambian con izquierda/derecha, así que lleva la
+        # pista que lo menciona.
+        self.gui3d_menu = Menu(
+            self.aspect2d, menus.GUI3D_TITLE, [], hint=_value_menu_hint(),
+        )
 
         #: Todos los menús, para lo que haya que aplicarles a todos (de
         #: momento el color de acento). Añadir uno nuevo aquí y no en cada
@@ -1018,7 +1032,7 @@ class App(ShowBase):
         self._menus = (
             self.options_menu, self.quit_menu, self.scoring_menu,
             self.scoring_config_menu, self.filter_menu, self.game_menu,
-            self.settings_menu,
+            self.settings_menu, self.gui3d_menu,
         )
 
     @property
@@ -1274,6 +1288,8 @@ class App(ShowBase):
         """Qué hace elegir un elemento de menú."""
         if key == "config":
             self._open_settings_menu()
+        elif key == "gui3d":
+            self._open_gui3d_menu()
         elif key == "quit":
             self._push_menu(self.quit_menu)
         elif key == "quit_yes":
@@ -1363,6 +1379,8 @@ class App(ShowBase):
             self._refresh_filter_menu()
         elif menu is self.scoring_config_menu:
             self._adjust_config_value(item, direction)
+        elif menu is self.gui3d_menu:
+            self._adjust_gui3d_setting(item, direction)
 
     def _focused_repeats(self) -> bool:
         """
@@ -1396,7 +1414,7 @@ class App(ShowBase):
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
-        state.save_filters(self.filters)
+        self._persist_filters()
         self.notifier.show(
             f"{self.carousel.visible_count} juegos"
             if self.filters.any_active else "Sin filtros"
@@ -1407,7 +1425,7 @@ class App(ShowBase):
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
-        state.save_filters(self.filters)
+        self._persist_filters()
         self.notifier.show("Filtros limpiados")
 
     def _apply_sort(self, sort_key: str) -> None:
@@ -1514,6 +1532,60 @@ class App(ShowBase):
         criterion = self._sort_criterion
         group = self.carousel.group_at_selection(self._groups)
         self.notifier.show(sorting.group_label(criterion, group))
+
+    # ── Ajustes del frontend 3D ──
+
+    def _persist_filters(self) -> None:
+        """
+        Guarda los filtros, si el usuario quiere que se recuerden.
+
+        Con "Guardar filtros" en No NO se borra lo que ya hubiera guardado,
+        solo se deja de escribir: así, al volver a activarlo, se recuperan
+        los de la última vez en lugar de empezar de cero.
+        """
+        if self.prefs.save_filters:
+            state.save_filters(self.filters)
+
+    def _open_gui3d_menu(self) -> None:
+        """"GUI3D" dentro de Opciones: los ajustes propios del carrusel."""
+        self.gui3d_menu.set_items(menus.build_gui3d_items(self.prefs))
+        self._push_menu(self.gui3d_menu)
+
+    def _adjust_gui3d_setting(self, item, direction: int) -> None:
+        """
+        Rota el ajuste enfocado con izquierda/derecha.
+
+        A diferencia de los formularios de scoring y de configuración, aquí
+        se guarda EN EL ACTO: son dos interruptores sueltos, no un formulario
+        que haya que cuadrar antes de aplicar, así que un "Guardar" aparte
+        sería un paso de más.
+        """
+        if item.key == "set3d:score_source":
+            fuentes = state.SCORE_SOURCES
+            actual = fuentes.index(self.prefs.score_source)
+            self.prefs.score_source = fuentes[(actual + direction) % len(fuentes)]
+            # Repinta las cajas para que el cambio se vea sin salir del menú.
+            self.carousel.set_score_source(
+                self.prefs.score_source, self._labels_visible,
+            )
+        elif item.key == "set3d:save_filters":
+            self.prefs.save_filters = not self.prefs.save_filters
+        else:
+            return
+
+        state.save_preferences(self.prefs)
+        self._refresh_gui3d_menu()
+
+    def _refresh_gui3d_menu(self) -> None:
+        """Repinta los valores sin rehacer el menú, para no perder el foco."""
+        nuevos = {
+            item.key: item for item in menus.build_gui3d_items(self.prefs)
+        }
+        for item in self.gui3d_menu.items:
+            nuevo = nuevos.get(item.key)
+            if nuevo is not None:
+                item.value = nuevo.value
+        self.gui3d_menu.refresh_values()
 
     # ── Configuración de la aplicación ──
 

@@ -125,7 +125,10 @@ class CarouselEntry:
 class CarouselBox:
     """Una caja del carrusel y su fase de animación idle."""
 
-    def __init__(self, parent: NodePath, entry: CarouselEntry, phase: float):
+    def __init__(
+        self, parent: NodePath, entry: CarouselEntry, phase: float,
+        score_source: str = "steamdb",
+    ):
         self.entry = entry
         self.phase = phase  # desfase para que no todas floten al unísono
         self.root = parent.attach_new_node(f"case-{entry.key}")
@@ -138,7 +141,7 @@ class CarouselBox:
         self.reflection_cover_np.set_texture(entry.texture)
         self.texture = entry.texture
         build_case_banner(self.root, entry.stores)
-        self.labels_np = build_case_labels(self.root, entry.game)
+        self.labels_np = build_case_labels(self.root, entry.game, score_source)
         self._base_pos = self.root.get_pos()
         self._base_hpr = self.root.get_hpr()
         self._slide: LerpPosHprInterval | None = None
@@ -155,7 +158,9 @@ class CarouselBox:
         self.reflection_cover_np.set_texture(texture)
         self.texture = texture
 
-    def rebuild_labels(self, game, visible: bool = True) -> None:
+    def rebuild_labels(
+        self, game, visible: bool = True, score_source: str = "steamdb",
+    ) -> None:
         """
         Rehace las pegatinas de estado tras cambiar un dato del juego.
 
@@ -170,7 +175,7 @@ class CarouselBox:
         """
         if self.labels_np is not None:
             self.labels_np.remove_node()
-        self.labels_np = build_case_labels(self.root, game)
+        self.labels_np = build_case_labels(self.root, game, score_source)
         if self.labels_np is not None and not visible:
             self.labels_np.hide()
 
@@ -254,14 +259,19 @@ class Carousel:
     entre ellas.
     """
 
-    def __init__(self, parent: NodePath, entries: list[CarouselEntry]):
+    def __init__(
+        self, parent: NodePath, entries: list[CarouselEntry],
+        score_source: str = "steamdb",
+    ):
         if not entries:
             raise ValueError("Carousel requiere al menos un juego")
 
         self._parent = parent
         self._entries = entries
+        self._score_source = score_source
         self._boxes = [
-            CarouselBox(parent, entry, phase=i / max(len(entries), 1))
+            CarouselBox(parent, entry, phase=i / max(len(entries), 1),
+                        score_source=score_source)
             for i, entry in enumerate(entries)
         ]
         self._boxes_by_key = {box.entry.key: box for box in self._boxes}
@@ -293,7 +303,21 @@ class Carousel:
         """Rehace las pegatinas del juego `key`, si sigue en el carrusel."""
         box = self._boxes_by_key.get(key)
         if box is not None:
-            box.rebuild_labels(game, visible)
+            box.rebuild_labels(game, visible, self._score_source)
+
+    def set_score_source(self, source: str, visible: bool = True) -> None:
+        """
+        Cambia qué nota se pinta en la estrella y repinta TODAS las cajas.
+
+        Todas, no solo las que se ven ahora: una caja fuera del radio visible
+        acabará entrando al navegar, y se encontraría con la pegatina de la
+        nota anterior — el mismo motivo que documenta `set_labels_visible`.
+        """
+        if source == self._score_source:
+            return
+        self._score_source = source
+        for box in self._boxes:
+            box.rebuild_labels(box.entry.game, visible, source)
 
     def set_labels_visible(self, visible: bool) -> None:
         """

@@ -156,11 +156,35 @@ def _build_number(
     label_np.set_pos(x + ox, _LABEL_TEXT_Y, z + oz - scale * 0.32)
 
 
-def build_case_labels(parent: NodePath, game: Game | None) -> NodePath | None:
+def score_field(source: str) -> str:
+    """
+    Campo de `Game` que corresponde a cada valor de `state.SCORE_SOURCES`.
+
+    Se traduce aquí y no se guarda directamente el nombre del campo para que
+    lo que va a `gui3d.json` ("user") no dependa de cómo se llame el atributo
+    en el modelo ("user_score"): renombrar el campo no invalidaría los
+    ficheros de los usuarios.
+    """
+    return _SCORE_FIELDS.get(source, _SCORE_FIELDS["steamdb"])
+
+
+_SCORE_FIELDS = {
+    "steamdb": "steamdb_score",
+    "user": "user_score",
+    "critic": "critic_score",
+}
+
+
+def build_case_labels(
+    parent: NodePath, game: Game | None, score_source: str = "steamdb",
+) -> NodePath | None:
     """
     Construye las etiquetas de estado de una caja. Devuelve None (sin crear
     nada) si no hay ficha del juego — pasa con `sample_data`/`real_data`
     incompletos, aunque en la práctica ambos rellenan `game` siempre.
+
+    `score_source` elige cuál de las tres notas se pinta en la estrella (ver
+    el menú GUI3D en Opciones).
     """
     if game is None:
         return None
@@ -191,10 +215,12 @@ def build_case_labels(parent: NodePath, game: Game | None) -> NodePath | None:
     elif game.backlog:
         _build_icon(root, "backlog", TOP_LABEL_SIZE, top_x, top_z)
 
-    # Por defecto SteamDB — pendiente de que el menú de opciones permita
-    # elegir usuario/crítica/SteamDB (ver conversación de diseño). Cuando
-    # exista ese ajuste, este valor deja de ser un literal fijo.
-    score = game.steamdb_score
+    # Cuál de las tres notas se enseña lo decide el usuario en Opciones ->
+    # GUI3D. Un juego que no tenga LA ELEGIDA se queda sin pegatina, igual
+    # que hasta ahora si le faltaba la de SteamDB: la alternativa (caer a
+    # otra nota) pintaría números que no son el criterio que se pidió ver, y
+    # no habría forma de saber cuál estás mirando en cada caja.
+    score = getattr(game, score_field(score_source), None)
     if score is not None:
         _build_icon(root, "score", BOTTOM_LABEL_SIZE, bottom_x, bottom_z)
         _build_number(
