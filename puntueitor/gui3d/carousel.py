@@ -367,24 +367,58 @@ class Carousel:
         reindexar a mano: quitar una caja del medio desplaza todos los
         índices posteriores.
 
-        OJO: no sabe quedarse vacío (`set_order` ignora un orden vacío
-        porque no hay un carrusel sin selección que dibujar). Quien llama
-        tiene que mirar `visible_count` ANTES y desmontar el carrusel entero
-        si era el último.
+        Y se rehace AQUÍ, no delegando en `set_order`: ese lee `selected`
+        antes de nada para intentar quedarse en el mismo juego, y en este
+        punto `_order` todavía apunta a la lista de antes del borrado
+        mientras que `_entries` y `_boxes` ya han encogido — se salía por el
+        final con un `IndexError`.
+
+        OJO: no sabe quedarse vacío (no hay un carrusel sin selección que
+        dibujar). Quien llama tiene que mirar `visible_count` ANTES y
+        desmontar el carrusel entero si era el último.
         """
         box = self._boxes_by_key.pop(key, None)
         if box is None:
             return False
 
+        # Se apunta ANTES de tocar nada: en qué juego estaba la selección y
+        # qué claves se recorrían, en orden.
+        previous_key = self.selected.key if self._order else None
+        previous_pos = self._selected_pos
         surviving = [
             self._entries[index].key
             for index in self._order
             if self._entries[index].key != key
         ]
+
         box.root.remove_node()
         self._boxes.remove(box)
         self._entries = [entry for entry in self._entries if entry.key != key]
-        self.set_order(surviving)
+
+        # Índices YA de las listas compactadas.
+        index_by_key = {entry.key: i for i, entry in enumerate(self._entries)}
+        self._order = [index_by_key[k] for k in surviving if k in index_by_key]
+        self._pos_by_key = {
+            self._entries[index].key: pos for pos, index in enumerate(self._order)
+        }
+        # Los grupos son de la ordenación de la biblioteca; aquí no hay.
+        self._group_starts = [0]
+
+        if not self._order:
+            # Sin nada que recorrer no hay layout posible; quien llama tiene
+            # que estar desmontando esto ahora mismo.
+            self._selected_pos = 0
+            return True
+
+        # Se intenta seguir en el mismo juego. Si el que se ha ido era justo
+        # el seleccionado, se cae en el que ocupa ahora su sitio (o en el
+        # último, si era el final de la lista), que es lo que menos
+        # desorienta: la vista se queda donde estaba mirando.
+        pos = self._pos_by_key.get(previous_key)
+        if pos is None:
+            pos = min(previous_pos, len(self._order) - 1)
+        self._selected_pos = pos
+        self._layout(animate=False)
         return True
 
     def set_texture(self, key: object, texture: Texture) -> None:
