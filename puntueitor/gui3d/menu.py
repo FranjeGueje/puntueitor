@@ -32,7 +32,11 @@ from puntueitor.gui3d.rounded_panel import make_rounded_panel
 # el que se usa hasta que llegue el primero (menús construidos antes de que
 # haya un juego seleccionado).
 PANEL_COLOR = (0.06, 0.06, 0.09, 0.96)
-TITLE_COLOR = (0.6, 0.8, 1, 1)
+# Título en red velvet y separadores de sección en el azulito: colores
+# intercambiados a propósito respecto a como estaban (el título era el
+# azulito) para que el título destaque más fuerte que los rótulos de
+# sección, que son un apoyo de lectura, no el foco de atención del menú.
+TITLE_COLOR = (0.62, 0.09, 0.20, 1)
 
 # Los elementos SIN foco van claramente apagados, no en blanco. El color del
 # resaltado es el de la tienda del juego, y el de Epic es un gris casi negro
@@ -42,7 +46,7 @@ TITLE_COLOR = (0.6, 0.8, 1, 1)
 # elemento con foco destaca sea cual sea su tono.
 ITEM_COLOR = (0.62, 0.63, 0.68, 1)
 ITEM_COLOR_DISABLED = (0.35, 0.35, 0.40, 1)
-HEADER_COLOR = (0.55, 0.57, 0.65, 1)
+HEADER_COLOR = (0.6, 0.8, 1, 1)
 HINT_COLOR = (0.55, 0.57, 0.65, 1)
 DEFAULT_ACCENT = (1, 0.85, 0.2, 1)
 
@@ -73,7 +77,13 @@ _ITEM_BASELINE_FRACTION = 0.62
 #: desplaza en vez de crecer: la lista de géneros trae 23 entradas y un
 #: panel con todas se salía por arriba y por abajo de la pantalla, con el
 #: título fuera de cuadro y "Restaurar" cortado.
-MAX_VISIBLE_ITEMS = 10
+#:
+#: 16 y no menos porque los menús largos "de verdad" —filtrar y ordenar, y
+#: la configuración— tienen 15 filas cada uno y caben enteros; con el tope
+#: en 10 se ponían a desplazarse sin necesidad. Y no más porque a partir de
+#: 18 el panel ocupa la pantalla de arriba abajo (medido: 18 filas son 1,77
+#: de los 2,0 que hay).
+MAX_VISIBLE_ITEMS = 16
 
 #: Indicadores de que hay más lista por encima o por debajo.
 SCROLL_UP_MARK = "↑"
@@ -85,7 +95,13 @@ SCROLL_MARK_COLOR = (0.55, 0.57, 0.65, 1)
 TOP_PADDING = 0.075
 TITLE_GAP = 0.085
 BOTTOM_PADDING = 0.055
-SIDE_PADDING = 0.07
+
+# Aire a los lados del texto más ancho. Era 0.07 y se quedaba corto en el
+# menú de configuración: el Client ID de IGDB es una fila muy larga y el
+# panel le quedaba pegado. No hace falta tocar `PANEL_MAX_HALF_WIDTH` — con
+# 0.07 el tope ni siquiera llegaba a entrar en juego (medido: pedía 0.765 de
+# los 0.95 permitidos), el panel simplemente iba justo de margen.
+SIDE_PADDING = 0.12
 
 # Hueco entre la última fila y la pista del pie. Tiene que ser MAYOR que el
 # resto de márgenes porque el texto de una fila se dibuja a media altura de
@@ -134,6 +150,11 @@ class MenuItem:
     #: Datos libres para quien construye el menú (por ejemplo, qué campo del
     #: juego toca una casilla). El menú no los mira.
     payload: dict = field(default_factory=dict)
+
+    #: Color propio, para un rótulo que quiera destacar sobre el resto
+    #: (p.ej. las secciones del menú de configuración). None = el color por
+    #: defecto de su tipo (HEADER_COLOR o ITEM_COLOR).
+    color: tuple[float, float, float, float] | None = None
 
     @property
     def focusable(self) -> bool:
@@ -419,7 +440,7 @@ class Menu:
             parent=self.root,
             text=item.display_label(),
             scale=HEADER_SCALE if is_header else ITEM_SCALE,
-            fg=HEADER_COLOR if is_header else ITEM_COLOR,
+            fg=item.color or (HEADER_COLOR if is_header else ITEM_COLOR),
             align=TextNode.A_left if is_check else TextNode.A_center,
             font=ui_font(),
             # La x de las casillas depende del ancho final del panel, que
@@ -454,6 +475,7 @@ class Menu:
         self._refresh_focus()
 
     def open(self) -> None:
+        """Abre el menú DE NUEVO: se ve, y el foco vuelve al primer elemento."""
         self._visible = True
         self._focus_index = self._first_focusable()
         self._refresh_focus()
@@ -462,6 +484,23 @@ class Menu:
     def close(self) -> None:
         self._visible = False
         self.root.hide()
+
+    def hide(self) -> None:
+        """
+        Aparta el menú para dejar paso a otra cosa, SIN tocar el foco.
+
+        Distinto de `close()` solo en la intención, y distinto de `open()` en
+        lo que importa: `open()` devuelve el foco al primer elemento, así que
+        usarlo para volver de un submenú (o de un cuadro de texto) te dejaba
+        en la primera fila en vez de en la que estabas editando.
+        """
+        self._visible = False
+        self.root.hide()
+
+    def show(self) -> None:
+        """Lo vuelve a enseñar tal y como estaba, con su foco."""
+        self._visible = True
+        self.root.show()
 
     # ──────────────────────────────
     # Navegación

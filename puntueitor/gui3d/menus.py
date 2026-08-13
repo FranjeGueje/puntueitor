@@ -108,6 +108,94 @@ def build_filter_items(filters, tristate_label) -> list[MenuItem]:
     return items
 
 # ──────────────────────────────
+# Configuración (Opciones -> Configuración)
+# ──────────────────────────────
+
+SETTINGS_TITLE = "Configuración"
+
+#: Con qué se tapan las credenciales en la lista. Ni la clave de Steam ni el
+#: secreto de IGDB se enseñan al navegar el menú; sí al editarlos, porque
+#: una clave que no se ve no se puede corregir si te equivocas en un
+#: carácter, y para entonces ya has entrado a propósito a cambiarla.
+SECRET_MASK = "••••••••"
+
+#: Las cuatro tiendas, con el campo de `Config` que las activa.
+SETTINGS_STORES = (
+    ("steam_is_active", "Steam"),
+    ("gog_is_active", "GOG"),
+    ("epic_is_active", "Epic"),
+    ("amazon_is_active", "Amazon"),
+)
+
+#: Campos de texto: clave de config, etiqueta y si va tapado en la lista.
+SETTINGS_TEXTS = (
+    ("igdb_client_id", "Client ID", False),
+    ("igdb_client_secret", "Client Secret", True),
+    ("steam_user_id", "Steam User ID", False),
+    ("steam_api_key", "API Key", True),
+)
+
+
+def _shown(value: str, secret: bool) -> str:
+    if not value:
+        return "N/A"
+    return SECRET_MASK if secret else value
+
+
+def build_settings_items(values: dict) -> list[MenuItem]:
+    """
+    El menú de configuración, con los mismos campos que la pantalla de la
+    TUI (`gui/screens/configuration.py`) y en el mismo orden.
+
+    `values` son los valores EN EDICIÓN, no los guardados: como en el resto
+    de formularios, se trabaja sobre una copia y solo se escribe al dar a
+    "Guardar" (ver `app.App._open_settings_menu`).
+    """
+    items = [MenuItem("sec_igdb", "IGDB", kind="header")]
+    items += [
+        MenuItem(
+            f"set:{key}", label,
+            value=_shown(str(values.get(key) or ""), secret),
+            payload={"field": key, "secret": secret},
+        )
+        for key, label, secret in SETTINGS_TEXTS[:2]
+    ]
+
+    items.append(MenuItem("sec_steam", "STEAM", kind="header"))
+    items += [
+        MenuItem(
+            f"set:{key}", label,
+            value=_shown(str(values.get(key) or ""), secret),
+            payload={"field": key, "secret": secret},
+        )
+        for key, label, secret in SETTINGS_TEXTS[2:]
+    ]
+
+    items.append(MenuItem("sec_stores", "TIENDAS A CARGAR", kind="header"))
+    items += [
+        MenuItem(
+            f"set:{field}", label, kind="check",
+            checked=bool(values.get(field)),
+            payload={"field": field},
+        )
+        for field, label in SETTINGS_STORES
+    ]
+
+    items.append(MenuItem("sec_heroic", "CARPETA DE HEROIC O RELIC", kind="header"))
+    items.append(MenuItem(
+        "set:heroic_path", "Carpeta",
+        # Vacío significa "búscala tú", no "sin poner"; se dice así en vez de
+        # con un N/A, que aquí se leería como un error.
+        value=values.get("heroic_path") or "auto",
+        payload={"field": "heroic_path", "secret": False},
+    ))
+
+    items.append(MenuItem("sec_end", "", kind="header"))
+    items.append(MenuItem("set:save", "Guardar"))
+    return items
+
+
+# ──────────────────────────────
 # Juego (A sobre el carrusel)
 # ──────────────────────────────
 

@@ -127,7 +127,7 @@ from puntueitor.gui3d.fonts import (
     ui_font,
 )
 from puntueitor.core.repository.library_repository import LibraryRepository
-from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS
+from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS, ConfigManager
 from puntueitor.core.models import Library
 from puntueitor.core.services.library_service import LibraryService
 from puntueitor.gui3d import menus, scoring_config, scoring_info
@@ -420,6 +420,8 @@ class App(ShowBase):
         self._config_weights: dict[str, float] = {}
         self._config_hours: float = DEFAULT_AVAILABLE_HOURS
         self._config_genres: set[str] = set()
+        # Valores en edición del menú de configuración de la aplicación.
+        self._settings: dict = {}
 
         # Antes de `_on_selection_changed`: es quien pone el color de acento
         # de los menús a partir de la tienda del juego elegido, así que los
@@ -1003,6 +1005,10 @@ class App(ShowBase):
         # Sin elementos todavía: los suyos dependen del juego y se rellenan
         # al abrirlo (ver `_open_game_menu`).
         self.game_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
+        # Ídem: enseña los valores guardados, que cambian.
+        self.settings_menu = Menu(
+            self.aspect2d, menus.SETTINGS_TITLE, [], hint=_menu_hint(),
+        )
 
         #: Todos los menús, para lo que haya que aplicarles a todos (de
         #: momento el color de acento). Añadir uno nuevo aquí y no en cada
@@ -1010,6 +1016,7 @@ class App(ShowBase):
         self._menus = (
             self.options_menu, self.quit_menu, self.scoring_menu,
             self.scoring_config_menu, self.filter_menu, self.game_menu,
+            self.settings_menu,
         )
 
     @property
@@ -1033,7 +1040,9 @@ class App(ShowBase):
             # no la vuelve a animar, ya está fuera.
             self._animate_ficha(visible=False)
         else:
-            self.active_menu.close()
+            # `hide`, no `close`: al volver hay que encontrarlo con el foco
+            # donde estaba (ver `Menu.hide`).
+            self.active_menu.hide()
 
         self._refresh_menu_accent()
         menu.open()
@@ -1059,7 +1068,9 @@ class App(ShowBase):
             self._on_selection_changed()
 
         if self.active_menu is not None:
-            self.active_menu.open()
+            # `show`, no `open`: volver de un submenú tiene que devolverte a
+            # la fila desde la que entraste, no a la primera.
+            self.active_menu.show()
             # Al volver del formulario de configuración se vuelve a ver la
             # lista de sistemas, y con ella su descripción.
             self._show_scoring_description(self.active_menu is self.scoring_menu)
@@ -1243,6 +1254,8 @@ class App(ShowBase):
             # base de datos), y en el de configuración, un género preferido.
             if menu is self.scoring_config_menu:
                 self._toggle_config_genre(item)
+            elif menu is self.settings_menu:
+                self._toggle_setting_store(item)
             else:
                 self._on_game_flag_toggled(item)
             return
@@ -1257,7 +1270,9 @@ class App(ShowBase):
 
     def _activate(self, menu: Menu, key: str) -> None:
         """Qué hace elegir un elemento de menú."""
-        if key == "quit":
+        if key == "config":
+            self._open_settings_menu()
+        elif key == "quit":
             self._push_menu(self.quit_menu)
         elif key == "quit_yes":
             self.userExit()
@@ -1275,6 +1290,8 @@ class App(ShowBase):
             self._clear_filters()
         elif key.startswith("cfg:"):
             self._activate_config(key)
+        elif key.startswith("set:"):
+            self._activate_setting(key)
         elif menu is self.scoring_menu:
             self._apply_scorer(key)
         else:
@@ -1421,12 +1438,20 @@ class App(ShowBase):
         """
         Abre el cuadro de texto por encima del menú.
 
+        El menú de debajo se APARTA mientras se escribe. El cuadro es más
+        pequeño que un menú y se dibujaba encima, así que las filas del menú
+        asomaban por los lados y por debajo y se leían las dos cosas a la
+        vez. Al cerrar el cuadro vuelve con su foco intacto (`Menu.hide` /
+        `Menu.show`), que es lo que permite seguir editando la misma fila.
+
         Se sueltan los atajos de teclado mientras está abierto: un
         `DirectEntry` con el foco no impide que Panda3D siga repartiendo las
         teclas, así que sin esto escribir "o" conmutaría los ocultos y "x"
         abriría otro menú encima (ver `_release_shortcuts`).
         """
         self._release_shortcuts()
+        if self.active_menu is not None:
+            self.active_menu.hide()
         self.text_prompt.open(
             title=title,
             hint=_prompt_hint(),
@@ -1456,6 +1481,10 @@ class App(ShowBase):
         self.task_mgr.do_method_later(
             0, self._rebind_shortcuts_task, _REBIND_TASK,
         )
+        # El menú vuelve ANTES de aplicar el valor: quien lo aplique va a
+        # repintar sus filas, y para eso tiene que estar ya en pantalla.
+        if self.active_menu is not None:
+            self.active_menu.show()
         if on_accept is not None:
             on_accept(text)
 
@@ -1481,6 +1510,85 @@ class App(ShowBase):
         criterion = self._sort_criterion
         group = self.carousel.group_at_selection(self._groups)
         self.notifier.show(sorting.group_label(criterion, group))
+
+    # ── Configuración de la aplicación ──
+
+    def _open_settings_menu(self) -> None:
+        """
+        "Configuración" dentro de Opciones: los mismos campos que la
+        pantalla equivalente de la TUI.
+
+        Se edita sobre una COPIA de los valores guardados y solo se escribe
+        al dar a "Guardar", así que salir con B deja la configuración como
+        estaba. Importa más aquí que en otros formularios: lo que hay dentro
+        son las credenciales, y perderlas por un roce en un botón sería
+        bastante peor que perder un peso de scoring.
+        """
+        config = ConfigManager().get
+        self._settings = {
+            field: getattr(config, field)
+            for field, _, _ in menus.SETTINGS_TEXTS
+        }
+        self._settings.update({
+            field: getattr(config, field) for field, _ in menus.SETTINGS_STORES
+        })
+        self._settings["heroic_path"] = config.heroic_path
+
+        self.settings_menu.set_items(menus.build_settings_items(self._settings))
+        self._push_menu(self.settings_menu)
+
+    def _refresh_settings_menu(self) -> None:
+        """Repinta los valores sin rehacer el menú, para no perder el foco."""
+        nuevos = {
+            item.key: item
+            for item in menus.build_settings_items(self._settings)
+        }
+        for item in self.settings_menu.items:
+            nuevo = nuevos.get(item.key)
+            if nuevo is not None:
+                item.value = nuevo.value
+        self.settings_menu.refresh_values()
+
+    def _activate_setting(self, key: str) -> None:
+        if key == "set:save":
+            self._save_settings()
+            return
+
+        field = key.removeprefix("set:")
+        label = next(
+            (etiqueta for campo, etiqueta, _ in menus.SETTINGS_TEXTS if campo == field),
+            "Carpeta de Heroic o Relic",
+        )
+        self._open_text_prompt(
+            title=label,
+            initial=str(self._settings.get(field) or ""),
+            on_accept=lambda text: self._set_setting(field, text),
+        )
+
+    def _set_setting(self, field: str, text: str) -> None:
+        if field == "steam_user_id":
+            # Numérico; lo que no se entienda se queda en 0, igual que la
+            # TUI, en vez de dejar la configuración a medio escribir.
+            self._settings[field] = int(text) if text.isdigit() else 0
+        else:
+            self._settings[field] = text
+        self._refresh_settings_menu()
+
+    def _toggle_setting_store(self, item) -> None:
+        field = item.payload.get("field")
+        if field is not None:
+            self._settings[field] = item.checked
+
+    def _save_settings(self) -> None:
+        manager = ConfigManager()
+        config = manager.get
+        for field, value in self._settings.items():
+            setattr(config, field, value)
+        manager.save()
+
+        self.notifier.show("Configuración guardada")
+        logger.info("gui3d: configuración de la aplicación guardada")
+        self._pop_menu()
 
     # ── Scoring ──
 

@@ -907,6 +907,37 @@ Consequences worth knowing:
   closes (`_hidden_filter_dirty`). Applying it immediately yanks the box out from
   under the open menu and shifts the selection while you're still editing it.
 
+## Settings menu (Opciones → Configuración)
+
+Same fields and order as `gui/screens/configuration.py`: IGDB id/secret, Steam
+user id/API key, the four store checkboxes, and the Heroic folder (labelled
+"Carpeta de Heroic o Relic"; empty shows as `auto`, not `N/A`, because blank
+means auto-detect rather than unset).
+
+`igdb_client_secret` and `steam_api_key` are **masked in the list** (`••••••••`)
+but shown in clear **while editing**: you can't fix a one-character typo in a
+key you can't see, and opening the editor is already a deliberate act. If that
+trade-off is ever revisited, `DirectEntry` has an `obscured` option.
+
+Everything is edited on a **copy** and only written on "Guardar", so backing out
+with B leaves the config untouched. That matters more here than in the scoring
+forms — these are the credentials, and losing them to a stray button press is a
+different class of mistake. `ConfigManager.save()` also preserves unknown
+on-disk keys, so saving can't drop anything it doesn't model.
+
+Anything that covers a menu must **hide it first**: `Menu.hide()`/`show()`
+preserve focus, unlike `open()` which resets it to the first row. The text
+prompt is smaller than a menu, so drawn on top the menu's rows showed around
+and under it and you read both at once. The same pair is what makes returning
+from a submenu land on the row you left from rather than the first one — using
+`open()` there silently sent focus back to the top.
+
+**`MAX_VISIBLE_ITEMS` is 16, not 10.** The first version used 10 and quietly
+made the *filter* menu scroll — it has 15 rows and used to fit. Both real long
+menus (filters and settings) are 15 rows; the genre list at 26 still scrolls.
+Above ~18 rows a panel fills the screen top to bottom (18 rows measure 1.77 of
+the 2.0 available), so that's the ceiling.
+
 ## Scoring menu (scoring_info.py, scoring_config.py)
 
 Mirrors the TUI's `gui/screens/scoring.py` + `scoring_config.py`: the four
