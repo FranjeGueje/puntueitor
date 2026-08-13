@@ -127,10 +127,20 @@ from puntueitor.gui3d.fonts import (
     ui_font,
 )
 from puntueitor.core.repository.library_repository import LibraryRepository
-from puntueitor.gui3d import menus
+from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS
+from puntueitor.core.models import Library
+from puntueitor.core.services.library_service import LibraryService
+from puntueitor.gui3d import menus, scoring_config, scoring_info
+from puntueitor.gui3d.filters import (
+    TRISTATE_LABELS,
+    Filters,
+    cycle_tristate,
+    parse_duration,
+)
 from puntueitor.gui3d.gamepad_input import GamepadInput
-from puntueitor.gui3d.menu import Menu
+from puntueitor.gui3d.menu import Menu, MenuItem
 from puntueitor.gui3d.notifications import Notifier
+from puntueitor.gui3d.text_prompt import TextPrompt
 from puntueitor.gui3d.real_data import build_real_entries
 from puntueitor.gui3d.sample_data import build_sample_entries
 from puntueitor.gui3d import sorting
@@ -166,6 +176,17 @@ FICHA_BAR_TOP_Z = -0.16
 # lerps sobre un nodo cada vez, nada de geometría ni texturas de por medio.
 FICHA_ANIM_DURATION = 0.22
 FICHA_ANIM_SLIDE = 0.12
+
+# Descripción del sistema de scoring, en la misma franja que la ficha.
+SCORING_TITLE_SCALE = 0.045
+SCORING_DESC_SCALE = 0.036
+SCORING_TITLE_TOP_MARGIN = 0.06
+SCORING_DESC_GAP = 0.055
+SCORING_SIDE_MARGIN = 0.10
+
+# Cuánto se sube el menú de scoring para que su panel quede por encima de la
+# franja de descripción (que arranca en FICHA_BAR_TOP_Z).
+SCORING_MENU_CENTER_Z = 0.26
 
 FICHA_LABEL_SCALE = 0.034
 FICHA_LINE_HEIGHT = 0.048
@@ -227,6 +248,15 @@ BACKGROUND_SETTLE_DELAY = 0.18
 MENU_REPEAT_DELAY = 0.40
 MENU_REPEAT_INTERVAL = 0.16
 
+# Cadencia al mantener izquierda/derecha sobre un número (pesos, horas). Más
+# rápida que la de navegar: cambiar un peso de 40 a 60 son veinte pasos, y al
+# ritmo de recorrer una lista se haría eterno.
+MENU_VALUE_REPEAT_INTERVAL = 0.07
+
+#: Nombre de la tarea que devuelve los atajos de teclado tras cerrar el
+#: cuadro de texto (ver `App._close_text_prompt`).
+_REBIND_TASK = "rebind-shortcuts"
+
 # Cuánto se sube el carrusel entero para que quede pegado al título.
 CAROUSEL_RAISE = 1.3
 
@@ -270,6 +300,26 @@ def _menu_hint(extra: str = "") -> str:
         f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_XBOX_B)}  volver"
     )
     return f"{hint}   -   {extra}" if extra else hint
+
+
+def _prompt_hint() -> str:
+    """Pista del cuadro de texto: aceptar y cancelar."""
+    return (
+        f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  aceptar   -   "
+        f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_XBOX_B)}  cancelar"
+    )
+
+
+def _value_menu_hint() -> str:
+    """
+    La de los menús con valores que se cambian con izquierda/derecha: el de
+    filtros (N/A, Sí, No) y el de configuración del scoring (los pesos y las
+    horas, que suben y bajan de uno en uno).
+    """
+    kb_lr = ICON_KEYBOARD_LEFT + ICON_KEYBOARD_RIGHT
+    return _menu_hint(
+        f"{icon_markup(kb_lr)} / {icon_markup(ICON_GAMEPAD_LEFT_RIGHT)}  cambiar"
+    )
 
 
 class App(ShowBase):
@@ -327,8 +377,9 @@ class App(ShowBase):
         # Los juegos marcados como ocultos no salen en el carrusel mientras
         # no se pidan expresamente (L2 / tecla "o").
         self._show_hidden = False
-        self._sort_key = sorting.DEFAULT_CRITERION
+        self._sort_criterion = sorting.CRITERIA[sorting.DEFAULT_CRITERION]
         self._groups: list = []
+        self.filters = Filters()
         self._apply_order()
 
         # Carátulas que aún no están en disco: se descargan en segundo plano
@@ -349,6 +400,11 @@ class App(ShowBase):
         self._nav_direction = 0
         self._nav_held_time = 0.0
         self._nav_next_repeat = 0.0
+        # Estado horizontal dentro de un menú, para detectar el flanco y la
+        # repetición al cambiar valores (ver `_update_menu_cycle`).
+        self._menu_h_direction = 0
+        self._menu_h_held_time = 0.0
+        self._menu_h_next_repeat = 0.0
         self._background_key = None
         self._settle_time = 0.0
         self._labels_visible = True
@@ -358,6 +414,12 @@ class App(ShowBase):
         self._game_menu_entry = None
         # Se marca al cambiar "Oculto" y se resuelve al cerrar ese menú.
         self._hidden_filter_dirty = False
+        # Sistema de scoring que se está configurando y sus valores en
+        # edición (ver `_open_scoring_config`).
+        self._config_scorer = None
+        self._config_weights: dict[str, float] = {}
+        self._config_hours: float = DEFAULT_AVAILABLE_HOURS
+        self._config_genres: set[str] = set()
 
         # Antes de `_on_selection_changed`: es quien pone el color de acento
         # de los menús a partir de la tienda del juego elegido, así que los
@@ -372,7 +434,12 @@ class App(ShowBase):
             on_back=self._on_back,
             on_options=self._open_options_menu,
             on_scoring=self._open_scoring_menu,
-            on_filter=self._open_filter_menu,
+            # `_on_filter_key`, no `_open_filter_menu`: es el que sabe que
+            # dentro del menú de scoring X configura en vez de abrir filtros.
+            # Estaba puesto el segundo, así que el botón X del mando abría
+            # filtros incluso sobre la lista de sistemas y solo la tecla "x"
+            # del teclado configuraba.
+            on_filter=self._on_filter_key,
             on_labels=self._toggle_labels,
             on_hidden=self._toggle_hidden,
             on_jump=self._jump_group,
@@ -434,6 +501,27 @@ class App(ShowBase):
 
         # Avisos efímeros, a la altura del título y pegados a la derecha.
         self.notifier = Notifier(self.aspect2d, self.get_aspect_ratio())
+
+        # Descripción del sistema de scoring enfocado. Ocupa la MISMA franja
+        # que la ficha del juego, que está apartada mientras hay un menú
+        # abierto (ver `_animate_ficha`), así que no se pisan nunca.
+        self.scoring_frame = DirectFrame(
+            parent=self.aspect2d,
+            frameColor=FICHA_BAR_COLOR,
+            frameSize=(-1, 1, -1.0, FICHA_BAR_TOP_Z),
+            pos=(0, 0, 0),
+        )
+        self.scoring_frame.hide()
+        self.scoring_title_text = OnscreenText(
+            parent=self.scoring_frame, text="", pos=(0, 0),
+            scale=SCORING_TITLE_SCALE, fg=(0.6, 0.8, 1, 1),
+            align=TextNode.A_center, mayChange=True, font=font,
+        )
+        self.scoring_desc_text = OnscreenText(
+            parent=self.scoring_frame, text="", pos=(0, 0),
+            scale=SCORING_DESC_SCALE, fg=(0.88, 0.88, 0.91, 1),
+            align=TextNode.A_left, wordwrap=40, mayChange=True, font=font,
+        )
 
         # Ficha a todo lo ancho, independiente del aspect ratio de la
         # ventana: aspect2d reescala X según get_aspect_ratio(), así que el
@@ -551,6 +639,17 @@ class App(ShowBase):
         self.ficha_frame["frameSize"] = (-aspect, aspect, -1.0, FICHA_BAR_TOP_Z)
         self.notifier.resize(aspect)
 
+        # La franja de la descripción del scoring comparte sitio con la ficha
+        # y se recoloca igual.
+        self.scoring_frame["frameSize"] = (-aspect, aspect, -1.0, FICHA_BAR_TOP_Z)
+        top = FICHA_BAR_TOP_Z - SCORING_TITLE_TOP_MARGIN
+        self.scoring_title_text.set_pos(0, 0, top)
+        desc_x = -aspect + SCORING_SIDE_MARGIN
+        self.scoring_desc_text.set_pos(desc_x, 0, top - SCORING_DESC_GAP)
+        self.scoring_desc_text["wordwrap"] = max(
+            8.0, (2 * aspect - 2 * SCORING_SIDE_MARGIN) / SCORING_DESC_SCALE,
+        )
+
         left = -aspect + FICHA_SIDE_MARGIN
         right = aspect - FICHA_SIDE_MARGIN
         available = right - left
@@ -604,18 +703,57 @@ class App(ShowBase):
         # `_held_direction`. Las cuatro, no solo las horizontales: las
         # verticales navegan los menús con la misma mecánica.
         self._keys_held = dict.fromkeys(("left", "right", "up", "down"), False)
+
+        # En una tabla, y no sueltos, porque hay que poder soltarlos TODOS a
+        # la vez: mientras se escribe en un cuadro de texto, teclas como "o"
+        # o "x" son letras, no atajos. Ver `_bind_shortcuts`.
+        self._shortcuts = {
+            "enter": (self._on_confirm, []),
+            "escape": (self._on_escape_key, []),
+            "space": (self._toggle_labels, []),
+            "tab": (self._open_scoring_menu, []),
+            "x": (self._on_filter_key, []),
+            "o": (self._toggle_hidden, []),
+            "q": (self._jump_group, [-1]),
+            "w": (self._jump_group, [1]),
+        }
+        self._bind_shortcuts()
+
+    def _bind_shortcuts(self) -> None:
+        """Activa los atajos de teclado y el seguimiento de las flechas."""
         for key in ("left", "right", "up", "down"):
             self.accept(f"arrow_{key}", self._set_key_held, [key, True])
             self.accept(f"arrow_{key}-up", self._set_key_held, [key, False])
+        for key, (handler, args) in self._shortcuts.items():
+            self.accept(key, handler, args)
 
-        self.accept("enter", self._on_confirm)
-        self.accept("escape", self._on_escape_key)
-        self.accept("space", self._toggle_labels)
-        self.accept("tab", self._open_scoring_menu)
-        self.accept("x", self._on_filter_key)
-        self.accept("o", self._toggle_hidden)
-        self.accept("q", self._jump_group, [-1])
-        self.accept("w", self._jump_group, [1])
+    def _release_shortcuts(self) -> None:
+        """
+        Suelta los atajos para que el teclado sea solo texto.
+
+        Hace falta de verdad: un `DirectEntry` con el foco NO impide que
+        Panda3D siga repartiendo los eventos de tecla por el messenger
+        (comprobado), así que sin esto escribir "o" en el filtro de nombre
+        conmutaría además los juegos ocultos, y "x" abriría un menú encima.
+        Las flechas también se sueltan, porque dentro del cuadro de texto
+        mueven el cursor.
+        """
+        for key in ("left", "right", "up", "down"):
+            self.ignore(f"arrow_{key}")
+            self.ignore(f"arrow_{key}-up")
+        for key in self._shortcuts:
+            # Esc se queda: no es un carácter que se pueda escribir y es la
+            # forma de cancelar el cuadro (`_on_escape_key` lo detecta).
+            # Enter sí se suelta, y a propósito: lo recoge el `DirectEntry`,
+            # que llama a su `command`. Dejándolo puesto se dispararían los
+            # dos y el texto se aplicaría dos veces.
+            if key != "escape":
+                self.ignore(key)
+        # Si alguna flecha se quedó "pulsada" al abrir el cuadro, su evento
+        # de soltar ya no va a llegar: se limpia para que el carrusel no
+        # arranque solo al volver.
+        self._keys_held = dict.fromkeys(self._keys_held, False)
+        self._reset_navigation()
 
     def _set_key_held(self, name: str, held: bool) -> None:
         self._keys_held[name] = held
@@ -630,6 +768,9 @@ class App(ShowBase):
         menu = self.active_menu
         if menu is not None:
             menu.move_focus(direction)
+            if menu is self.scoring_menu:
+                # La descripción sigue al foco, como en la TUI.
+                self._refresh_scoring_description()
         else:
             self.carousel.move(direction)
             self._on_selection_changed()
@@ -651,6 +792,11 @@ class App(ShowBase):
         con un carrusel; con el estado, el ritmo lo decidimos aquí y sale
         igual en teclado y en mando.
         """
+        # Escribiendo no se navega: el teclado está escribiendo, pero el
+        # stick del mando seguiría moviendo el carrusel por detrás.
+        if self._typing:
+            return 0
+
         if self.active_menu is not None:
             direction = (1 if self._keys_held["down"] else 0) - (
                 1 if self._keys_held["up"] else 0
@@ -665,6 +811,44 @@ class App(ShowBase):
         if direction:
             return direction
         return self.gamepad.direction() if self.gamepad else 0
+
+    def _menu_horizontal(self) -> int:
+        """Izquierda/derecha dentro de un menú, para los valores que rotan."""
+        if self._typing or self.active_menu is None:
+            return 0
+        direction = (1 if self._keys_held["right"] else 0) - (
+            1 if self._keys_held["left"] else 0
+        )
+        if direction:
+            return direction
+        return self.gamepad.direction() if self.gamepad else 0
+
+    def _update_menu_cycle(self, dt: float) -> None:
+        """
+        Izquierda/derecha dentro de un menú: cambia el valor enfocado.
+
+        Se sondea en vez de reaccionar al evento de tecla para que el mando y
+        el teclado sigan el mismo camino. El primer cambio va por FLANCO
+        (una pulsación, un cambio) y solo los valores numéricos siguen
+        repitiendo si se mantiene — ver `_focused_repeats`.
+        """
+        direction = self._menu_horizontal()
+
+        if direction != self._menu_h_direction:
+            self._menu_h_direction = direction
+            self._menu_h_next_repeat = MENU_REPEAT_DELAY
+            self._menu_h_held_time = 0.0
+            if direction:
+                self._adjust_focused(direction)
+            return
+
+        if not direction or not self._focused_repeats():
+            return
+
+        self._menu_h_held_time += dt
+        while self._menu_h_held_time >= self._menu_h_next_repeat:
+            self._adjust_focused(direction)
+            self._menu_h_next_repeat += MENU_VALUE_REPEAT_INTERVAL
 
     def _update_navigation(self, dt: float) -> None:
         direction = self._held_direction()
@@ -707,6 +891,8 @@ class App(ShowBase):
 
     def _toggle_labels(self) -> None:
         """Muestra u oculta las etiquetas de todas las cajas (espacio / Y)."""
+        if self._typing:
+            return
         self._labels_visible = not self._labels_visible
         self.carousel.set_labels_visible(self._labels_visible)
 
@@ -720,7 +906,8 @@ class App(ShowBase):
         """
         return [
             entry for entry in self.entries
-            if self._show_hidden or not (entry.game and entry.game.hidden)
+            if (self._show_hidden or not (entry.game and entry.game.hidden))
+            and self.filters.matches(entry.game)
         ]
 
     def _apply_order(self, reset_selection: bool = False) -> None:
@@ -735,7 +922,7 @@ class App(ShowBase):
         `self._groups` se guarda porque hace falta después para saber en qué
         grupo está la selección al saltar con L1/R1 (ver `_jump_group`).
         """
-        criterion = sorting.CRITERIA[self._sort_key]
+        criterion = self._sort_criterion
         keys, groups = sorting.order_entries(self._visible_entries(), criterion)
         self._groups = groups
         self.carousel.set_order(keys, groups, reset_selection=reset_selection)
@@ -751,6 +938,8 @@ class App(ShowBase):
         recorrido, no al final: `_apply_order` rehace filtro y ordenación
         enteros a partir de la lista completa.
         """
+        if self._typing:
+            return
         self._show_hidden = not self._show_hidden
         self._apply_hidden_filter()
         # La selección puede haber cambiado de juego (si el que estaba
@@ -795,14 +984,33 @@ class App(ShowBase):
             self.aspect2d, menus.QUIT_TITLE, menus.QUIT_ITEMS, hint=_menu_hint(),
         )
         self.scoring_menu = Menu(
-            self.aspect2d, menus.SCORING_TITLE, menus.SCORING_ITEMS, hint=scoring_hint,
+            self.aspect2d, menus.SCORING_TITLE, menus.build_scoring_items(),
+            hint=scoring_hint,
         )
+        # Subido para dejar sitio a la franja de descripción de abajo, que
+        # empieza en `FICHA_BAR_TOP_Z`; centrado se le montaba encima.
+        self.scoring_menu.set_center_z(SCORING_MENU_CENTER_Z)
+        # Se rellena al abrirlo: sus opciones dependen del sistema elegido.
+        self.scoring_config_menu = Menu(
+            self.aspect2d, "", [], hint=_value_menu_hint(),
+        )
+        # Sin elementos todavía: enseñan los valores de los filtros, que
+        # cambian, así que se rellenan al abrirlo (ver `_open_filter_menu`).
         self.filter_menu = Menu(
-            self.aspect2d, menus.FILTER_TITLE, menus.FILTER_ITEMS, hint=_menu_hint(),
+            self.aspect2d, menus.FILTER_TITLE, [], hint=_value_menu_hint(),
         )
+        self.text_prompt = TextPrompt(self.aspect2d)
         # Sin elementos todavía: los suyos dependen del juego y se rellenan
         # al abrirlo (ver `_open_game_menu`).
         self.game_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
+
+        #: Todos los menús, para lo que haya que aplicarles a todos (de
+        #: momento el color de acento). Añadir uno nuevo aquí y no en cada
+        #: sitio que los recorra.
+        self._menus = (
+            self.options_menu, self.quit_menu, self.scoring_menu,
+            self.scoring_config_menu, self.filter_menu, self.game_menu,
+        )
 
     @property
     def active_menu(self) -> Menu | None:
@@ -830,6 +1038,7 @@ class App(ShowBase):
         self._refresh_menu_accent()
         menu.open()
         self._menu_stack.append(menu)
+        self._show_scoring_description(menu is self.scoring_menu)
         # El foco cambia de dueño, así que se corta la repetición en curso:
         # si no, la pulsación que abrió el menú seguiría contando como
         # mantenida y el foco arrancaría ya moviéndose solo.
@@ -851,7 +1060,11 @@ class App(ShowBase):
 
         if self.active_menu is not None:
             self.active_menu.open()
+            # Al volver del formulario de configuración se vuelve a ver la
+            # lista de sistemas, y con ella su descripción.
+            self._show_scoring_description(self.active_menu is self.scoring_menu)
         else:
+            self._show_scoring_description(False)
             # Se vació la pila: se vuelve al carrusel, así que la ficha
             # deshace la animación y reaparece.
             self._animate_ficha(visible=True)
@@ -906,13 +1119,24 @@ class App(ShowBase):
         """
         entry = self.carousel.selected
         accent = as_text_color(primary_store_color(entry.stores))
-        for menu in (
-            self.options_menu, self.quit_menu, self.scoring_menu,
-            self.filter_menu, self.game_menu,
-        ):
+        # Sobre `self._menus`, no sobre una lista escrita a mano: la de antes
+        # se quedó sin actualizar al añadir el menú de configuración, y ese
+        # salía con el amarillo por defecto en vez del color de la tienda.
+        for menu in self._menus:
             menu.set_accent_color(accent)
 
     # ── Aperturas ──
+
+    @property
+    def _typing(self) -> bool:
+        """
+        ¿Se está escribiendo en el cuadro de texto?
+
+        Los atajos de TECLADO se sueltan mientras tanto, pero los del MANDO
+        siguen llegando (son eventos de dispositivo, no de teclado), así que
+        todo lo que se pueda disparar con el mando tiene que consultarlo.
+        """
+        return self.text_prompt.is_open
 
     def _toggle_root_menu(self, menu: Menu, opener: str) -> None:
         """
@@ -932,6 +1156,8 @@ class App(ShowBase):
         dentro de un menú es "elegir", así que no puede significar también
         "cerrar" — marcaría la casilla y saldría en la misma pulsación.
         """
+        if self._typing:
+            return
         if self._menu_stack:
             if self._menu_opener == opener:
                 self._close_all_menus()
@@ -950,6 +1176,10 @@ class App(ShowBase):
 
     def _open_filter_menu(self) -> None:
         """X sobre el carrusel."""
+        if not self._menu_stack:
+            self.filter_menu.set_items(
+                menus.build_filter_items(self.filters, TRISTATE_LABELS.get),
+            )
         self._toggle_root_menu(self.filter_menu, "filter")
 
     def _on_filter_key(self) -> None:
@@ -958,6 +1188,8 @@ class App(ShowBase):
         sistema enfocado; en el resto de casos abre —o cierra— el menú de
         filtrar y ordenar.
         """
+        if self._typing:
+            return
         if self.active_menu is self.scoring_menu:
             self._configure_focused_scoring()
         else:
@@ -988,6 +1220,13 @@ class App(ShowBase):
 
     def _on_confirm(self) -> None:
         """A / Enter: elige en el menú activo, o abre el del juego."""
+        if self.text_prompt.is_open:
+            # Con el cuadro abierto, A confirma lo escrito. (Enter no pasa
+            # por aquí: los atajos están sueltos y lo recoge el propio
+            # DirectEntry, que llama a su `command`.)
+            self.text_prompt.accept_text()
+            return
+
         menu = self.active_menu
         if menu is None:
             self._open_game_menu()
@@ -999,16 +1238,25 @@ class App(ShowBase):
 
         if item.kind == "check":
             menu.toggle_focused()
-            self._on_game_flag_toggled(item)
+            # Las casillas salen en dos sitios y no significan lo mismo: en
+            # el menú de juego marcan un estado del juego (y se guardan en la
+            # base de datos), y en el de configuración, un género preferido.
+            if menu is self.scoring_config_menu:
+                self._toggle_config_genre(item)
+            else:
+                self._on_game_flag_toggled(item)
+            return
+
+        if item.kind == "cycle":
+            # Estos se cambian con izquierda/derecha; A no hace nada sobre
+            # ellos a propósito, para que no haya dos formas distintas de
+            # tocar el mismo valor.
             return
 
         self._activate(menu, item.key)
 
     def _activate(self, menu: Menu, key: str) -> None:
-        """
-        Qué hace elegir un elemento. Los filtros y la configuración de
-        scoring todavía se quedan en el log; el resto ya hace algo.
-        """
+        """Qué hace elegir un elemento de menú."""
         if key == "quit":
             self._push_menu(self.quit_menu)
         elif key == "quit_yes":
@@ -1017,8 +1265,129 @@ class App(ShowBase):
             self._pop_menu()
         elif key.startswith("sort:"):
             self._apply_sort(key.removeprefix("sort:"))
+        elif key == "filter:name":
+            self._prompt_name_filter()
+        elif key == "filter:duration":
+            self._prompt_duration_filter()
+        elif key == "filter:apply":
+            self._apply_filters()
+        elif key == "filter:clear":
+            self._clear_filters()
+        elif key.startswith("cfg:"):
+            self._activate_config(key)
+        elif menu is self.scoring_menu:
+            self._apply_scorer(key)
         else:
             logger.info(f"gui3d: elegido {key!r} en el menú {menu.title!r}")
+
+    # ── Filtros ──
+
+    def _prompt_name_filter(self) -> None:
+        self._open_text_prompt(
+            title="Filtrar por nombre",
+            initial=self.filters.name or "",
+            on_accept=self._set_name_filter,
+        )
+
+    def _set_name_filter(self, text: str) -> None:
+        self.filters.name = text or None
+        self._refresh_filter_menu()
+
+    def _prompt_duration_filter(self) -> None:
+        current = self.filters.max_duration
+        self._open_text_prompt(
+            title="Duración máxima (horas)",
+            initial=f"{current:g}" if current else "",
+            on_accept=self._set_duration_filter,
+        )
+
+    def _set_duration_filter(self, text: str) -> None:
+        # Un texto que no se entiende ("dos horas", "abc") deja el filtro
+        # sin poner en vez de reventar; `parse_duration` ya devuelve None.
+        self.filters.max_duration = parse_duration(text)
+        self._refresh_filter_menu()
+
+    def _refresh_filter_menu(self) -> None:
+        """Vuelve a pintar los valores del menú de filtros sin mover el foco."""
+        items = menus.build_filter_items(self.filters, TRISTATE_LABELS.get)
+        by_key = {item.key: item for item in items}
+        for item in self.filter_menu.items:
+            nuevo = by_key.get(item.key)
+            if nuevo is not None:
+                item.value = nuevo.value
+        self.filter_menu.refresh_values()
+
+    def _adjust_focused(self, direction: int) -> None:
+        """
+        Izquierda/derecha sobre el elemento enfocado, sea cual sea el menú.
+
+        Hoy hay dos clases de valor ajustables: los filtros de tres estados
+        (N/A, Sí, No) y los números del formulario de scoring (pesos y
+        horas). Se reparte aquí para que la detección de la pulsación viva
+        en un solo sitio.
+        """
+        menu = self.active_menu
+        if menu is None:
+            return
+        item = menu.focused_item
+        if item is None or item.kind != "cycle":
+            return
+
+        if menu is self.filter_menu:
+            field = item.payload.get("field")
+            if field is None:
+                return
+            setattr(
+                self.filters, field,
+                cycle_tristate(getattr(self.filters, field), direction),
+            )
+            self._refresh_filter_menu()
+        elif menu is self.scoring_config_menu:
+            self._adjust_config_value(item, direction)
+
+    def _focused_repeats(self) -> bool:
+        """
+        ¿El valor enfocado se puede mantener pulsado para ir cambiando?
+
+        Los números sí (subir un peso de 40 a 60 son veinte toques), los
+        filtros de tres estados no: con solo tres valores, un toque un poco
+        largo daría la vuelta entera y se pasaría del que se busca.
+        """
+        menu = self.active_menu
+        if menu is not self.scoring_config_menu:
+            return False
+        item = menu.focused_item
+        return item is not None and item.kind == "cycle"
+
+    def _apply_filters(self) -> None:
+        """
+        "Aplicar filtros": cierra el menú y rehace el carrusel.
+
+        Si no coincide NINGÚN juego no se aplica nada y el menú se queda
+        abierto. El carrusel no puede quedarse vacío (ver
+        `Carousel.set_order`), así que aplicar de todos modos dejaba un
+        estado incoherente: los filtros puestos, la biblioteca entera a la
+        vista y un aviso diciendo "1263 juegos". Mejor avisar y dejar
+        corregir el filtro donde se estaba.
+        """
+        if not self._visible_entries():
+            self.notifier.show("Ningún juego coincide")
+            return
+
+        self._close_all_menus()
+        self._apply_order(reset_selection=True)
+        self._on_selection_changed()
+        self.notifier.show(
+            f"{self.carousel.visible_count} juegos"
+            if self.filters.any_active else "Sin filtros"
+        )
+
+    def _clear_filters(self) -> None:
+        self.filters.clear()
+        self._close_all_menus()
+        self._apply_order(reset_selection=True)
+        self._on_selection_changed()
+        self.notifier.show("Filtros limpiados")
 
     def _apply_sort(self, sort_key: str) -> None:
         """
@@ -1034,7 +1403,7 @@ class App(ShowBase):
             logger.warning(f"gui3d: ordenación desconocida {sort_key!r}")
             return
 
-        self._sort_key = sort_key
+        self._sort_criterion = criterion
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
@@ -1048,6 +1417,52 @@ class App(ShowBase):
             self._pop_menu()
         self._menu_opener = None
 
+    def _open_text_prompt(self, title: str, initial: str, on_accept) -> None:
+        """
+        Abre el cuadro de texto por encima del menú.
+
+        Se sueltan los atajos de teclado mientras está abierto: un
+        `DirectEntry` con el foco no impide que Panda3D siga repartiendo las
+        teclas, así que sin esto escribir "o" conmutaría los ocultos y "x"
+        abriría otro menú encima (ver `_release_shortcuts`).
+        """
+        self._release_shortcuts()
+        self.text_prompt.open(
+            title=title,
+            hint=_prompt_hint(),
+            initial=initial,
+            on_accept=lambda text: self._close_text_prompt(on_accept, text),
+            on_cancel=lambda: self._close_text_prompt(None, None),
+        )
+
+    def _close_text_prompt(self, on_accept, text) -> None:
+        """
+        Cierra el cuadro y devuelve los atajos... pero en el SIGUIENTE frame.
+
+        Recuperarlos aquí mismo reabría el cuadro al instante al aceptar con
+        Enter, y cuesta verlo: al pulsar Enter se encolan DOS eventos en la
+        misma tanda. Primero el `accept` del `DirectEntry` (que trae aquí), y
+        justo detrás el evento de tecla "enter" que lanza el ButtonThrower,
+        que no desaparece por tener el foco puesto en el cuadro. Si en el
+        primero se vuelven a coger los atajos, el segundo ya encuentra
+        escuchando a `_on_confirm`, que como el foco del menú sigue en
+        "Nombre" vuelve a abrir el cuadro. El filtro SÍ se aplicaba; lo que
+        parecía es que Enter no hacía nada.
+
+        Con un frame de margen, ese "enter" rezagado no lo escucha nadie.
+        Esc no se ve afectado porque nunca se llega a soltar.
+        """
+        self.task_mgr.remove(_REBIND_TASK)
+        self.task_mgr.do_method_later(
+            0, self._rebind_shortcuts_task, _REBIND_TASK,
+        )
+        if on_accept is not None:
+            on_accept(text)
+
+    def _rebind_shortcuts_task(self, task):
+        self._bind_shortcuts()
+        return task.done
+
     def _jump_group(self, direction: int) -> None:
         """
         L1/R1 (teclas "q" y "w"): salto rápido al grupo anterior/siguiente
@@ -1057,20 +1472,230 @@ class App(ShowBase):
         No hace nada con un menú abierto: ahí las mismas teclas no pintan
         nada y mover el carrusel por detrás solo desconcierta.
         """
-        if self.active_menu is not None:
+        if self._typing or self.active_menu is not None:
             return
         if not self.carousel.jump_to_group(direction):
             return
 
         self._on_selection_changed()
-        criterion = sorting.CRITERIA[self._sort_key]
+        criterion = self._sort_criterion
         group = self.carousel.group_at_selection(self._groups)
         self.notifier.show(sorting.group_label(criterion, group))
 
-    def _configure_focused_scoring(self) -> None:
+    # ── Scoring ──
+
+    def _refresh_scoring_description(self) -> None:
+        """
+        Pone en la franja de abajo la descripción del sistema enfocado.
+
+        Se llama tras cada movimiento del foco (ver `_navigate`), que es lo
+        que hace que la descripción vaya cambiando al recorrer la lista, como
+        en la TUI.
+        """
         item = self.scoring_menu.focused_item
-        if item is not None:
-            logger.info(f"gui3d: configurar el scoring {item.key!r} (pendiente)")
+        scorer = scoring_info.BY_KEY.get(item.key) if item else None
+        if scorer is None:
+            return
+        self.scoring_title_text.setText(scorer.title)
+        self.scoring_desc_text.setText(scorer.description)
+
+    def _show_scoring_description(self, visible: bool) -> None:
+        if visible:
+            self._refresh_scoring_description()
+            self.scoring_frame.show()
+        else:
+            self.scoring_frame.hide()
+
+    def _apply_scorer(self, scoring_key: str) -> None:
+        """
+        A sobre un sistema: puntúa la biblioteca y ordena el carrusel por esa
+        nota.
+
+        Se delega en `LibraryService.score`, el mismo camino que usa la TUI,
+        para que las dos interfaces den exactamente el mismo ranking con la
+        misma configuración. De ahí sale una nota por juego, y con ella se
+        arma un criterio de ordenación al vuelo (`sorting.scorer_criterion`).
+        """
+        scorer = scoring_info.BY_KEY.get(scoring_key)
+        if scorer is None:
+            return
+
+        library = Library.from_iterable(
+            entry.game for entry in self.entries if entry.game is not None
+        )
+        _scored, scores = LibraryService(self.library_repository).score(
+            library, scoring_key,
+        )
+        if not scores:
+            self.notifier.show("Ese sistema no ha podido puntuar")
+            logger.warning(f"gui3d: {scoring_key!r} no devolvió puntuaciones")
+            return
+
+        self._sort_criterion = sorting.scorer_criterion(scorer.name, scores)
+        self._close_all_menus()
+        self._apply_order(reset_selection=True)
+        self._on_selection_changed()
+        self.notifier.show(f"Puntuado: {scorer.name}")
+        logger.info(f"gui3d: biblioteca puntuada con {scoring_key!r}")
+
+    def _configure_focused_scoring(self) -> None:
+        """X sobre un sistema: abre su formulario de configuración."""
+        item = self.scoring_menu.focused_item
+        scorer = scoring_info.BY_KEY.get(item.key) if item else None
+        if scorer is None:
+            return
+        self._open_scoring_config(scorer)
+
+    def _open_scoring_config(self, scorer) -> None:
+        """
+        Abre el formulario del sistema `scorer`, con los valores que tiene
+        guardados ahora mismo.
+
+        Los pesos se editan sobre una copia (`_config_weights`) y solo se
+        escriben en la configuración al dar a "Guardar": repartir tres
+        porcentajes obliga a pasar por estados que no suman 100 (bajas uno
+        para subir otro), así que guardar en cada cambio sería imposible.
+        """
+        self._config_scorer = scorer
+        if scorer.config == "weights":
+            self._config_weights = scoring_config.weights_of(scorer.key)
+        elif scorer.config == "hours":
+            self._config_hours = scoring_config.available_hours()
+        elif scorer.config == "genres":
+            self._config_genres = scoring_config.preferred_genres()
+
+        self.scoring_config_menu.set_title(f"{scorer.name}: configuración")
+        self.scoring_config_menu.set_items(self._build_config_items())
+        self._push_menu(self.scoring_config_menu)
+
+    def _build_config_items(self) -> list:
+        """Las filas del formulario, según el tipo de configuración."""
+        scorer = self._config_scorer
+        if scorer.config == "weights":
+            items = [
+                MenuItem(
+                    f"cfg:weight:{field}", label, kind="cycle",
+                    value=f"{self._config_weights[field]:g} %",
+                    payload={"weight": field},
+                )
+                for field, label in scoring_config.WEIGHT_FIELDS
+            ]
+            total = scoring_config.weights_sum(self._config_weights)
+            ok = scoring_config.weights_are_valid(self._config_weights)
+            # La suma se enseña siempre, como en la TUI: sin ella no hay
+            # forma de saber por qué "Guardar" no hace nada.
+            items.append(MenuItem(
+                "cfg:sum",
+                f"Suma: {total:g} %" + ("" if ok else "  (debe ser 100)"),
+                kind="header",
+            ))
+        elif scorer.config == "hours":
+            items = [MenuItem(
+                "cfg:hours", "Horas disponibles", kind="cycle",
+                value=f"{self._config_hours:g} h",
+                payload={"hours": True},
+            )]
+        else:
+            genres = scoring_config.all_genres()
+            items = [
+                MenuItem(
+                    f"cfg:genre:{genre}", genre, kind="check",
+                    checked=genre in self._config_genres,
+                    payload={"genre": genre},
+                )
+                for genre in genres
+            ] or [MenuItem("cfg:nogenres", "No hay géneros en la caché", kind="header")]
+
+        items.append(MenuItem("cfg:sep", "", kind="header"))
+        items.append(MenuItem("cfg:save", "Guardar"))
+        items.append(MenuItem("cfg:reset", "Restaurar valores por defecto"))
+        return items
+
+    def _refresh_config_menu(self) -> None:
+        """
+        Repinta los valores del formulario SIN rehacerlo.
+
+        Con `set_items` el foco volvía al primer elemento en cada cambio, así
+        que al mantener izquierda sobre "Usuarios" el primer paso lo bajaba a
+        él y los siguientes ya iban a "Críticos", en silencio. Aquí se
+        modifican el valor (y la etiqueta de la suma, que también cambia) de
+        los elementos que ya existen y se repintan sus textos, que es lo que
+        conserva el foco.
+        """
+        menu = self.scoring_config_menu
+        nuevos = {item.key: item for item in self._build_config_items()}
+        for item in menu.items:
+            nuevo = nuevos.get(item.key)
+            if nuevo is None:
+                continue
+            item.value = nuevo.value
+            item.label = nuevo.label
+        menu.refresh_values()
+
+    def _activate_config(self, key: str) -> None:
+        """Qué hace elegir (A) cada fila del formulario de configuración."""
+        if key == "cfg:save":
+            self._save_scoring_config()
+        elif key == "cfg:reset":
+            self._reset_scoring_config()
+        # Los pesos y las horas no responden a A: se ajustan con izquierda y
+        # derecha (ver `_adjust_config_value`).
+
+    def _adjust_config_value(self, item, direction: int) -> None:
+        """
+        Sube o baja de uno en uno el valor de la fila enfocada.
+
+        Antes cada valor abría un cuadro de texto; con dos flechas se cambia
+        en el sitio y no hay que salir del formulario para retocar un número.
+
+        Los pesos se limitan a 0-100 (un porcentaje fuera de ahí no
+        significa nada) y las horas no bajan de 1 (cero horas disponibles
+        haría que ningún juego encajara). Ni unos ni otras se guardan aquí:
+        eso es cosa de "Guardar".
+        """
+        if "weight" in item.payload:
+            field = item.payload["weight"]
+            current = self._config_weights[field]
+            self._config_weights[field] = min(100.0, max(0.0, current + direction))
+        elif "hours" in item.payload:
+            self._config_hours = max(1.0, self._config_hours + direction)
+        else:
+            return
+        self._refresh_config_menu()
+
+    def _toggle_config_genre(self, item) -> None:
+        genre = item.payload.get("genre")
+        if genre is None:
+            return
+        if item.checked:
+            self._config_genres.add(genre)
+        else:
+            self._config_genres.discard(genre)
+
+    def _save_scoring_config(self) -> None:
+        scorer = self._config_scorer
+        if scorer.config == "weights":
+            if not scoring_config.save_weights(scorer.key, self._config_weights):
+                self.notifier.show("Los pesos deben sumar 100")
+                return
+        elif scorer.config == "hours":
+            scoring_config.save_available_hours(self._config_hours)
+        elif scorer.config == "genres":
+            scoring_config.save_preferred_genres(self._config_genres)
+
+        self.notifier.show("Configuración guardada")
+        self._pop_menu()
+
+    def _reset_scoring_config(self) -> None:
+        scorer = self._config_scorer
+        if scorer.config == "weights":
+            self._config_weights = scoring_config.default_weights(scorer.key)
+        elif scorer.config == "hours":
+            self._config_hours = DEFAULT_AVAILABLE_HOURS
+        else:
+            self._config_genres = set()
+        self._refresh_config_menu()
+        self.notifier.show("Valores restaurados")
 
     def _on_game_flag_toggled(self, item) -> None:
         """
@@ -1129,6 +1754,9 @@ class App(ShowBase):
         pantalla principal no hay a dónde volver. Quien abre Opciones ahí es
         Select (o Esc en el teclado, ver `_on_escape_key`).
         """
+        if self.text_prompt.is_open:
+            self.text_prompt.cancel()
+            return
         if self._menu_stack:
             self._pop_menu()
 
@@ -1138,6 +1766,9 @@ class App(ShowBase):
         tiene un equivalente cómodo a los dos: dentro de un menú vuelve, y
         en la pantalla principal abre Opciones.
         """
+        if self.text_prompt.is_open:
+            self.text_prompt.cancel()
+            return
         if self._menu_stack:
             self._pop_menu()
         else:
@@ -1284,6 +1915,7 @@ class App(ShowBase):
             # que sondearlos (ver `GamepadInput.update`).
             self.gamepad.update()
         self._update_navigation(dt)
+        self._update_menu_cycle(dt)
         self.carousel.update(dt)
 
         for key, path in self.cover_loader.poll():

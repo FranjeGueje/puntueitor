@@ -6,7 +6,7 @@ from textual import on
 from pathlib import Path
 
 from puntueitor.core import paths
-from puntueitor.core.config import ConfigManager, DEFAULT_MIXED_WEIGHTS, DEFAULT_WEIGHTED_WEIGHTS, DEFAULT_AVAILABLE_HOURS
+from puntueitor.core.config import load_scoring, save_scoring, DEFAULT_MIXED_WEIGHTS, DEFAULT_WEIGHTED_WEIGHTS, DEFAULT_AVAILABLE_HOURS
 
 
 class ScoringConfigScreen(ModalScreen[dict]):
@@ -53,7 +53,7 @@ class ScoringConfigScreen(ModalScreen[dict]):
         
         self._input_refs = {}
 
-        config = ConfigManager().get
+        config = load_scoring()
 
         if self.scoring_type == "mixed":
             self._build_weight_config(form, config, "mixed")
@@ -170,8 +170,7 @@ class ScoringConfigScreen(ModalScreen[dict]):
         if self.scoring_type in ("mixed", "weighted") and not self._validate_weights():
             return
 
-        manager = ConfigManager()
-        config = manager.get
+        config = load_scoring()
 
         if self.scoring_type == "mixed":
             config.scoring_mixed_critics = float(self._input_refs["critics"].value) / 100
@@ -194,13 +193,12 @@ class ScoringConfigScreen(ModalScreen[dict]):
                     selected.append(cb.label.plain)
             config.scoring_preferred_genres = selected
 
-        manager.save()
+        save_scoring(config)
         self.app.notify("Configuración guardada.", severity="information")
         self.dismiss({"type": self.scoring_type})
 
     def _reset_to_defaults(self) -> None:
-        manager = ConfigManager()
-        config = manager.get
+        config = load_scoring()
 
         if self.scoring_type == "mixed":
             config.scoring_mixed_critics = DEFAULT_MIXED_WEIGHTS["critics"]
@@ -215,7 +213,7 @@ class ScoringConfigScreen(ModalScreen[dict]):
         elif self.scoring_type == "genre":
             config.scoring_preferred_genres = []
 
-        manager.save()
+        save_scoring(config)
         self._build_form()
         self.app.notify("Valores restaurados.", severity="information")
 

@@ -143,6 +143,27 @@ CRITERIA: dict[str, SortCriterion] = {
 
 DEFAULT_CRITERION = "title"
 
+
+def scorer_criterion(label: str, scores: dict[int, float]) -> SortCriterion:
+    """
+    Un criterio hecho a medida para un sistema de scoring ya calculado.
+
+    `scores` viene de `LibraryService.score`, que es quien puntúa de verdad
+    (el mismo camino que usa la TUI). Aquí solo se consulta, para que ordenar
+    el carrusel y la nota que se enseña salgan del mismo número.
+
+    No entra en `CRITERIA` porque no es fijo: depende de la configuración del
+    usuario y de la biblioteca, y hay que rehacerlo cada vez que se aplica.
+    """
+    return SortCriterion(
+        key="scorer",
+        label=label,
+        reverse=True,
+        make_value=lambda: (lambda game: scores.get(game.igdb_id)),
+        group_of=_numeric_group,
+        label_group=_score_group_label("Puntuación"),
+    )
+
 #: Etiqueta del grupo de los juegos sin dato, para los avisos.
 NO_VALUE_GROUP = None
 

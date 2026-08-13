@@ -14,7 +14,7 @@ from puntueitor.core.scoring.atomic import (
 )
 from puntueitor.core.scoring.weighted_score import WeightedScore
 from puntueitor.core.pipeline.scoring_ops import score_library
-from puntueitor.core.config import ConfigManager
+from puntueitor.core.config import load_scoring
 
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ class LibraryService:
                 reverse=reverse,
             )
         elif criteria == "mixed":
-            config = ConfigManager().get
+            config = load_scoring()
             strategy = MixedScore(
                 weight_critics=config.scoring_mixed_critics,
                 weight_users=config.scoring_mixed_users,
@@ -106,7 +106,7 @@ class LibraryService:
         scoring_type: str,
         ctx: ScoringContext | None = None,
     ) -> tuple[Library, dict[int, float]]:
-        config = ConfigManager().get
+        config = load_scoring()
 
         if ctx is None:
             ctx = ScoringContext(

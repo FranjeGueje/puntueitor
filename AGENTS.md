@@ -907,6 +907,144 @@ Consequences worth knowing:
   closes (`_hidden_filter_dirty`). Applying it immediately yanks the box out from
   under the open menu and shifts the selection while you're still editing it.
 
+## Scoring menu (scoring_info.py, scoring_config.py)
+
+Mirrors the TUI's `gui/screens/scoring.py` + `scoring_config.py`: the four
+systems listed, the focused one's description in a bar along the bottom, A
+applies it, X opens its config form.
+
+Applying goes through `LibraryService.score()` — the exact call the TUI makes —
+and the returned `scores_map` becomes a throwaway sort criterion
+(`sorting.scorer_criterion`). That's what guarantees both frontends rank
+identically with the same config; the test asserts the gui3d order equals
+`LibraryService`'s directly rather than trusting it.
+
+The descriptions are **copied** from the TUI, not imported: that module is
+Textual, and importing it would drag the whole TUI into the 3D app for five
+strings. Edit both if they change. The *keys* (`mixed`/`weighted`/`time`/
+`genre`) must stay identical — `LibraryService.score` dispatches on them.
+
+Config forms come in three shapes (`Scorer.config`): `weights` (three
+percentages that must total 100), `hours`, `genres`. Numbers are adjusted with
+**left/right, ±1 per step** (held down they repeat, faster than list
+navigation — 40→60 is twenty steps); A does nothing on them, so there's only
+one way to change a value. Weights and hours are edited on a **copy** and only
+written on "Guardar": distributing three percentages means passing through
+invalid totals on the way (you lower one to raise another), so validating per
+change would make them uneditable. Percentages are shown 0-100 but stored as
+fractions, same as the TUI.
+
+Refreshing such a form must **not** call `set_items` — that resets focus to the
+first row, so holding left on "Usuarios" moved it one step and then silently
+kept decrementing "Críticos". Mutate the existing items' `value`/`label` and
+call `Menu.refresh_values()`, which only rewrites the text.
+
+The gamepad's X must be wired to `_on_filter_key`, not `_open_filter_menu`:
+the former is what knows X means "configure" inside the scoring menu. Bound to
+the latter, only the keyboard `x` could open a config form.
+
+Scoring settings live in their **own file**, `scoring.json`
+(`paths.scoring_file()`), read/written by `load_scoring()`/`save_scoring()` —
+used by both frontends *and* `LibraryService`, so they can't diverge.
+`config.json` keeps only credentials, store toggles and paths. The split is
+deliberate: the scoring values are rewritten every time you nudge a weight,
+and that file used to also hold `steam_api_key` and `igdb_client_secret`.
+Field names keep the `scoring_` prefix even though it's redundant there, so
+readers didn't have to change and migration is a literal key copy.
+
+`load_scoring()` **migrates on first run**: if `config.json` still carries
+`scoring_*` keys they're copied out and then stripped. Order matters — the new
+file is written *first*, so an interruption leaves the values duplicated
+(harmless, `Config` ignores unknown keys) rather than lost. `ConfigManager.save()`
+also preserves on-disk keys it doesn't know about, so a half-migrated file
+can't be truncated by an unrelated save.
+
+Both files are written with `write_json_atomic` (temp + `os.replace`). The old
+`open(path, "w")` truncates *immediately*: any failure mid-dump left a
+half-written `config.json`, i.e. no API keys. Same reasoning as the cover
+downloads in `gui3d/covers.py`.
+
+`ConfigManager` is a process-wide **singleton that writes the user's real
+config file**, and it caches its directory on first instantiation.
+`tests/conftest.py` now has an **autouse** fixture isolating every test
+(deletes the `XDG_*` vars, patches `Path.home`, resets the singleton) — per-test
+isolation kept failing by omission. Two traps it does not protect you from:
+
+- **`monkeypatch.undo()` inside a test undoes the fixture too**, putting the
+  rest of that test back on the real files. It happened: a test of atomic
+  writes called `undo()` and migrated the real config. Use
+  `with monkeypatch.context() as m:` to revert one patch.
+- Don't point the `XDG_*` vars at the temp dir instead of deleting them:
+  `paths.py` prefers them over `Path.home()`, so tests that hand-write into
+  `tmp_path/".config"` would read a different directory than the code writes.
+
+Two layout consequences this feature forced:
+
+- **The description bar reuses the ficha's strip** (same `FICHA_BAR_TOP_Z`),
+  which is free because the ficha is animated away whenever a menu is open. The
+  scoring menu itself is raised (`Menu.set_center_z`) or its centred panel
+  overlaps that strip.
+- **`Menu` scrolls past `MAX_VISIBLE_ITEMS`.** The genre list has 23 entries and
+  a full-height panel ran off both ends of the screen, title out of frame and
+  "Restaurar" cut off. The window follows focus and sticks at the ends; panel
+  height is *fixed* while scrolling (rather than measured from the visible rows)
+  so it doesn't jump as shorter header rows scroll through, and all row texts
+  are still created — only the off-window ones hidden — so the measured panel
+  width can't change as you scroll.
+
+## Filters (filters.py, text_prompt.py)
+
+`Filters` holds name / max duration / finished / favorite / backlog, and
+`matches()` is the single place that decides whether a game gets in.
+`app._visible_entries()` combines it with the hidden-games switch, so filtering
+and sorting compose through the same path as everything else.
+
+The three state filters are **tri-state**, not boolean: unset / only-yes /
+only-no. A bool can't express "don't care", which is what they are almost
+always. Left/right cycles them, edge-triggered rather than hold-repeat — with
+only three values a slightly long press would wrap past the one you wanted.
+The edge is detected by polling in `_update_menu_cycle` so keyboard and pad go
+through one path.
+
+A game with **unknown duration fails** the max-duration filter. The filter says
+"lasts at most X" and we don't know that it does; letting it through would
+assert something not on record.
+
+**Applying a filter that matches nothing is refused** and leaves the menu open.
+The carousel can't be empty (`set_order` rejects it), so applying anyway left
+filters set, the whole library on screen, and a notification reading "1263
+juegos" — three things disagreeing at once. Now it says "Ningún juego coincide"
+and you fix it where you are.
+
+The **text prompt is the dangerous part**. A focused `DirectEntry` does *not*
+stop Panda3D dispatching key events through the messenger — verified — so
+typing "o" would still toggle hidden games and "x" would open a menu on top.
+`app` therefore drops its shortcuts while the prompt is open
+(`_release_shortcuts`) and re-binds on close, with two deliberate exceptions:
+`escape` stays bound (it can't be typed, and it's how you cancel) and `enter`
+is released (the `DirectEntry`'s own `command` handles it — leaving it bound
+fires both and applies the text twice).
+
+**The re-bind must be deferred one frame** (`_close_text_prompt` schedules
+`_rebind_shortcuts_task`). Pressing Enter queues *two* events in the same batch:
+the `DirectEntry`'s `accept`, and right behind it the raw `"enter"` from the
+ButtonThrower, which having focus in the entry does not suppress. Re-binding
+inside the first handler meant the second one found `_on_confirm` listening
+again, and since menu focus was still on "Nombre" it reopened the prompt
+instantly. The symptom looked like "Enter does nothing" — the filter *was* being
+applied, the box just reappeared. Diagnosed by driving real X keystrokes into a
+real window with XTEST (python-xlib); `accept_text()` called directly from a
+test never goes near this path and passes happily. Gamepad buttons don't go through the
+keyboard at all, so every pad-reachable action checks `self._typing`, including
+navigation: otherwise the stick would keep scrolling the carousel behind the
+prompt.
+
+Menu rows can carry a `value` rendered as `Label  <value>`. Changing one calls
+`Menu.refresh_values()`, which only rewrites the label text — rebuilding the
+menu would send focus back to the first row on every keypress, and the panel is
+deliberately *not* re-measured so a longer value can't make the menu jump width
+mid-use.
+
 ## Sorting and the L1/R1 group jump (sorting.py)
 
 `sorting.py` owns the sort criteria (`title`, `user_score`, `critic_score`,

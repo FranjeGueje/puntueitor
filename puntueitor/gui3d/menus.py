@@ -12,6 +12,7 @@ las dos interfaces hablen el mismo idioma cuando se conecten a la lógica de
 verdad.
 """
 from puntueitor.core.models import Game
+from puntueitor.gui3d import scoring_info
 from puntueitor.gui3d.menu import MenuItem
 
 # ──────────────────────────────
@@ -40,13 +41,12 @@ QUIT_ITEMS = [
 
 SCORING_TITLE = "Puntueitor - Sistemas de Scoring"
 
-#: Mismo orden y mismas claves que la lista de la TUI.
-SCORING_ITEMS = [
-    MenuItem("mixed", "Mixed Score"),
-    MenuItem("weighted", "Weighted Score"),
-    MenuItem("time", "Available Time"),
-    MenuItem("genre", "Genre Match"),
-]
+
+def build_scoring_items() -> list[MenuItem]:
+    """Un elemento por sistema de scoring, en el orden de la TUI."""
+    return [
+        MenuItem(scorer.key, scorer.name) for scorer in scoring_info.SCORERS
+    ]
 
 # ──────────────────────────────
 # Filtrar y ordenar (X / x)
@@ -54,25 +54,58 @@ SCORING_ITEMS = [
 
 FILTER_TITLE = "Filtrar y ordenar"
 
-# Los dos grupos van en un solo menú, no en dos, porque en la práctica se
-# tocan a la vez ("los terminados, por duración") y separarlos obligaría a
-# entrar y salir dos veces. Los rótulos de sección no se pueden enfocar: al
-# navegar se saltan solos (ver `Menu.move_focus`).
-FILTER_ITEMS = [
-    MenuItem("sec_sort", "ORDENAR POR", kind="header"),
-    MenuItem("sort:title", "Nombre"),
-    MenuItem("sort:user_score", "Puntuación de usuarios"),
-    MenuItem("sort:critic_score", "Puntuación de crítica"),
-    MenuItem("sort:steamdb", "Puntuación de SteamDB"),
-    MenuItem("sort:duration", "Duración"),
-    MenuItem("sec_filter", "FILTRAR", kind="header"),
-    MenuItem("filter:finished:true", "Solo terminados"),
-    MenuItem("filter:finished:false", "Solo no terminados"),
-    MenuItem("filter:favorite:true", "Solo favoritos"),
-    MenuItem("filter:backlog:true", "Solo backlog"),
-    MenuItem("filter:hidden:true", "Solo ocultos"),
-    MenuItem("filter:clear", "Limpiar filtros"),
-]
+#: Los tres filtros de estado, con el campo de `Game` al que corresponden.
+#: Rotan entre N/A, Sí y No con izquierda/derecha (ver `filters.py`).
+FILTER_TRISTATES = (
+    ("finished", "Terminados"),
+    ("favorite", "Favoritos"),
+    ("backlog", "Backlog"),
+)
+
+
+def build_filter_items(filters, tristate_label) -> list[MenuItem]:
+    """
+    El menú de filtrar y ordenar, con los valores que tienen los filtros
+    ahora mismo.
+
+    Se reconstruye al abrirlo en vez de crearse una vez porque los valores
+    se ven en las propias etiquetas ("Nombre <hollow>"), y un menú creado al
+    arrancar los enseñaría siempre vacíos.
+
+    Los dos grupos —ordenar y filtrar— van en un solo menú, no en dos,
+    porque en la práctica se tocan a la vez ("los terminados, por duración")
+    y separarlos obligaría a entrar y salir dos veces. Los rótulos de
+    sección no se pueden enfocar: al navegar se saltan solos (ver
+    `Menu.move_focus`).
+    """
+    items = [
+        MenuItem("sec_sort", "ORDENAR POR", kind="header"),
+        MenuItem("sort:title", "Nombre"),
+        MenuItem("sort:user_score", "Puntuación de usuarios"),
+        MenuItem("sort:critic_score", "Puntuación de crítica"),
+        MenuItem("sort:steamdb", "Puntuación de SteamDB"),
+        MenuItem("sort:duration", "Duración"),
+        MenuItem("sec_filter", "FILTRAR", kind="header"),
+        MenuItem("filter:name", "Nombre", value=filters.name or "N/A"),
+        MenuItem(
+            "filter:duration", "Duración máx.",
+            value=f"{filters.max_duration:g} h" if filters.max_duration else "N/A",
+        ),
+    ]
+    items += [
+        MenuItem(
+            f"filter:{field}", label, kind="cycle",
+            value=tristate_label(getattr(filters, field)),
+            payload={"field": field},
+        )
+        for field, label in FILTER_TRISTATES
+    ]
+    items += [
+        MenuItem("sec_apply", "", kind="header"),
+        MenuItem("filter:apply", "Aplicar filtros"),
+        MenuItem("filter:clear", "Limpiar filtros"),
+    ]
+    return items
 
 # ──────────────────────────────
 # Juego (A sobre el carrusel)

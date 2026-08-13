@@ -69,6 +69,18 @@ HEADER_HEIGHT = 0.062
 #: mitad porque el texto crece hacia ARRIBA desde su línea base.
 _ITEM_BASELINE_FRACTION = 0.62
 
+#: Cuántas filas se enseñan como mucho. Pasado ese número el menú se
+#: desplaza en vez de crecer: la lista de géneros trae 23 entradas y un
+#: panel con todas se salía por arriba y por abajo de la pantalla, con el
+#: título fuera de cuadro y "Restaurar" cortado.
+MAX_VISIBLE_ITEMS = 10
+
+#: Indicadores de que hay más lista por encima o por debajo.
+SCROLL_UP_MARK = "↑"
+SCROLL_DOWN_MARK = "↓"
+SCROLL_MARK_SCALE = 0.030
+SCROLL_MARK_COLOR = (0.55, 0.57, 0.65, 1)
+
 # Márgenes internos del panel.
 TOP_PADDING = 0.075
 TITLE_GAP = 0.085
@@ -115,6 +127,10 @@ class MenuItem:
     checked: bool = False
     enabled: bool = True
 
+    #: Valor actual, si el elemento enseña uno ("Terminados <N/A>"). Se pinta
+    #: entre ángulos detrás de la etiqueta. None = el elemento no lleva valor.
+    value: str | None = None
+
     #: Datos libres para quien construye el menú (por ejemplo, qué campo del
     #: juego toca una casilla). El menú no los mira.
     payload: dict = field(default_factory=dict)
@@ -124,9 +140,11 @@ class MenuItem:
         return self.kind != "header" and self.enabled
 
     def display_label(self) -> str:
-        if self.kind != "check":
-            return self.label
-        return (CHECK_ON if self.checked else CHECK_OFF) + self.label
+        if self.kind == "check":
+            return (CHECK_ON if self.checked else CHECK_OFF) + self.label
+        if self.value is not None:
+            return f"{self.label}  <{self.value}>"
+        return self.label
 
 
 class Menu:
@@ -174,6 +192,22 @@ class Menu:
             mayChange=True,
         )
 
+        # Avisan de que la lista sigue por arriba o por abajo (ver `_window`).
+        self._scroll_up = OnscreenText(
+            parent=self.root, text=SCROLL_UP_MARK, scale=SCROLL_MARK_SCALE,
+            fg=SCROLL_MARK_COLOR, align=TextNode.A_center, font=ui_font(),
+        )
+        self._scroll_down = OnscreenText(
+            parent=self.root, text=SCROLL_DOWN_MARK, scale=SCROLL_MARK_SCALE,
+            fg=SCROLL_MARK_COLOR, align=TextNode.A_center, font=ui_font(),
+        )
+        self._scroll_up.hide()
+        self._scroll_down.hide()
+
+        #: Primera fila de la ventana visible; sirve para saber si al mover
+        #: el foco hay que rehacer el menú o basta con recolorear.
+        self._window_start = 0
+
         self.set_items(items or [])
 
     # ──────────────────────────────
@@ -201,6 +235,16 @@ class Menu:
     def set_title(self, title: str) -> None:
         self.title = title
         self._title_text.setText(title)
+
+    def set_center_z(self, z: float) -> None:
+        """
+        Sube o baja el menú entero.
+
+        Todo se coloca respecto al origen del nodo raíz, así que mover la
+        raíz basta. Lo usa el menú de scoring, que comparte pantalla con la
+        franja de descripción de abajo y centrado se solapaba con ella.
+        """
+        self.root.set_z(z)
 
     def _first_focusable(self) -> int:
         for i, item in enumerate(self._items):
@@ -250,13 +294,63 @@ class Menu:
             half = max(half, (checks + _CHECK_ITEM_INDENT + SIDE_PADDING) / 2.0)
         return min(PANEL_MAX_HALF_WIDTH, max(PANEL_MIN_HALF_WIDTH, half))
 
+    def _layout_scroll_marks(self, half: float, start: int, end: int) -> None:
+        """Coloca (o esconde) las flechas de "hay más lista"."""
+        if not self._scrolls:
+            self._scroll_up.hide()
+            self._scroll_down.hide()
+            return
+
+        # Justo bajo el título y justo sobre la pista, en el hueco que dejan
+        # los márgenes; no ocupan fila propia para no comerse una entrada.
+        self._scroll_up.set_pos(0, 0, half - TOP_PADDING - TITLE_GAP * 0.55)
+        self._scroll_down.set_pos(0, 0, -half + BOTTOM_PADDING + HINT_GAP * 0.55)
+        (self._scroll_up.show if start > 0 else self._scroll_up.hide)()
+        (self._scroll_down.show if end < len(self._items) else self._scroll_down.hide)()
+
+    @property
+    def _scrolls(self) -> bool:
+        return len(self._items) > MAX_VISIBLE_ITEMS
+
+    def _window(self) -> tuple[int, int]:
+        """
+        Qué tramo de la lista se ve: `(primero, ultimo_excluido)`.
+
+        La ventana sigue al foco pero se queda pegada a los extremos, para
+        que al llegar al final de la lista no queden huecos en blanco
+        debajo. Sin desplazamiento se devuelve la lista entera.
+        """
+        total = len(self._items)
+        if not self._scrolls:
+            return 0, total
+        half = MAX_VISIBLE_ITEMS // 2
+        start = max(0, min(self._focus_index - half, total - MAX_VISIBLE_ITEMS))
+        return start, start + MAX_VISIBLE_ITEMS
+
+    def _relayout(self) -> None:
+        """Rehace la disposición conservando los elementos (para desplazar)."""
+        for text in self._item_texts:
+            text.destroy()
+        self._item_texts.clear()
+        self._rebuild()
+
     def _rebuild(self) -> None:
         """Recoloca panel, título, filas y pista según el contenido actual."""
         if self._panel is not None:
             self._panel.remove_node()
 
-        content = self._content_height()
         has_hint = bool(self._hint_text.getText())
+        start, end = self._window()
+        self._window_start = start
+
+        if self._scrolls:
+            # Alto FIJO mientras se desplaza: si se midieran solo las filas
+            # visibles, el panel encogería y crecería al pasar por los
+            # rótulos de sección (que son más bajos) y daría un salto en
+            # cada pulsación.
+            content = MAX_VISIBLE_ITEMS * ITEM_HEIGHT
+        else:
+            content = self._content_height()
 
         # El panel se construye centrado en vertical: se calcula el alto
         # total y se reparte a partes iguales arriba y abajo del origen, así
@@ -274,20 +368,29 @@ class Menu:
         self._title_text.set_pos(0, 0, z)
 
         z -= TITLE_GAP
-        for item in self._items:
+        # Se crean los textos de TODAS las filas, no solo las visibles: el
+        # ancho del panel se mide de ellos y tiene que salir el mismo se mire
+        # el tramo que se mire, o el menú cambiaría de ancho al desplazarse.
+        # Las de fuera de la ventana se esconden justo después.
+        for index, item in enumerate(self._items):
             height = HEADER_HEIGHT if item.kind == "header" else ITEM_HEIGHT
+            visible = start <= index < end
             # El texto se ancla en su línea base, así que se baja algo más de
             # media fila para que quede centrado en el hueco que ocupa.
-            self._item_texts.append(
-                self._make_item_text(item, z - height * _ITEM_BASELINE_FRACTION)
-            )
-            z -= height
+            text = self._make_item_text(item, z - height * _ITEM_BASELINE_FRACTION)
+            self._item_texts.append(text)
+            if visible:
+                z -= height
+            else:
+                text.hide()
 
         if has_hint:
-            self._hint_text.set_pos(0, 0, z - HINT_GAP)
+            self._hint_text.set_pos(0, 0, -half + BOTTOM_PADDING)
             self._hint_text.show()
         else:
             self._hint_text.hide()
+
+        self._layout_scroll_marks(half, start, end)
 
         # El panel se crea DESPUÉS que los textos porque su ancho sale de
         # medirlos, y solo se pueden medir una vez compuestos.
@@ -382,8 +485,30 @@ class Menu:
             index = (index + direction) % len(self._items)
             if self._items[index].focusable:
                 self._focus_index = index
-                self._refresh_focus()
+                # Si el foco se ha salido del tramo visible hay que rehacer
+                # el menú para desplazarlo; si no, basta con recolorear, que
+                # es mucho más barato y es el caso normal.
+                if self._window()[0] != self._window_start:
+                    self._relayout()
+                else:
+                    self._refresh_focus()
                 return
+
+    def refresh_values(self) -> None:
+        """
+        Repinta las etiquetas tras cambiar los `value` de los elementos.
+
+        Solo el texto: no se rehace el panel ni se recoloca nada, así que el
+        foco se queda donde estaba. Es lo que se quiere al cambiar un valor
+        con izquierda/derecha — rehacer el menú entero devolvería el foco al
+        primer elemento en cada pulsación.
+
+        El panel NO se reajusta al nuevo ancho a propósito: un valor más
+        largo que el anterior ensancharía el menú a mitad de uso y daría un
+        salto muy feo. Se dimensiona una vez, con `set_items`.
+        """
+        for item, text in zip(self._items, self._item_texts):
+            text.setText(item.display_label())
 
     def toggle_focused(self) -> bool:
         """

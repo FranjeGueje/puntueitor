@@ -79,7 +79,20 @@ def state_dir() -> Path:
 
 
 def config_file() -> Path:
+    """Credenciales, tiendas activas y rutas. Se toca poco."""
     return config_dir() / "config.json"
+
+
+def scoring_file() -> Path:
+    """
+    Ajustes de los sistemas de puntuación (pesos, horas, géneros).
+
+    Aparte de `config_file()` a propósito: esto se reescribe cada vez que se
+    toca un peso desde la interfaz, y el otro fichero guarda las claves de
+    API. No conviene que el dato que más se escribe comparta fichero con el
+    que más duele perder.
+    """
+    return config_dir() / "scoring.json"
 
 
 def main_db() -> Path:
