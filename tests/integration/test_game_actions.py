@@ -45,6 +45,38 @@ class TestForgetGame:
         assert forget_game(repo, make_game(igdb_id=1001)) == {}
         assert repo.unknown_cacher.count() == 0
 
+    def test_saves_the_store_title(self, repo, make_game, monkeypatch):
+        """
+        Se apunta con el nombre de la tienda, no con el de IGDB: se está
+        desconociendo porque IGDB lo identificó mal.
+        """
+        monkeypatch.setattr(
+            game_actions, "store_title",
+            lambda store, store_id, config=None: f"CRUDO_{store}_{store_id}",
+        )
+        repo.resolvers_cacher.set_igdb_ids("steam", "12345", [1001])
+        repo.resolvers_cacher.set_igdb_ids("gog", "999", [1001])
+
+        forget_game(repo, make_game(igdb_id=1001, title="Nombre Bonito"))
+
+        # Cada tienda con SU nombre: el mismo juego se llama distinto en cada
+        # una, y antes las dos filas se guardaban con el título de IGDB.
+        guardados = {u["store"]: u["title"] for u in repo.unknown_cacher.get_all()}
+        assert guardados == {
+            "steam": "CRUDO_steam_12345", "gog": "CRUDO_gog_999",
+        }
+
+    def test_falls_back_to_the_igdb_title(self, repo, make_game, monkeypatch):
+        """Sin Heroic ni caché de Steam, el de IGDB es mejor que ninguno."""
+        monkeypatch.setattr(
+            game_actions, "store_title", lambda *a, **k: None,
+        )
+        repo.resolvers_cacher.set_igdb_ids("steam", "12345", [1001])
+
+        forget_game(repo, make_game(igdb_id=1001, title="Nombre Bonito"))
+
+        assert repo.unknown_cacher.get_all()[0]["title"] == "Nombre Bonito"
+
 
 class _FakeEnricher:
     """Enricher de mentira: devuelve lo que se le diga, o revienta."""

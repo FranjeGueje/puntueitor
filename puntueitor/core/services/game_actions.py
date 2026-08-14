@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from puntueitor.core.models import Game
 from puntueitor.core.repository.library_repository import LibraryRepository
+from puntueitor.core.services.store_titles import store_title
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +112,22 @@ def forget_game(repo: LibraryRepository, game: Game) -> dict[str, str]:
     escaneo no lo vuelva a resolver al mismo juego y puedas identificarlo tú
     a mano: por eso hay que LEER las tiendas antes de borrar la relación.
 
-    Síncrono: solo toca SQLite local, no hay nada que esperar.
+    Y se apunta con el nombre que tiene EN SU TIENDA, no con el de IGDB: se
+    está desconociendo justamente porque IGDB lo identificó mal, así que
+    guardar ese nombre borraría la pista de qué juego era de verdad. Es
+    además lo que hace el escaneo cuando un desconocido nace por su cuenta
+    (`BaseResolver.resolve`), así que las dos vías dejan la tabla igual. Si
+    la tienda no se puede consultar, el de IGDB es mejor que ninguno.
+
+    El nombre se busca por tienda, no una vez: un juego que esté en dos se
+    llama distinto en cada una.
+
+    Síncrono: solo toca ficheros locales, no hay nada que esperar.
     """
     stores = repo.resolvers_cacher.get_stores_for_igdb_id(game.igdb_id) or {}
     repo.resolvers_cacher.remove_igdb_id(game.igdb_id)
     for store_name, store_id in stores.items():
-        repo.unknown_cacher.save_unknown(store_name, game.title, str(store_id))
+        title = store_title(store_name, str(store_id)) or game.title
+        repo.unknown_cacher.save_unknown(store_name, title, str(store_id))
     logger.info(f"desconocido {game.title!r}: {sorted(stores)}")
     return stores
