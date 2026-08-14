@@ -437,22 +437,10 @@ class App(ShowBase):
         # solo se le piden escrituras de un juego suelto (`save_game`), que
         # tocan la tabla de extras y no el pipeline.
         self.library_repository = LibraryRepository()
-        entries = [
-            CarouselEntry(
-                key=e["key"], title=e["title"], texture=e["texture"],
-                stores=e.get("stores", frozenset()), game=e.get("game"),
-            )
-            for e in raw_entries
-        ]
-        self.entries = entries
         # Antes del carrusel: de aquí sale qué nota se pinta en las cajas,
         # y las etiquetas se construyen al crearlas.
         self.prefs = state.load_preferences()
-        self.carousel_root = self.render.attach_new_node("carousel-root")
-        self.carousel_root.set_z(CAROUSEL_RAISE)
-        self.carousel = Carousel(
-            self.carousel_root, entries, score_source=self.prefs.score_source,
-        )
+        self._build_carousel(raw_entries, pending_downloads)
 
         # Los juegos marcados como ocultos no salen en el carrusel mientras
         # no se pidan expresamente (L2 / tecla "o").
@@ -474,9 +462,6 @@ class App(ShowBase):
         # es una tormenta de descargas de la que además solo se van a ver
         # nueve. Se van pidiendo a medida que se navega.
         self.cover_loader = CoverLoader()
-        self._pending_covers = {
-            key: (igdb_id, cover_url) for key, igdb_id, cover_url in pending_downloads
-        }
         # Enriquecer un juego va a la red y tarda varios segundos, así que
         # también se hace en su propio hilo y se recoge en `_update`.
         self.enrich_worker = EnrichWorker(self.library_repository)
@@ -1351,6 +1336,10 @@ class App(ShowBase):
         carátula, aclarado para que se lea sobre el panel oscuro).
         """
         entry = self.active_carousel.selected
+        if entry is None:
+            # Carrusel vacío (regenerando, o un filtro sin resultados): se
+            # queda el acento que hubiera.
+            return
         accent = as_text_color(primary_store_color(entry.stores))
         # Sobre `self._menus`, no sobre una lista escrita a mano: la de antes
         # se quedó sin actualizar al añadir el menú de configuración, y ese
@@ -1433,6 +1422,8 @@ class App(ShowBase):
     def _open_game_menu(self) -> None:
         """A / Enter sobre el carrusel: las opciones del juego seleccionado."""
         entry = self.carousel.selected
+        if entry is None:
+            return
         if entry.game is None:
             logger.info("gui3d: el juego seleccionado no tiene ficha, no hay menú")
             return
@@ -1634,25 +1625,22 @@ class App(ShowBase):
         """
         "Aplicar filtros": cierra el menú y rehace el carrusel.
 
-        Si no coincide NINGÚN juego no se aplica nada y el menú se queda
-        abierto. El carrusel no puede quedarse vacío (ver
-        `Carousel.set_order`), así que aplicar de todos modos dejaba un
-        estado incoherente: los filtros puestos, la biblioteca entera a la
-        vista y un aviso diciendo "1263 juegos". Mejor avisar y dejar
-        corregir el filtro donde se estaba.
+        Un filtro que no deja NINGÚN juego se aplica igual y el carrusel se
+        queda vacío. Antes no se aplicaba —el carrusel no sabía estar
+        vacío—, y quedaba un estado que mentía: los filtros puestos y la
+        biblioteca entera a la vista.
         """
-        if not self._visible_entries():
-            self.notifier.show("Ningún juego coincide")
-            return
-
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
         self._persist_filters()
-        self.notifier.show(
-            f"{self.carousel.visible_count} juegos"
-            if self.filters.any_active else "Sin filtros"
-        )
+        if not self.carousel.visible_count:
+            self.notifier.show("Ningún juego coincide")
+        else:
+            self.notifier.show(
+                f"{self.carousel.visible_count} juegos"
+                if self.filters.any_active else "Sin filtros"
+            )
 
     def _clear_filters(self) -> None:
         self.filters.clear()
@@ -2266,7 +2254,8 @@ class App(ShowBase):
 
         # La caja enseña la nota y la duración, así que hay que repintarla.
         self.carousel.rebuild_labels(entry.key, entry.game, self._labels_visible)
-        if self.carousel.selected.key == key:
+        seleccionado = self.carousel.selected
+        if seleccionado is not None and seleccionado.key == key:
             self._refresh_selection_text()
         self.notifier.show(f"Enriquecido: {entry.title}")
 
@@ -2278,19 +2267,15 @@ class App(ShowBase):
         `Carousel.set_order` esconde todo lo que no esté en el orden. Y sin
         `reset_selection` la selección se queda en el juego siguiente al que
         acaba de irse, en vez de saltar al principio de la biblioteca.
+
+        Si era el último, el carrusel se queda vacío y no pasa nada: es un
+        estado que sabe dibujar.
         """
         forget_game(self.library_repository, entry.game)
         self.entries = [e for e in self.entries if e.key != entry.key]
         # Acaba de aparecer en `unknown_games`: el carrusel de desconocidos
         # que hubiera construido ya no coincide con lo que hay en disco.
         self._invalidate_unknown_carousel()
-
-        if not self._visible_entries():
-            # `set_order` ignora un orden vacío (dejaría el carrusel sin
-            # nada que enseñar), así que la caja del juego recién borrado se
-            # quedaría delante como si no hubiera pasado nada.
-            self.notifier.show(f"Desconocido: {entry.title} (reinicia para verlo)")
-            return
 
         self._apply_order()
         self._on_selection_changed()
@@ -2326,6 +2311,47 @@ class App(ShowBase):
             return
         self._start_library_job(SOFT)
 
+    def _build_carousel(self, raw_entries, pending_downloads) -> None:
+        """
+        Monta el carrusel de la biblioteca a partir de lo leído del disco.
+
+        Lo usan el arranque y la reconstrucción de después de regenerar, para
+        que no puedan divergir: si un día se añade algo al montaje, el
+        carrusel rehecho lo tendrá también.
+        """
+        self.entries = [
+            CarouselEntry(
+                key=e["key"], title=e["title"], texture=e["texture"],
+                stores=e.get("stores", frozenset()), game=e.get("game"),
+            )
+            for e in raw_entries
+        ]
+        self.carousel_root = self.render.attach_new_node("carousel-root")
+        self.carousel_root.set_z(CAROUSEL_RAISE)
+        self.carousel = Carousel(
+            self.carousel_root, self.entries,
+            score_source=self.prefs.score_source,
+        )
+        # Carátulas que aún no están en disco: se piden a medida que se
+        # navega (ver `_request_nearby_covers`), nunca todas de golpe.
+        self._pending_covers = {
+            key: (igdb_id, cover_url) for key, igdb_id, cover_url in pending_downloads
+        }
+
+    def _clear_carousel(self) -> None:
+        """
+        Deja el carrusel sin ninguna caja.
+
+        Es un estado normal, no una avería: mientras se regenera la
+        biblioteca no hay nada que enseñar, y el carrusel lo sabe dibujar
+        (ver `Carousel.clear` y `Carousel.selected`, que devuelve None).
+        """
+        self.entries = []
+        self._pending_covers.clear()
+        self.carousel.clear()
+        self._on_selection_changed()
+        logger.info("gui3d: carrusel vaciado")
+
     def _confirm_enrich_all(self) -> None:
         """Opciones -> Avanzado -> Enriquecer todo (la "E" de la TUI)."""
         self._ask_confirm(
@@ -2359,8 +2385,12 @@ class App(ShowBase):
         self.notifier.show(f"{etiqueta}...")
 
         if mode == REGENERATE:
-            # `unknown_games` estaba en la base que se acaba de borrar, así
-            # que el carrusel de desconocidos que hubiera ya no vale.
+            # El carrusel se vacía YA, no al terminar: la base se está
+            # borrando entera, así que seguir enseñando la biblioteca de
+            # antes durante los minutos que dura sería enseñar algo que ya
+            # no existe. Los juegos van reapareciendo según se resuelven.
+            self._clear_carousel()
+            # Y `unknown_games` estaba en esa misma base.
             self._invalidate_unknown_carousel()
 
         logger.info(f"gui3d: {etiqueta.lower()}")
@@ -2435,7 +2465,12 @@ class App(ShowBase):
         # Los juegos AÑADIDOS, no lo que emitió el pipeline: un juego que
         # está en dos tiendas se emite dos veces, así que ese número no es el
         # tamaño de tu biblioteca y desconcierta más que informa.
-        if self._refresh_added:
+        if self.refresh_worker.mode == REGENERATE:
+            # No hay nada que rehacer: se vació al empezar y las cajas han
+            # ido entrando según se resolvían, así que el carrusel ya es
+            # exactamente lo que hay en la base.
+            self.notifier.show(f"Biblioteca regenerada ({len(self.entries)} juegos)")
+        elif self._refresh_added:
             self.notifier.show(f"{self._refresh_added} juegos nuevos")
         else:
             self.notifier.show("Biblioteca al día")
@@ -2601,6 +2636,8 @@ class App(ShowBase):
         if carousel is None:
             return
         entry = carousel.selected
+        if entry is None:
+            return
         store, store_id = entry.key
         self.title_text.setText(entry.title)
         self.unknown_value_texts[0].setText(store)
@@ -2615,6 +2652,8 @@ class App(ShowBase):
         if carousel is None:
             return
         entry = carousel.selected
+        if entry is None:
+            return
         self.unknown_menu.set_title(entry.title)
         self.unknown_menu.set_items(menus.build_unknown_items(entry))
         self._unknown_menu_entry = entry
@@ -2842,7 +2881,12 @@ class App(ShowBase):
         if self._settle_time < BACKGROUND_SETTLE_DELAY:
             return
 
-        key = self.active_carousel.selected.key
+        entry = self.active_carousel.selected
+        if entry is None:
+            # Sin selección se deja el fondo que hubiera: no hay carátula de
+            # la que sacar uno nuevo.
+            return
+        key = entry.key
         texture = self.active_carousel.selected_texture
         # También hay que reaccionar a que llegue la carátula real de la que
         # ya está seleccionada, no solo a que cambie la selección: de ahí
@@ -2931,6 +2975,15 @@ class App(ShowBase):
             return
 
         entry = self.carousel.selected
+        if entry is None:
+            # Con el carrusel vacío el HUD se queda en blanco: no hay juego
+            # del que hablar, y dejar el anterior sería mentir.
+            self.title_text.setText("")
+            for value_text in self.ficha_value_texts:
+                value_text.setText("")
+            self.description_text.setText("")
+            return
+
         self.title_text.setText(entry.title)
 
         values = build_values(entry.game) if entry.game else [""] * len(FIELD_LABELS)

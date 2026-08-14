@@ -284,10 +284,12 @@ class Carousel:
         biblioteca. Dos parámetros en vez de una subclase porque es lo
         único que cambia: todo lo demás —arco, navegación, orden— es
         idéntico.
-        """
-        if not entries:
-            raise ValueError("Carousel requiere al menos un juego")
 
+        Se admite empezar SIN entradas y añadirlas después (`add_entry`):
+        es lo que hace regenerar la biblioteca, que vacía el carrusel y lo
+        va llenando según resuelve. Sin cajas no hay selección, así que
+        `selected` devuelve None y quien la use tiene que contar con ello.
+        """
         self._parent = parent
         # Copia, no la lista de quien llama: el carrusel mantiene la suya en
         # correspondencia 1:1 con `_boxes` (`_order` guarda índices de las
@@ -474,16 +476,33 @@ class Carousel:
         return self._order[self._selected_pos]
 
     @property
-    def selected(self) -> CarouselEntry:
+    def is_empty(self) -> bool:
+        """Sin nada que recorrer: ni selección, ni caja delante."""
+        return not self._order
+
+    @property
+    def selected(self) -> CarouselEntry | None:
+        """
+        El juego que se está mirando, o None con el carrusel vacío.
+
+        Devuelve None en vez de reventar porque el vacío es un estado
+        normal: mientras se regenera la biblioteca no hay nada, y filtrar
+        puede no dejar ningún resultado. Quien pinte la ficha, el fondo o el
+        título tiene que contar con ello.
+        """
+        if self.is_empty:
+            return None
         return self._entries[self._selected_box_index]
 
     @property
-    def selected_texture(self) -> Texture:
+    def selected_texture(self) -> Texture | None:
         """
         Textura realmente aplicada a la caja seleccionada ahora mismo — a
         diferencia de `selected.texture`, refleja las descargas en caliente
         aplicadas vía `set_texture` (ver `CarouselBox.set_texture`).
         """
+        if self.is_empty:
+            return None
         return self._boxes[self._selected_box_index].texture
 
     @property
@@ -495,6 +514,29 @@ class Carousel:
     def selected_position(self) -> int:
         """Por dónde vas del recorrido, empezando en 0."""
         return self._selected_pos
+
+    def clear(self) -> None:
+        """
+        Destruye TODAS las cajas y deja el carrusel vacío, listo para
+        volver a llenarse con `add_entry`.
+
+        Lo usa la regeneración de la biblioteca: se vacía en el acto y los
+        juegos van apareciendo según se resuelven, en vez de seguir
+        enseñando durante minutos una biblioteca que ya no existe.
+
+        Se destruye de verdad, no se esconde: son unos 270 MB con la
+        biblioteca real, y no tenerlos ocupados mientras se reconstruye es
+        justamente parte del sentido de vaciar.
+        """
+        for box in self._boxes:
+            box.root.remove_node()
+        self._boxes.clear()
+        self._boxes_by_key.clear()
+        self._entries = []
+        self._order = []
+        self._pos_by_key = {}
+        self._group_starts = [0]
+        self._selected_pos = 0
 
     def move(self, direction: int) -> None:
         """direction: -1 (izquierda) o +1 (derecha)."""
@@ -556,19 +598,18 @@ class Carousel:
         se quiere al elegir una ordenación nueva. Por defecto se intenta
         seguir en el mismo juego.
 
-        Si la lista viniera vacía no se aplica nada: el carrusel no tiene un
-        estado "vacío" que dibujar y medio programa da por hecho que hay una
-        selección (la ficha, el fondo, el menú de juego). Es preferible
-        ignorar el cambio y avisar que quedarse sin selección.
+        Una lista vacía es un orden válido: esconde todas las cajas y deja
+        el carrusel sin selección. Antes se ignoraba —y se avisaba— porque
+        no había un estado vacío que dibujar, pero eso hacía que un filtro
+        sin resultados siguiera enseñando lo de antes, que es peor: la
+        pantalla dejaba de contar la verdad.
         """
         box_by_key = {entry.key: i for i, entry in enumerate(self._entries)}
         order = [box_by_key[key] for key in ordered_keys if key in box_by_key]
-        if not order:
-            logger.warning("gui3d: el orden dejaría el carrusel vacío; se ignora")
-            return
 
-        previous_key = self.selected.key
-        previous_box_index = self._selected_box_index
+        selected = self.selected
+        previous_key = selected.key if selected is not None else None
+        previous_box_index = self._selected_box_index if self._order else 0
 
         visible = set(order)
         for index, box in enumerate(self._boxes):
@@ -650,6 +691,8 @@ class Carousel:
 
     def update(self, dt: float) -> None:
         """Llamar cada frame: avanza el balanceo continuo de las cajas."""
+        if self.is_empty:
+            return
         self._elapsed += dt
         selected = self._selected_box_index
         for i, box in enumerate(self._boxes):

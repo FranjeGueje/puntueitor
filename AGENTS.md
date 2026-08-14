@@ -897,9 +897,12 @@ Consequences worth knowing:
   must ask the carousel (`neighbour_entries`, `is_near_selection`) rather than
   doing modular arithmetic on the full `entries` list, or with games filtered out
   it preloads covers for boxes the user can't reach.
-- `set_visible_keys` **refuses an empty result** and logs instead. There's no
-  "empty carousel" state to draw and the ficha/background/game-menu all assume a
-  selection exists; ignoring the filter beats having no selection.
+- **An empty carousel is a valid state** (`Carousel.is_empty`, and `selected`
+  returns `None`): regenerating the library empties it, and a filter can match
+  nothing. It didn't use to be — `set_order` refused empty orders — but that made
+  the screen lie: filters set and the whole library still on show. Everything
+  that paints from the selection (ficha, background, menu accent, game menu)
+  checks for `None`.
 - If the selected game is the one being filtered out, selection falls to the next
   still-visible game *at or after* it, so it stays near where the user was
   looking instead of jumping to the top of the library.
@@ -1019,6 +1022,21 @@ el fichero de verdad del usuario.
 
 En el carrusel, regenerar invalida además el carrusel de desconocidos: su tabla
 estaba en la base que se acaba de vaciar.
+
+### Regenerar vacía el carrusel y lo va llenando
+
+Al confirmar, `_clear_carousel()` destruye TODAS las cajas en el acto
+(`Carousel.clear`) y los juegos van reapareciendo por el camino de siempre
+(`_add_game_entry`) según los resuelve el pipeline. Al terminar no hay nada
+especial que hacer: partiendo de cero no puede haber cajas fantasma de juegos
+que ya no existen ni el mismo juego dos veces, que es lo que pasaba antes —
+regenerar rehace la identificación y un `igdb_id` puede pasar a ser otro.
+
+El primer intento fue rehacer el carrusel **al terminar**, y estaba mal: durante
+los minutos que dura seguías viendo la biblioteca anterior entera. La pantalla
+tiene que contar la verdad mientras tanto, y la verdad es que no hay nada.
+
+Destruir de verdad (no esconder) importa: son ~270 MB con la biblioteca real.
 
 ### El aviso
 
@@ -1333,11 +1351,11 @@ A game with **unknown duration fails** the max-duration filter. The filter says
 "lasts at most X" and we don't know that it does; letting it through would
 assert something not on record.
 
-**Applying a filter that matches nothing is refused** and leaves the menu open.
-The carousel can't be empty (`set_order` rejects it), so applying anyway left
-filters set, the whole library on screen, and a notification reading "1263
-juegos" — three things disagreeing at once. Now it says "Ningún juego coincide"
-and you fix it where you are.
+**A filter that matches nothing now applies anyway** and leaves the carousel
+empty, with a "Ningún juego coincide" notice. It used to be refused because the
+carousel couldn't be empty, which left filters set and the whole library on
+screen — three things disagreeing at once. The empty carousel is the honest
+answer.
 
 The **text prompt is the dangerous part**. A focused `DirectEntry` does *not*
 stop Panda3D dispatching key events through the messenger — verified — so
