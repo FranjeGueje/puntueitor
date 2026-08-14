@@ -22,6 +22,7 @@ from puntueitor.tui.screens.unknown_menu import UnknownMenuScreen
 from puntueitor.tui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.services.game_actions import enrich_game, forget_game
+from puntueitor.core.services.library_refresh import refresh_library
 from puntueitor.core.services.unknown_actions import (
     SearchResult,
     Unknown,
@@ -758,74 +759,27 @@ class PuntueitorApp(App):
         def on_enriched(enriched_game: Game) -> None:
             self.call_from_thread(self._on_game_enriched, enriched_game)
 
+        def on_loaded(game: Game) -> None:
+            self.call_from_thread(self._on_game_loaded, game)
+
         try:
+            # El borrado se queda AQUÍ y no en `refresh_library`: es la única
+            # parte destructiva de todo esto y tiene que estar a la vista de
+            # quien la ofrece, no escondida tras un parámetro.
             if refresh:
                 try:
                     os.remove(paths.main_db())
                 except OSError:
                     pass
 
-            from puntueitor.core.igdb.service import IGDBService
-            from puntueitor.core.pipeline.load_steam_library import load_library
-            from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
-            from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-            from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-            from puntueitor.core.heroics import HeroicsLoader
-            from puntueitor.core.config import ConfigManager
-
-            logger.info("do_reload: creating IGDBService...")
-            config = ConfigManager().get
-            igdb_service = IGDBService()
-
-            heroic_loader = None
-            if config.gog_is_active or config.epic_is_active or config.amazon_is_active:
-                heroic_loader = HeroicsLoader()
-
-            logger.info("do_reload: loading extras cache...")
-            extras_cache = self.repo.extras_cacher.get_all_extras()
-
-            enrichers = []
-            try:
-                hltb_resolver = HLTBResolver()
-                hltb_enricher = HLTBEnricher(
-                    client=hltb_resolver,
-                    overwrite=False,
-                    extras_cacher=self.repo.extras_cacher,
-                )
-                enrichers.append(hltb_enricher)
-            except Exception as e:
-                self.call_from_thread(self.notify, f"Warning: No se pudo inicializar HLTB: {e}", severity="warning")
-            try:
-                steam_enricher = SteamScoreEnricher(overwrite=False, igdb_cacher=self.repo.igdb_cacher)
-                enrichers.append(steam_enricher)
-            except Exception as e:
-                self.call_from_thread(self.notify, f"Warning: No se pudo inicializar Steam Score: {e}", severity="warning")
-
-            logger.info("do_reload: calling load_library...")
-            game_generator = load_library(
-                engine=igdb_service,
-                heroic_loader=heroic_loader,
+            refresh_library(
+                self.repo,
                 refresh=refresh,
                 force_store_refresh=force_store_refresh,
-                progress_callback=progress,
-                enrichers=enrichers if enrichers else None,
-                enrichment_callback=on_enriched if enrichers else None,
-                extras_cache=extras_cache if extras_cache else None,
+                on_game=on_loaded,
+                on_progress=progress,
+                on_enriched=on_enriched,
             )
-
-            loaded_games = []
-
-            logger.info("do_reload: iterating games...")
-            for game in game_generator:
-                loaded_games.append(game)
-                # Guardado progresivo: guardar juego inmediatamente si tiene duration
-                if game.duration_hours is not None:
-                    self.repo.save_game(game)
-                self.call_from_thread(self._on_game_loaded, game)
-
-            new_library = Library.from_iterable(loaded_games)
-            logger.info("do_reload: saving library...")
-            self.repo.save(new_library)
             logger.info("do_reload: finished successfully")
             self.call_from_thread(self._finish_reload, refresh)
 

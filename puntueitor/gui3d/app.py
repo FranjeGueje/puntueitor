@@ -99,6 +99,7 @@ from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.enrichment import EnrichWorker
+from puntueitor.gui3d.refresh import DONE, GAME, PROGRESS, RefreshWorker
 from puntueitor.gui3d.game_case import make_placeholder_texture
 from puntueitor.gui3d.unknowns import ADOPT, SEARCH, STORE, UnknownJob, UnknownWorker
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
@@ -108,6 +109,7 @@ from puntueitor.gui3d.fonts import (
     ICON_GAMEPAD_LEFT_RIGHT,
     ICON_GAMEPAD_R1,
     ICON_GAMEPAD_SELECT,
+    ICON_GAMEPAD_R2,
     ICON_GAMEPAD_START,
     ICON_GAMEPAD_UP_DOWN,
     ICON_KEYBOARD_DOWN,
@@ -116,6 +118,7 @@ from puntueitor.gui3d.fonts import (
     ICON_KEYBOARD_LEFT,
     ICON_KEYBOARD_O,
     ICON_KEYBOARD_Q,
+    ICON_KEYBOARD_R,
     ICON_KEYBOARD_RIGHT,
     ICON_KEYBOARD_SPACE,
     ICON_KEYBOARD_TAB,
@@ -162,6 +165,13 @@ logger = logging.getLogger(__name__)
 WINDOW_TITLE = "Puntueitor 3D"
 TITLE_TEXT_SCALE = 0.09
 TITLE_TEXT_Y = 0.90
+
+# Estado de la actualización de la biblioteca: debajo de los avisos, que van a
+# la altura del título, para que puedan convivir sin pisarse.
+REFRESH_TEXT_Z = TITLE_TEXT_Y - 0.09
+REFRESH_TEXT_SCALE = 0.038
+REFRESH_TEXT_COLOR = (0.72, 0.78, 0.92, 1)
+REFRESH_SIDE_MARGIN = 0.06
 
 # Ficha inferior translúcida (estilo EmulationStation/Steam Big Picture):
 # parte la pantalla en dos, con los datos del juego dentro sobre fondo negro
@@ -303,6 +313,7 @@ def _build_help_text() -> str:
         f"{icon_markup(ICON_KEYBOARD_X)} / {icon_markup(ICON_XBOX_X)}  filtrar   -   "
         f"{icon_markup(ICON_KEYBOARD_SPACE)} / {icon_markup(ICON_XBOX_Y)}  etiquetas   -   "
         f"{icon_markup(ICON_KEYBOARD_O)} / {icon_markup(ICON_GAMEPAD_L2)}  ocultos   -   "
+        f"{icon_markup(ICON_KEYBOARD_R)} / {icon_markup(ICON_GAMEPAD_R2)}  actualizar   -   "
         f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_GAMEPAD_SELECT)}  opciones"
     )
 
@@ -460,6 +471,8 @@ class App(ShowBase):
         # Enriquecer un juego va a la red y tarda varios segundos, así que
         # también se hace en su propio hilo y se recoge en `_update`.
         self.enrich_worker = EnrichWorker(self.library_repository)
+        # Y actualizar la biblioteca entera, minutos.
+        self.refresh_worker = RefreshWorker(self.library_repository)
 
         self._setup_hud()
 
@@ -528,6 +541,7 @@ class App(ShowBase):
             on_filter=self._on_filter_key,
             on_labels=self._toggle_labels,
             on_hidden=self._toggle_hidden,
+            on_refresh=self._refresh_library,
             on_jump=self._jump_group,
         )
 
@@ -587,6 +601,17 @@ class App(ShowBase):
 
         # Avisos efímeros, a la altura del título y pegados a la derecha.
         self.notifier = Notifier(self.aspect2d, self.get_aspect_ratio())
+
+        # Y justo debajo, el estado de la actualización de la biblioteca.
+        # No se usa el avisador: el suyo es un mensaje de usar y tirar que se
+        # desvanece a los cuatro segundos, y esto tiene que quedarse puesto
+        # los minutos que dure. Va en la esquina libre, sin tapar ni la ficha
+        # ni la barra de ayuda, y el carrusel se sigue pudiendo navegar.
+        self.refresh_text = OnscreenText(
+            text="", scale=REFRESH_TEXT_SCALE, fg=REFRESH_TEXT_COLOR,
+            align=TextNode.A_right, mayChange=True, font=font,
+        )
+        self.refresh_text.hide()
 
         # Descripción del sistema de scoring enfocado. Ocupa la MISMA franja
         # que la ficha del juego, que está apartada mientras hay un menú
@@ -770,6 +795,9 @@ class App(ShowBase):
         aspect = self.get_aspect_ratio()
         self.ficha_frame["frameSize"] = (-aspect, aspect, -1.0, FICHA_BAR_TOP_Z)
         self.notifier.resize(aspect)
+        self.refresh_text.set_pos(
+            aspect - REFRESH_SIDE_MARGIN, 0, REFRESH_TEXT_Z,
+        )
 
         # La franja de la descripción del scoring comparte sitio con la ficha
         # y se recoloca igual.
@@ -870,6 +898,7 @@ class App(ShowBase):
             "tab": (self._open_scoring_menu, []),
             "x": (self._on_filter_key, []),
             "o": (self._toggle_hidden, []),
+            "r": (self._refresh_library, []),
             "q": (self._jump_group, [-1]),
             "w": (self._jump_group, [1]),
         }
@@ -2253,6 +2282,97 @@ class App(ShowBase):
         )
 
     # ──────────────────────────────
+    # Actualizar la biblioteca (R2 / tecla "r")
+    # ──────────────────────────────
+
+    def _refresh_library(self) -> None:
+        """
+        Vuelve a preguntar a las tiendas y añade lo que no estuviera.
+
+        Es la variante "suave" de la TUI (su tecla "r"): **no borra nada**.
+        Los juegos ya resueltos no se vuelven a consultar en IGDB, así que lo
+        que de verdad cuesta es la vuelta a la API de Steam y resolver lo
+        nuevo.
+
+        No se pide confirmación: no destruye nada y se puede seguir navegando
+        mientras trabaja.
+        """
+        if self._typing or self._blocked_in_unknown_mode("Actualizar"):
+            return
+        if not self.refresh_worker.start():
+            self.notifier.show("Ya se está actualizando")
+            return
+
+        self._refresh_pending = []
+        self.refresh_text.setText("Actualizando biblioteca…")
+        self.refresh_text.show()
+        self.notifier.show("Actualizando biblioteca...")
+        logger.info("gui3d: actualización de la biblioteca lanzada")
+
+    def _drain_refresh(self) -> None:
+        """
+        Recoge lo que va mandando la actualización, una vez por frame.
+
+        Las cajas nuevas se acumulan y se ordenan UNA sola vez al final del
+        frame aunque hayan llegado varias: `_apply_order` recoloca las 1266
+        cajas, y hacerlo por juego daría un tirón por cada uno.
+        """
+        nuevas = False
+        for kind, payload in self.refresh_worker.poll():
+            if kind == PROGRESS:
+                self._show_refresh_progress(payload)
+            elif kind == GAME:
+                nuevas |= self._on_game_refreshed(payload)
+            elif kind == DONE:
+                self._on_refresh_done(payload)
+
+        if nuevas:
+            # Sin `reset_selection`: al contrario que la TUI, que salta al
+            # primero al recargar, aquí te quedas en el juego que estabas
+            # mirando.
+            self._apply_order()
+            self._on_selection_changed()
+
+    def _show_refresh_progress(self, progress) -> None:
+        self.refresh_text.setText(
+            f"Actualizando…\n{progress.name}\n"
+            f"{progress.current} / {progress.total}"
+        )
+
+    def _on_game_refreshed(self, game) -> bool:
+        """
+        Un juego que ha traído la actualización. True si es uno nuevo.
+
+        Llegan los de siempre también (el pipeline los emite todos, y los
+        enriquecidos vuelven a pasar por aquí), así que lo primero es mirar
+        si ya tiene caja. Si la tiene, se aprovecha para repintar sus
+        etiquetas: puede venir con la duración o la nota recién averiguadas.
+        """
+        existente = next(
+            (entry for entry in self.entries if entry.key == game.igdb_id), None,
+        )
+        if existente is not None:
+            if existente.game is not None:
+                for field in EXTRA_FIELDS:
+                    setattr(existente.game, field, getattr(game, field))
+                self.carousel.rebuild_labels(
+                    existente.key, existente.game, self._labels_visible,
+                )
+            return False
+
+        self._add_game_entry(game)
+        logger.info(f"gui3d: juego nuevo en la biblioteca: {game.title!r}")
+        return True
+
+    def _on_refresh_done(self, done) -> None:
+        self.refresh_text.hide()
+        if not done.ok:
+            self.notifier.show(f"Error actualizando: {done.error}")
+            return
+        self.notifier.show(f"Biblioteca actualizada ({done.loaded} juegos)")
+        logger.info(f"gui3d: actualización terminada, {done.loaded} juegos")
+
+    # ──────────────────────────────
     # Modo desconocidos
     # ──────────────────────────────
 
@@ -2546,6 +2666,17 @@ class App(ShowBase):
         así que si hay un filtro activo que no cumple, no se verá hasta
         quitarlo, igual que cualquier otro juego.
         """
+        self._add_game_entry(game)
+        self._apply_order()
+
+    def _add_game_entry(self, game) -> None:
+        """
+        Le hace su caja a un juego que no estaba y la mete en el carrusel.
+
+        NO reordena: quien llama decide cuándo, porque al actualizar la
+        biblioteca pueden llegar varios juegos en el mismo frame y
+        `_apply_order` recoloca las 1266 cajas de una vez.
+        """
         stores = frozenset(game.stores)
         texture = load_cover_texture(game.igdb_id, game.cover_url, allow_download=False)
         if texture is None:
@@ -2561,7 +2692,6 @@ class App(ShowBase):
         )
         self.entries.append(entry)
         self.carousel.add_entry(entry)
-        self._apply_order()
 
     def _remove_unknown_entry(self, unknown) -> None:
         """Saca de los desconocidos al que se acaba de identificar."""
@@ -2776,6 +2906,8 @@ class App(ShowBase):
             for job, result in self.unknown_worker.poll():
                 self._on_unknown_job_done(job, result)
 
+        self._drain_refresh()
+
         self._backfill_covers()
         self._update_background(dt)
         return task.cont
@@ -2803,6 +2935,7 @@ class App(ShowBase):
         self.task_mgr.remove("carousel-update")
         self.cover_loader.shutdown()
         self.enrich_worker.shutdown()
+        self.refresh_worker.shutdown()
         if self.unknown_worker is not None:
             self.unknown_worker.shutdown()
         self.gamepad.destroy()

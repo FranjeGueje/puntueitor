@@ -974,6 +974,58 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Actualizar la biblioteca (R2 / tecla "r")
+
+Es la variante **suave** de la TUI (su tecla `r`) y **solo esa**: vuelve a
+preguntar a las tiendas y añade lo que falte, sin borrar nada. La otra (`R`,
+"Regenerar TODO") hace `os.remove(paths.main_db())` —se lleva por delante
+`resolvers`, la caché de IGDB, los extras y los desconocidos— y son cientos de
+peticiones; no está en el carrusel a propósito.
+
+`core/services/library_refresh.py:refresh_library(repo, ...)` es lo que
+comparten las dos interfaces. Los dos parámetros que no son intercambiables:
+
+- `refresh=False` — no se vuelve a pedir a IGDB nada ya cacheado, así que una
+  biblioteca resuelta apenas toca la red y solo se resuelve lo nuevo.
+- `force_store_refresh=True` — el listado de propiedad de Steam **sí** se pide
+  siempre; es justamente lo que hace que aparezcan los juegos comprados desde
+  la última vez.
+
+El **borrado destructivo se queda en `tui/app.py:do_reload`**, no detrás de un
+parámetro de la función compartida: es la única parte irreversible y tiene que
+estar a la vista de quien la ofrece.
+
+Los tres callbacks (`on_game`, `on_progress`, `on_enriched`) se llaman **desde
+hilos que no son el de la interfaz** — `on_enriched` viene del pool de cuatro
+del pipeline —, así que solo pueden encolar. En gui3d lo hace
+`refresh.RefreshWorker`, del mismo molde que los otros tres trabajadores (hilo
+propio daemon, `poll()` desde `_update`, `shutdown()` en `destroy()`), con los
+tres tipos de mensaje **en la misma cola** para que lleguen en orden: si el
+"he terminado" adelantara al último juego, se escondería el progreso antes de
+meter la última caja.
+
+En el carrusel, además:
+
+- Las cajas nuevas entran según llegan, pero `_apply_order()` se llama **una
+  vez por frame** aunque hayan llegado varias: recoloca las 1266 cajas.
+- La selección **se conserva** (sin `reset_selection`), al contrario que la
+  TUI, que salta al primero.
+- Un juego que ya tiene caja no se duplica: se le copian los `EXTRA_FIELDS` y
+  se repintan sus etiquetas, que es como llegan los enriquecidos.
+- Los juegos que ya no estén en las tiendas **no se quitan**, igual que en la
+  TUI: la suave solo añade.
+- Queda inerte escribiendo y en modo desconocidos, y una segunda pulsación no
+  lanza otra actualización (`RefreshWorker.start()` devuelve False).
+
+El progreso es un `OnscreenText` propio bajo el avisador, no el `Notifier`:
+ese es de usar y tirar (entra, aguanta dos segundos y se va) y esto tiene que
+quedarse los minutos que dure.
+
+Los iconos `ICON_GAMEPAD_R2` (`0x21B3`, continúa la serie L1/R1/L2) e
+`ICON_KEYBOARD_R` (`0xFF32`) se verificaron contra `PromptFont.otf` antes de
+usarlos, como pide la nota de `fonts.py`: un codepoint inventado no avisa,
+dibuja el glifo equivocado en silencio.
+
 ## Modo desconocidos (arriba sobre el carrusel)
 
 Los juegos de `unknown_games` (los que no se pudieron casar con IGDB) tienen su

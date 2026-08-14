@@ -76,6 +76,7 @@ class GamepadInput(DirectObject):
         on_filter: Callable[[], None] | None = None,
         on_labels: Callable[[], None] | None = None,
         on_hidden: Callable[[], None] | None = None,
+        on_refresh: Callable[[], None] | None = None,
         on_jump: Callable[[int], None] | None = None,
     ):
         super().__init__()
@@ -88,11 +89,13 @@ class GamepadInput(DirectObject):
             "filter": on_filter,
             "labels": on_labels,
             "hidden": on_hidden,
+            "refresh": on_refresh,
         }
         # Aparte del resto: lleva argumento (hacia dónde saltar), así que no
         # encaja en el diccionario de gestos sin parámetros de `_fire`.
         self._on_jump = on_jump
-        self._left_trigger_held = False
+        # Un flanco por gatillo, ver `update`.
+        self._triggers_held = {"hidden": False, "refresh": False}
 
         self._device_manager = InputDeviceManager.get_global_ptr()
         self._device: InputDevice | None = None
@@ -297,26 +300,37 @@ class GamepadInput(DirectObject):
         """
         Sondea lo que no llega como evento. Llamar una vez por frame.
 
-        De momento solo el gatillo izquierdo (L2), que es un eje analógico y
-        por tanto no dispara eventos de botón (ver
-        `TRIGGER_PRESS_THRESHOLD`). Aquí se convierte en un gesto de "recién
-        pulsado", que es lo que espera un conmutador: sin detectar el
-        flanco, mantener L2 apretado un segundo conmutaría sesenta veces.
+        Los dos gatillos: son ejes analógicos y por tanto no disparan
+        eventos de botón. L2 conmuta los juegos ocultos y R2 actualiza la
+        biblioteca.
         """
         if self._device is None:
             return
 
-        axis = self._device.find_axis(InputDevice.Axis.left_trigger)
+        self._poll_trigger(InputDevice.Axis.left_trigger, "hidden")
+        self._poll_trigger(InputDevice.Axis.right_trigger, "refresh")
+
+    def _poll_trigger(self, axis_id, gesture: str) -> None:
+        """
+        Convierte un gatillo en un gesto de "recién pulsado".
+
+        Con histéresis (dos umbrales) y no con uno solo: los gatillos no
+        vuelven a cero limpiamente, y con un único umbral el temblor
+        alrededor de él dispararía el gesto varias veces por pulsación. Y
+        solo en el FLANCO: sin eso, mantener el gatillo un segundo lo
+        dispararía sesenta veces.
+        """
+        axis = self._device.find_axis(axis_id)
         if axis is None:
             return
 
         value = axis.value
-        if self._left_trigger_held:
+        if self._triggers_held[gesture]:
             if value <= TRIGGER_RELEASE_THRESHOLD:
-                self._left_trigger_held = False
+                self._triggers_held[gesture] = False
         elif value >= TRIGGER_PRESS_THRESHOLD:
-            self._left_trigger_held = True
-            self._fire("hidden")
+            self._triggers_held[gesture] = True
+            self._fire(gesture)
 
     def destroy(self) -> None:
         self.ignore_all()
