@@ -118,3 +118,39 @@ class TestUnknownMenus:
         from puntueitor.core.services.unknown_actions import SEARCH_LIMIT
         from puntueitor.gui3d.menu import MAX_VISIBLE_ITEMS
         assert SEARCH_LIMIT <= MAX_VISIBLE_ITEMS
+
+
+class TestAdvancedMenu:
+    def test_between_puntueitor3d_and_quit(self):
+        keys = [i.key for i in menus.OPTIONS_ITEMS]
+        assert keys == ["config", "gui3d", "advanced", "quit"]
+
+    def test_two_heavy_operations(self):
+        items = menus.ADVANCED_ITEMS
+        assert [i.key for i in items] == [
+            menus.ENRICH_ALL_KEY, menus.REGENERATE_KEY,
+        ]
+        assert [i.label for i in items] == ["Enriquecer todo", "Regenerar todo"]
+
+    def test_regenerate_warning_says_what_is_lost(self):
+        aviso = " ".join(menus.REGENERATE_WARNING).lower()
+        assert "borrar" in aviso
+        assert "perderás" in aviso
+        assert "minutos" in " ".join(menus.REGENERATE_NOTE).lower()
+
+    def test_warning_lines_are_painted(self):
+        from puntueitor.gui3d.menu import WARNING_COLOR
+        items = menus.build_confirm_items(
+            menus.REGENERATE_WARNING + menus.REGENERATE_NOTE,
+            menus.REGENERATE_YES,
+            warning=len(menus.REGENERATE_WARNING),
+        )
+        coloreadas = [i.label for i in items if i.color == WARNING_COLOR]
+        assert coloreadas == list(menus.REGENERATE_WARNING)
+        # Y ninguna fila enfocable lleva color: `Menu._refresh_focus` lo
+        # machacaría al mover el foco.
+        assert not any(i.color for i in items if i.focusable)
+
+    def test_no_warning_by_default(self):
+        items = menus.build_confirm_items(("¿seguro?",), "Sí")
+        assert not any(i.color for i in items)

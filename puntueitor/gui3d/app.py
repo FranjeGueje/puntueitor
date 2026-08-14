@@ -99,7 +99,16 @@ from puntueitor.gui3d.background import Background
 from puntueitor.gui3d.carousel import Carousel, CarouselEntry
 from puntueitor.gui3d.covers import CoverLoader, load_cover_texture
 from puntueitor.gui3d.enrichment import EnrichWorker
-from puntueitor.gui3d.refresh import DONE, GAME, PROGRESS, RefreshWorker
+from puntueitor.gui3d.refresh import (
+    DONE,
+    ENRICH_ALL,
+    GAME,
+    MODE_LABELS,
+    PROGRESS,
+    REGENERATE,
+    SOFT,
+    RefreshWorker,
+)
 from puntueitor.gui3d.game_case import make_placeholder_texture
 from puntueitor.gui3d.unknowns import ADOPT, SEARCH, STORE, UnknownJob, UnknownWorker
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
@@ -473,6 +482,8 @@ class App(ShowBase):
         self.enrich_worker = EnrichWorker(self.library_repository)
         # Y actualizar la biblioteca entera, minutos.
         self.refresh_worker = RefreshWorker(self.library_repository)
+        # Cuántas cajas ha metido de verdad el trabajo en curso.
+        self._refresh_added = 0
 
         self._setup_hud()
 
@@ -1201,6 +1212,11 @@ class App(ShowBase):
         # e items se rehacen en cada apertura (ver `_ask_confirm`). El de
         # salir se queda aparte porque es fijo y no va sobre ningún juego.
         self.confirm_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
+        # Las dos operaciones que tiran datos, apartadas de las de diario.
+        self.advanced_menu = Menu(
+            self.aspect2d, menus.ADVANCED_TITLE, menus.ADVANCED_ITEMS,
+            hint=_menu_hint(),
+        )
         # Los dos del modo desconocidos: título e items dinámicos.
         self.unknown_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
         self.unknown_results_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
@@ -1212,7 +1228,7 @@ class App(ShowBase):
             self.options_menu, self.quit_menu, self.scoring_menu,
             self.scoring_config_menu, self.filter_menu, self.game_menu,
             self.settings_menu, self.gui3d_menu, self.confirm_menu,
-            self.unknown_menu, self.unknown_results_menu,
+            self.unknown_menu, self.unknown_results_menu, self.advanced_menu,
         )
 
     @property
@@ -1485,6 +1501,12 @@ class App(ShowBase):
             self._open_settings_menu()
         elif key == "gui3d":
             self._open_gui3d_menu()
+        elif key == "advanced":
+            self._push_menu(self.advanced_menu)
+        elif key == menus.ENRICH_ALL_KEY:
+            self._confirm_enrich_all()
+        elif key == menus.REGENERATE_KEY:
+            self._confirm_regenerate()
         elif key == "quit":
             self._push_menu(self.quit_menu)
         elif key == "quit_yes":
@@ -2167,7 +2189,9 @@ class App(ShowBase):
 
     # ── Acciones avanzadas del menú de juego ──
 
-    def _ask_confirm(self, title, question_lines, yes_label, on_yes) -> None:
+    def _ask_confirm(
+        self, title, question_lines, yes_label, on_yes, warning: int = 0,
+    ) -> None:
         """
         Abre una pregunta de sí/no encima del menú actual.
 
@@ -2179,7 +2203,7 @@ class App(ShowBase):
         self._confirm_action = on_yes
         self.confirm_menu.set_title(title)
         self.confirm_menu.set_items(
-            menus.build_confirm_items(question_lines, yes_label)
+            menus.build_confirm_items(question_lines, yes_label, warning=warning)
         )
         self._push_menu(self.confirm_menu)
 
@@ -2295,19 +2319,51 @@ class App(ShowBase):
         nuevo.
 
         No se pide confirmación: no destruye nada y se puede seguir navegando
-        mientras trabaja.
+        mientras trabaja. Las dos que sí destruyen están en Opciones ->
+        Avanzado, y esas preguntan.
         """
         if self._typing or self._blocked_in_unknown_mode("Actualizar"):
             return
-        if not self.refresh_worker.start():
-            self.notifier.show("Ya se está actualizando")
+        self._start_library_job(SOFT)
+
+    def _confirm_enrich_all(self) -> None:
+        """Opciones -> Avanzado -> Enriquecer todo (la "E" de la TUI)."""
+        self._ask_confirm(
+            menus.ENRICH_ALL_TITLE,
+            menus.ENRICH_ALL_WARNING + menus.ENRICH_ALL_NOTE,
+            menus.ENRICH_ALL_YES,
+            lambda: self._start_library_job(ENRICH_ALL),
+            warning=len(menus.ENRICH_ALL_WARNING),
+        )
+
+    def _confirm_regenerate(self) -> None:
+        """Opciones -> Avanzado -> Regenerar todo (la "R" de la TUI)."""
+        self._ask_confirm(
+            menus.REGENERATE_TITLE,
+            menus.REGENERATE_WARNING + menus.REGENERATE_NOTE,
+            menus.REGENERATE_YES,
+            lambda: self._start_library_job(REGENERATE),
+            warning=len(menus.REGENERATE_WARNING),
+        )
+
+    def _start_library_job(self, mode: str) -> None:
+        """Arranca uno de los tres trabajos y enciende el contador."""
+        if not self.refresh_worker.start(mode):
+            self.notifier.show("Ya hay un proceso en curso")
             return
 
-        self._refresh_pending = []
-        self.refresh_text.setText("Actualizando biblioteca…")
+        self._refresh_added = 0
+        etiqueta = MODE_LABELS[mode]
+        self.refresh_text.setText(f"{etiqueta}…")
         self.refresh_text.show()
-        self.notifier.show("Actualizando biblioteca...")
-        logger.info("gui3d: actualización de la biblioteca lanzada")
+        self.notifier.show(f"{etiqueta}...")
+
+        if mode == REGENERATE:
+            # `unknown_games` estaba en la base que se acaba de borrar, así
+            # que el carrusel de desconocidos que hubiera ya no vale.
+            self._invalidate_unknown_carousel()
+
+        logger.info(f"gui3d: {etiqueta.lower()}")
 
     def _drain_refresh(self) -> None:
         """
@@ -2351,6 +2407,12 @@ class App(ShowBase):
         existente = next(
             (entry for entry in self.entries if entry.key == game.igdb_id), None,
         )
+        if existente is None and not game.cover_url:
+            # El mismo criterio que `real_data.build_real_entries`, que es
+            # quien decide qué se puede enseñar: sin carátula no hay caja.
+            # Sin esto entraban juegos —DLCs, sobre todo— que desaparecían
+            # al reiniciar, porque el arranque sí los descarta.
+            return False
         if existente is not None:
             if existente.game is not None:
                 for field in EXTRA_FIELDS:
@@ -2361,6 +2423,7 @@ class App(ShowBase):
             return False
 
         self._add_game_entry(game)
+        self._refresh_added += 1
         logger.info(f"gui3d: juego nuevo en la biblioteca: {game.title!r}")
         return True
 
@@ -2369,8 +2432,17 @@ class App(ShowBase):
         if not done.ok:
             self.notifier.show(f"Error actualizando: {done.error}")
             return
-        self.notifier.show(f"Biblioteca actualizada ({done.loaded} juegos)")
-        logger.info(f"gui3d: actualización terminada, {done.loaded} juegos")
+        # Los juegos AÑADIDOS, no lo que emitió el pipeline: un juego que
+        # está en dos tiendas se emite dos veces, así que ese número no es el
+        # tamaño de tu biblioteca y desconcierta más que informa.
+        if self._refresh_added:
+            self.notifier.show(f"{self._refresh_added} juegos nuevos")
+        else:
+            self.notifier.show("Biblioteca al día")
+        logger.info(
+            f"gui3d: terminado ({done.loaded} juegos recorridos, "
+            f"{self._refresh_added} nuevos)"
+        )
 
     # ──────────────────────────────
     # Modo desconocidos

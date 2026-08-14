@@ -1,4 +1,5 @@
 import logging
+import re
 import sqlite3
 import threading
 from collections.abc import Iterable, Mapping, Sequence
@@ -123,6 +124,40 @@ class BaseCacher:
         except Exception as e:
             logger.warning(f"{type(self).__name__}: write failed: {e}")
             return False
+
+    def clear_tables(self) -> bool:
+        """
+        Vacía las tablas que declara `SCHEMA`, dejando la base como recién
+        creada.
+
+        Existe porque BORRAR EL FICHERO no sirve: cada cacher mantiene una
+        conexión abierta por hilo (ver `_connect`), y en cuanto hay una
+        abierta, `unlink` solo quita el nombre — las conexiones siguen
+        leyendo y escribiendo en el inodo huérfano. Todo lo que se
+        reconstruyera después iría a un fichero fantasma que desaparece al
+        cerrar la aplicación.
+
+        Se sacan los nombres de tabla del propio `SCHEMA` para que añadir una
+        tabla nueva a un cacher no obligue a acordarse de este método.
+        """
+        if not self._available:
+            return False
+        try:
+            conn = self._connect()
+            with conn:
+                for table in self._schema_tables():
+                    conn.execute(f"DELETE FROM {table}")
+            return True
+        except Exception as e:
+            logger.warning(f"{type(self).__name__}: clear failed: {e}")
+            return False
+
+    @classmethod
+    def _schema_tables(cls) -> list[str]:
+        """Los nombres de tabla que crea `SCHEMA`."""
+        return re.findall(
+            r"CREATE TABLE IF NOT EXISTS\s+(\w+)", cls.SCHEMA, re.IGNORECASE,
+        )
 
     def _write_many(self, sql: str, rows: Iterable) -> bool:
         """Escritura por lotes en una sola transacción."""

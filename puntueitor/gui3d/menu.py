@@ -45,6 +45,11 @@ TITLE_COLOR = (0.62, 0.09, 0.20, 1)
 # (comprobado renderizando el menú sobre uno). Apagando el resto, el
 # elemento con foco destaca sea cual sea su tono.
 ITEM_COLOR = (0.62, 0.63, 0.68, 1)
+
+#: Para las líneas de un aviso que dicen qué se va a perder. Rojo claro y
+#: no el granate del título (`TITLE_COLOR`): ese se eligió para un texto
+#: grande, y a tamaño de rótulo sobre el panel oscuro apenas se lee.
+WARNING_COLOR = (0.93, 0.42, 0.42, 1)
 ITEM_COLOR_DISABLED = (0.35, 0.35, 0.40, 1)
 HEADER_COLOR = (0.6, 0.8, 1, 1)
 HINT_COLOR = (0.55, 0.57, 0.65, 1)

@@ -13,7 +13,11 @@ import pytest
 
 from puntueitor.core.models import Library
 from puntueitor.core.repository.library_repository import LibraryRepository
-from puntueitor.core.services.library_refresh import refresh_library
+from puntueitor.core.services.library_refresh import (
+    enrich_all,
+    refresh_library,
+    regenerate_library,
+)
 
 
 @pytest.fixture
@@ -152,3 +156,92 @@ def test_library_is_saved_at_the_end(repo, falso_pipeline, make_game, monkeypatc
     assert len(guardadas) == 1
     assert [g.igdb_id for g in guardadas[0]] == [1, 2]
     assert isinstance(Library.from_iterable(guardadas[0]), Library)
+
+
+class TestRegenerate:
+    def test_empties_the_database_first(self, poblado, falso_pipeline, make_game):
+        """
+        Lo destructivo de verdad: todo `puntueitor.db`.
+
+        Y se comprueba **por los cachers ya abiertos**, que es donde estaba el
+        fallo: borrar el fichero los dejaba contestando desde el inodo
+        huérfano y la base parecía intacta.
+        """
+        from puntueitor.core import paths
+        assert not str(paths.main_db()).startswith("/home/deck/.local"), "FUGA"
+
+        falso_pipeline.emite(make_game(igdb_id=9))
+
+        regenerate_library(poblado)
+
+        # Todo lo que vivía en esa base se ha ido...
+        assert poblado.resolvers_cacher.get_stores_for_igdb_id(1) is None
+        assert not poblado.unknown_cacher.is_unknown("epic", "abc")
+        assert not poblado.extras_cacher.get_extras(1)
+        # ...y se reconstruye pidiéndolo todo otra vez.
+        assert falso_pipeline.llamadas["refresh"] is True
+
+    def test_user_states_survive(self, poblado, falso_pipeline):
+        """
+        `library.sqlite` está en OTRO fichero justamente para esto: los
+        terminados y los favoritos no se pueden recuperar de ninguna API.
+        """
+        falso_pipeline.emite()
+
+        regenerate_library(poblado)
+
+        estados = poblado.library_cacher.get_all_statuses()[1]
+        assert estados["finished"] and estados["favorite"]
+
+
+class TestEnrichAll:
+    @pytest.fixture
+    def enricher(self, monkeypatch):
+        """Enrichers de mentira: devuelven el juego con duración puesta."""
+        import puntueitor.core.enrichers.hltb_enricher as hltb_mod
+        import puntueitor.core.enrichers.steam_score_enricher as steam_mod
+        import puntueitor.core.resolvers.hltb_resolver as resolver_mod
+
+        class Fake:
+            def __init__(self, **kwargs): ...
+            def enrich(self, game):
+                import dataclasses
+                return dataclasses.replace(game, duration_hours=7.0)
+
+        class Passthrough:
+            def __init__(self, **kwargs): ...
+            def enrich(self, game):
+                return game
+
+        monkeypatch.setattr(resolver_mod, "HLTBResolver", lambda *a, **k: object())
+        monkeypatch.setattr(hltb_mod, "HLTBEnricher", Fake)
+        monkeypatch.setattr(steam_mod, "SteamScoreEnricher", Passthrough)
+
+    def test_clears_and_rewrites_extras(self, poblado, enricher):
+        assert poblado.extras_cacher.get_extras(1)["duration_hours"] == 10.0
+
+        cambiados = enrich_all(poblado)
+
+        assert cambiados == 1
+        # Borrada la vieja y escrita la nueva.
+        assert poblado.extras_cacher.get_extras(1)["duration_hours"] == 7.0
+
+    def test_keeps_the_library_intact(self, poblado, enricher):
+        """Solo rehace datos que se pueden volver a pedir."""
+        enrich_all(poblado)
+
+        assert poblado.resolvers_cacher.get_stores_for_igdb_id(1) == {"steam": "12345"}
+        assert poblado.unknown_cacher.is_unknown("epic", "abc")
+        assert poblado.library_cacher.get_all_statuses()[1]["favorite"]
+
+    def test_should_stop_cuts_it(self, poblado, enricher):
+        enrich_all(poblado, should_stop=lambda: True)
+
+        # Ni siquiera el primero: los extras se borran igual, pero no se
+        # vuelve a escribir nada.
+        assert not poblado.extras_cacher.get_extras(1)
+
+    def test_reports_progress(self, poblado, enricher):
+        vistos = []
+        enrich_all(poblado, on_progress=lambda i, total, name: vistos.append((i, total)))
+        assert vistos == [(1, 1)]

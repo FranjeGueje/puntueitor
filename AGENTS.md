@@ -974,6 +974,63 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Vaciar una base de datos: NUNCA borrando el fichero
+
+`BaseCacher` mantiene **una conexión abierta por hilo** (`_connect`). En cuanto
+hay una abierta, `unlink()` solo quita el nombre del directorio: las conexiones
+siguen leyendo y escribiendo en el inodo huérfano, así que la base "borrada"
+sigue contestando con los datos viejos y todo lo que se reconstruya después
+acaba en un fichero fantasma que se pierde al cerrar la aplicación.
+
+Es lo que hacía `tui/app.py` con su `os.remove(paths.main_db())` al regenerar,
+y se destapó al escribir el primer test que lo comprobaba **por los cachers ya
+abiertos** en vez de mirando el disco.
+
+Para vaciar de verdad: `BaseCacher.clear_tables()`, que hace `DELETE FROM` de
+cada tabla declarada en `SCHEMA` (los nombres se sacan del propio `SCHEMA`, así
+que añadir una tabla no obliga a acordarse de nada).
+
+## Operaciones gordas: Opciones → Avanzado
+
+Las dos de la TUI que tiran datos, apartadas de las de diario porque las dos
+tardan minutos y las dos preguntan antes:
+
+- **Enriquecer todo** (`enrich_all`, la `E` de la TUI): vacía los extras y
+  vuelve a buscar duración y notas de toda la biblioteca. Los juegos se
+  **releen del repositorio después de vaciar**: los que tuviera en memoria
+  quien llama conservan sus duraciones, y con `overwrite=False` el enricher se
+  saltaría justo lo que se acaba de pedir rehacer.
+- **Regenerar todo** (`regenerate_library`, la `R`): vacía `puntueitor.db`
+  entero —`resolvers`, caché de IGDB, extras **y desconocidos**— y lo
+  reconstruye. Solo sobrevive `library.sqlite` (terminado, oculto, pendiente,
+  favorito), que está en otro fichero justamente por esto: es lo único que no
+  se puede volver a pedir a ninguna API.
+
+Las tres operaciones son funciones con **nombre propio** en
+`core/services/library_refresh.py`, no una sola con banderas: en el sitio de la
+llamada tiene que leerse qué se va a perder. `RefreshWorker.start(mode)` elige
+cuál, y las tres mandan los mismos mensajes, así que el drenaje del carrusel no
+distingue: un juego que llega es "este juego, con más datos".
+
+`regenerate_library` vacía **la base del repositorio que recibe**
+(`repo.cache_dir`), no `paths.main_db()`: son la misma en producción, pero un
+repositorio apuntado a un temporal —los tests hacen justo eso— habría borrado
+el fichero de verdad del usuario.
+
+En el carrusel, regenerar invalida además el carrusel de desconocidos: su tabla
+estaba en la base que se acaba de vaciar.
+
+### El aviso
+
+`build_confirm_items(..., warning=N)` pinta en rojo (`WARNING_COLOR`) las N
+primeras líneas, las que dicen qué se pierde. Solo funciona en rótulos de
+sección: en las filas enfocables, `Menu._refresh_focus` reasigna el color al
+mover el foco y lo machacaría.
+
+El título es `¡IMPORTANTE!` y no lleva el símbolo ⚠ porque `HussarPrintA.otf`
+**no trae el glifo U+26A0** — saldría un hueco, como pasó con los emoji de la
+ficha.
+
 ## Actualizar la biblioteca (R2 / tecla "r")
 
 Es la variante **suave** de la TUI (su tecla `r`) y **solo esa**: vuelve a

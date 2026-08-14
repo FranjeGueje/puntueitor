@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 #: Los campos que decide si el enriquecido ha servido de algo. Son los que
 #: rellenan los dos enrichers; si ninguno llegó, no hay nada que guardar y se
 #: avisa de que no se encontró el juego en vez de escribir una fila vacía.
-_ENRICHED_FIELDS = ("duration_hours", "steam_review", "steamdb_score")
+ENRICHED_FIELDS = ("duration_hours", "steam_review", "steamdb_score")
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,7 @@ def enrich_game(repo: LibraryRepository, game: Game) -> EnrichResult:
         logger.warning(f"error enriqueciendo {game.title!r}: {error}")
         return EnrichResult(game=game, found=False, error=error)
 
-    if any(getattr(enriched, field) is not None for field in _ENRICHED_FIELDS):
+    if any(getattr(enriched, field) is not None for field in ENRICHED_FIELDS):
         repo.save_game(enriched)
         logger.info(f"enriquecido {enriched.title!r}")
         return EnrichResult(game=enriched, found=True)

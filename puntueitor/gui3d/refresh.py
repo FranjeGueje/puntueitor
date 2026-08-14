@@ -12,7 +12,11 @@ import queue
 import threading
 from dataclasses import dataclass
 
-from puntueitor.core.services.library_refresh import refresh_library
+from puntueitor.core.services.library_refresh import (
+    enrich_all,
+    refresh_library,
+    regenerate_library,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,19 @@ _WORKER_POLL_TIMEOUT = 0.2
 PROGRESS = "progress"
 GAME = "game"
 DONE = "done"
+
+#: Los tres trabajos, de menos a más destructivo. Los tres mandan los mismos
+#: mensajes, así que para el carrusel son lo mismo: juegos que llegan.
+SOFT = "soft"
+ENRICH_ALL = "enrich_all"
+REGENERATE = "regenerate"
+
+#: Cómo se llama cada uno mientras trabaja.
+MODE_LABELS = {
+    SOFT: "Actualizando biblioteca",
+    ENRICH_ALL: "Enriqueciendo todo",
+    REGENERATE: "Regenerando todo",
+}
 
 
 @dataclass(frozen=True)
@@ -72,15 +89,20 @@ class RefreshWorker:
         self._events: queue.Queue[tuple[str, object]] = queue.Queue()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.mode = SOFT
 
     @property
     def running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self) -> bool:
-        """Lanza una actualización. False si ya había una en curso."""
+    def start(self, mode: str = SOFT) -> bool:
+        """
+        Lanza uno de los tres trabajos. False si ya había uno en curso: dos a
+        la vez se pisarían escribiendo en las mismas tablas.
+        """
         if self.running:
             return False
+        self.mode = mode
         self._thread = threading.Thread(
             target=self._worker, name="refresh-worker", daemon=True,
         )
@@ -101,17 +123,31 @@ class RefreshWorker:
                 self._events.put((GAME, game))
 
         try:
-            loaded = refresh_library(
-                self._repository,
-                refresh=False,          # nunca la variante destructiva
-                force_store_refresh=True,
-                on_game=on_game,
-                on_progress=on_progress,
-                # Los enriquecidos llegan por el mismo camino que los juegos:
-                # para el carrusel un juego enriquecido es "este juego, con
-                # más datos", y ya sabe distinguir si la caja existe.
-                on_enriched=on_game,
-            )
+            if self.mode == ENRICH_ALL:
+                loaded = enrich_all(
+                    self._repository,
+                    on_game=on_game,
+                    on_progress=on_progress,
+                    should_stop=self._stop.is_set,
+                )
+            elif self.mode == REGENERATE:
+                loaded = regenerate_library(
+                    self._repository,
+                    on_game=on_game,
+                    on_progress=on_progress,
+                    # Los enriquecidos llegan por el mismo camino que los
+                    # juegos: para el carrusel un juego enriquecido es "este
+                    # juego, con más datos", y ya sabe si tiene caja o no.
+                    on_enriched=on_game,
+                )
+            else:
+                loaded = refresh_library(
+                    self._repository,
+                    force_store_refresh=True,
+                    on_game=on_game,
+                    on_progress=on_progress,
+                    on_enriched=on_game,
+                )
         except Exception as error:  # noqa: BLE001 - se cuenta, no se lanza
             logger.exception("gui3d: la actualización falló")
             self._events.put((DONE, Done(error=error)))

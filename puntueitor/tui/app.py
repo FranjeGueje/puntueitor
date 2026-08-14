@@ -22,7 +22,10 @@ from puntueitor.tui.screens.unknown_menu import UnknownMenuScreen
 from puntueitor.tui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.services.game_actions import enrich_game, forget_game
-from puntueitor.core.services.library_refresh import refresh_library
+from puntueitor.core.services.library_refresh import (
+    refresh_library,
+    regenerate_library,
+)
 from puntueitor.core.services.unknown_actions import (
     SearchResult,
     Unknown,
@@ -763,23 +766,23 @@ class PuntueitorApp(App):
             self.call_from_thread(self._on_game_loaded, game)
 
         try:
-            # El borrado se queda AQUÍ y no en `refresh_library`: es la única
-            # parte destructiva de todo esto y tiene que estar a la vista de
-            # quien la ofrece, no escondida tras un parámetro.
+            # Dos funciones con nombre y no una con banderas: la de regenerar
+            # borra la base de datos entera, y eso tiene que leerse aquí.
             if refresh:
-                try:
-                    os.remove(paths.main_db())
-                except OSError:
-                    pass
-
-            refresh_library(
-                self.repo,
-                refresh=refresh,
-                force_store_refresh=force_store_refresh,
-                on_game=on_loaded,
-                on_progress=progress,
-                on_enriched=on_enriched,
-            )
+                regenerate_library(
+                    self.repo,
+                    on_game=on_loaded,
+                    on_progress=progress,
+                    on_enriched=on_enriched,
+                )
+            else:
+                refresh_library(
+                    self.repo,
+                    force_store_refresh=force_store_refresh,
+                    on_game=on_loaded,
+                    on_progress=progress,
+                    on_enriched=on_enriched,
+                )
             logger.info("do_reload: finished successfully")
             self.call_from_thread(self._finish_reload, refresh)
 

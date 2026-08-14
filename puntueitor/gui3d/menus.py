@@ -13,7 +13,7 @@ verdad.
 """
 from puntueitor.core.models import Game
 from puntueitor.gui3d import scoring_info
-from puntueitor.gui3d.menu import MenuItem
+from puntueitor.gui3d.menu import WARNING_COLOR, MenuItem
 
 # ──────────────────────────────
 # Opciones (Select / Esc)
@@ -23,8 +23,55 @@ OPTIONS_TITLE = "Opciones"
 OPTIONS_ITEMS = [
     MenuItem("config", "Configuración"),
     MenuItem("gui3d", "Puntueitor3D"),
+    MenuItem("advanced", "Avanzado"),
     MenuItem("quit", "Salir"),
 ]
+
+# ──────────────────────────────
+# Avanzado (Opciones -> Avanzado)
+# ──────────────────────────────
+
+ADVANCED_TITLE = "Avanzado"
+
+ENRICH_ALL_KEY = "adv:enrich_all"
+REGENERATE_KEY = "adv:regenerate"
+
+#: Las dos operaciones gordas, apartadas del resto: las dos tiran datos y las
+#: dos tardan minutos, así que no deben estar a un botón de distancia de las
+#: de todos los días.
+ADVANCED_ITEMS = [
+    MenuItem(ENRICH_ALL_KEY, "Enriquecer todo"),
+    MenuItem(REGENERATE_KEY, "Regenerar todo"),
+]
+
+#: El aviso de cada una. Las líneas marcadas como advertencia van primero y se
+#: pintan en rojo (ver `build_confirm_items`): son las que dicen qué se pierde.
+ENRICH_ALL_TITLE = "Enriquecer todo"
+ENRICH_ALL_WARNING = (
+    "Se borrarán y volverán a buscarse TODOS",
+    "los datos extra de tus juegos:",
+    "duración y puntuaciones.",
+)
+ENRICH_ALL_NOTE = (
+    "Es un proceso laborioso y llevará",
+    "varios minutos.",
+)
+ENRICH_ALL_YES = "Sí, enriquecer todo"
+
+#: El título va con exclamaciones y no con el símbolo de aviso: la fuente del
+#: HUD (HussarPrintA) no trae el glifo U+26A0 y saldría un hueco en blanco,
+#: como pasó con los emoji de la ficha.
+REGENERATE_TITLE = "¡IMPORTANTE!"
+REGENERATE_WARNING = (
+    "Esto BORRARÁ toda la base de datos de",
+    "videojuegos y volverá a generarla entera.",
+    "Perderás todos tus datos.",
+)
+REGENERATE_NOTE = (
+    "Es un proceso laborioso y llevará",
+    "varios minutos.",
+)
+REGENERATE_YES = "Sí, regenerar todo"
 
 # ──────────────────────────────
 # Puntueitor3D (Opciones -> Puntueitor3D)
@@ -360,6 +407,7 @@ def build_confirm_items(
     question_lines: tuple[str, ...],
     yes_label: str,
     no_label: str = "No, cancelar",
+    warning: int = 0,
 ) -> list[MenuItem]:
     """
     Las filas de una confirmación: la pregunta y las dos salidas.
@@ -376,9 +424,17 @@ def build_confirm_items(
     El "No" va primero a propósito, como en el menú de salir: `set_items`
     deja el foco en la primera fila enfocable, así que la opción que viene
     marcada de serie es la que no hace nada.
+
+    `warning` es cuántas de las primeras líneas van en rojo, para lo que de
+    verdad se pierde. El color solo se puede fijar en rótulos de sección: en
+    las filas que se pueden enfocar, `Menu._refresh_focus` reasigna el color
+    al mover el foco y machacaría este.
     """
     items = [
-        MenuItem(f"confirm_q{index}", line, kind="header")
+        MenuItem(
+            f"confirm_q{index}", line, kind="header",
+            color=WARNING_COLOR if index < warning else None,
+        )
         for index, line in enumerate(question_lines)
     ]
     items += [

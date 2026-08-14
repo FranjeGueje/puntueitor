@@ -162,4 +162,4 @@ class TestEnrichGame:
         que hay que mirar si también cuenta aquí.
         """
         from puntueitor.core.repository.library_repository import EXTRA_FIELDS
-        assert set(game_actions._ENRICHED_FIELDS) <= set(EXTRA_FIELDS)
+        assert set(game_actions.ENRICHED_FIELDS) <= set(EXTRA_FIELDS)
