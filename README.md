@@ -9,13 +9,16 @@
 
 <p align="center">
   <b>Centraliza, gestiona y optimiza la elección de tus próximas partidas basándose en tus bibliotecas actuales</b><br>
-  Unifica Steam, GOG, Epic Games y Amazon en una sola interfaz TUI.<br>
+  Unifica Steam, GOG, Epic Games y Amazon en <b>dos interfaces</b>: una de terminal
+  y un carrusel 3D pensado para el mando.<br>
   Enriquecimiento automático, filtros, puntuación multi-criterio y persistencia.
 </p>
 
 ---
 
 ## 📸 Capturas
+
+### 🖥️ Interfaz de terminal
 
 <p align="center">
   <i>Biblioteca principal con lista de juegos, detalle y barra de estado</i><br>
@@ -37,12 +40,38 @@
   <img src="docs/screenshots/config.png" alt="Configuración" width="600">
 </p>
 
+### 🎠 Carrusel 3D
+
+<p align="center">
+  <i>Las cajas de tus juegos en arco, con la ficha del seleccionado debajo</i><br>
+  <img src="docs/screenshots/gui3d-main.png" alt="Carrusel 3D" width="800">
+</p>
+
+<p align="center">
+  <i>Menú del juego: estados de usuario y acciones avanzadas</i><br>
+  <img src="docs/screenshots/gui3d-juego.png" alt="Menú de juego" width="800">
+</p>
+
+<p align="center">
+  <i>Los mismos sistemas de puntuación que la TUI, con su descripción</i><br>
+  <img src="docs/screenshots/gui3d-scoring.png" alt="Sistemas de scoring" width="800">
+</p>
+
+<p align="center">
+  <i>Las acciones destructivas avisan de lo que se pierde</i><br>
+  <img src="docs/screenshots/gui3d-regenerar.png" alt="Aviso de regeneración" width="800">
+</p>
+
+> Las del carrusel se regeneran con `python tools/capturas3d.py`, que dibuja
+> sin abrir ventana.
+
 ---
 
 ## ✨ Características
 
 | Característica | Detalle |
 |---|---|
+| **Dos interfaces** | TUI de terminal (Textual) y carrusel 3D (Panda3D), sobre la misma biblioteca |
 | **Multi-tienda** | Steam, GOG, Epic Games y Amazon (via Heroic Games Launcher) |
 | **Enriquecimiento IGDB** | Carátula, género, puntuación de crítica, storyline, fecha de lanzamiento |
 | **Duración** | HowLongToBeat — búsqueda automática por similitud de título |
@@ -54,6 +83,9 @@
 | **Juegos desconocidos** | Los juegos no encontrados en IGDB se aíslan para resolución manual |
 | **Resolución IGDB** | Búsqueda por título con 15 resultados, o re-resolución automática por tienda |
 | **Persistencia de filtros** | Los filtros activos se guardan entre sesiones (JSON) |
+| **Mando** | El carrusel se maneja entero con un mando: navegar, menús, gatillos y sticks |
+| **Actualizar sin salir** | Desde cualquiera de las dos interfaces: busca en tus tiendas y añade lo nuevo |
+| **Tiendas a la carta** | Desmarcar una tienda deja de escanearla **y** de enseñar sus juegos |
 | **Caché unificada** | Una sola base de datos SQLite en `~/.local/share/puntueitor/` |
 | **Binario único** | PyInstaller — sin dependencias del sistema, 25 MB |
 
@@ -110,11 +142,21 @@ marcas de usuario (terminado, favorito, backlog, oculto) y la configuración
 de scoring. Lo único que descarga son las carátulas que falten, en segundo
 plano según vas navegando. Necesita una GPU con OpenGL.
 
+Hace lo mismo que la TUI y sin salir de él: filtrar y ordenar, puntuar con
+cualquiera de los cuatro sistemas, marcar estados, enriquecer un juego suelto,
+desconocerlo, rescatar juegos desconocidos —buscándolos por título en IGDB o
+volviendo a preguntar a su tienda—, actualizar la biblioteca y regenerarla
+entera. Todo lo que tarda va en segundo plano: puedes seguir navegando
+mientras.
+
 ---
 
 ## ⚙️ Configuración
 
-Al arrancar por primera vez, pulsa `c` para abrir el diálogo de configuración, o edita manualmente `~/.config/puntueitor/config.json`:
+Al arrancar por primera vez, abre el diálogo de configuración —`c` en la TUI,
+Select → Configuración en el carrusel— o edita a mano
+`~/.config/puntueitor/config.json`. Las dos interfaces leen y escriben el
+mismo fichero:
 
 > Puntueitor sigue la especificación XDG Base Directory. Si vienes de una
 > versión anterior, tus ficheros se trasladan solos al arrancar:
@@ -139,12 +181,22 @@ Al arrancar por primera vez, pulsa `c` para abrir el diálogo de configuración,
 | `gog_is_active` | `bool` | Cargar juegos de GOG (via Heroic) |
 | `epic_is_active` | `bool` | Cargar juegos de Epic (via Heroic) |
 | `amazon_is_active` | `bool` | Cargar juegos de Amazon (via Heroic) |
-| `heroic_path` | `string` | Ruta a la carpeta de Heroic (vacío = auto-detectar) |
+| `heroic_path` | `string` | Ruta a la carpeta de Heroic o Relic (vacío = auto-detectar) |
 | `scoring_*` | `float/list` | Pesos de puntuación y géneros preferidos |
+
+> Las cuatro banderas `*_is_active` deciden dos cosas: **de qué tiendas se
+> escanea** y **qué juegos se enseñan**. Un juego que tengas en dos tiendas se
+> sigue viendo mientras una de ellas esté marcada.
+>
+> ⚠️ Con una tienda desmarcada, **regenerar** borra sus juegos de la base de
+> datos, no solo de la vista: se vacía entera y solo se repuebla lo marcado.
+> Actualizar no borra nada.
 
 ---
 
 ## ⌨️ Controles
+
+### Interfaz de terminal
 
 | Tecla | Acción | Descripción |
 |---|---|---|
@@ -173,17 +225,51 @@ Al arrancar por primera vez, pulsa `c` para abrir el diálogo de configuración,
 | `Escape` | Cancelar / Volver |
 | `Letra` resaltada | Atajo directo a la opción (mayúscula = descendente) |
 
+### Carrusel 3D
+
+| Teclado | Mando | Acción |
+|---|---|---|
+| `←` `→` | Stick / cruceta | Navegar por la biblioteca |
+| `Q` `W` | `L1` `R1` | Saltar al grupo anterior/siguiente (letra o tramo de nota) |
+| `Enter` | `A` | Menú del juego: estados, enriquecer, desconocer |
+| `Esc` | `B` | Volver |
+| `Esc` | `Select` | Opciones (configuración, ajustes del carrusel, avanzado, salir) |
+| `Tab` | `Start` | Puntueitor: sistemas de puntuación |
+| `X` | `X` | Filtrar y ordenar |
+| `Espacio` | `Y` | Mostrar u ocultar las etiquetas de las cajas |
+| `O` | `L2` | Mostrar u ocultar los juegos marcados como ocultos |
+| `R` | `R2` | Actualizar la biblioteca: busca en tus tiendas y añade lo nuevo |
+| `↑` | Stick / cruceta arriba | Juegos desconocidos |
+| `↓` | Stick / cruceta abajo | Volver a la biblioteca |
+
+En los menús, `↑`/`↓` navegan, `←`/`→` cambian los valores que los tienen
+(pesos, horas, filtros de tres estados) y `A` elige. La barra de abajo recuerda
+en todo momento qué hace cada botón.
+
+**Opciones → Avanzado** guarda las dos operaciones que tardan y tiran datos —
+enriquecer todo y regenerar todo—, cada una con su aviso de lo que se pierde.
+
 ---
 
 ## 🏗️ Arquitectura
 
 ```
-                    ┌─────────────┐
-                    │  Textual UI  │
-                    │  (app, screens, widgets)
-                    └──────┬──────┘
-                           │
-              ┌────────────┴────────────┐
+        ┌──────────────────┐   ┌──────────────────┐
+        │    TUI (Textual) │   │ Carrusel (Panda3D)
+        │ app, screens,    │   │ app, carousel,   │
+        │ widgets          │   │ menús, workers   │
+        └────────┬─────────┘   └────────┬─────────┘
+                 └───────────┬──────────┘
+                             │
+              ┌──────────────┴───────────┐
+              │  Servicios compartidos    │
+              │  game_actions,            │
+              │  unknown_actions,         │
+              │  library_refresh,         │
+              │  library_ops              │
+              └──────────────┬───────────┘
+                             │
+              ┌──────────────┴───────────┐
               │     LibraryService       │
               │  (fachada de operaciones)│
               └────────────┬────────────┘
@@ -231,7 +317,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-249 tests (unitarios + integración) que cubren:
+321 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -239,6 +325,12 @@ python -m pytest tests/
 - Resolvers (plantilla común y las 4 tiendas)
 - Pipeline (scoring_ops, filter_library, enrichment)
 - Servicios, Cachers (5 tipos), Config, Repository
+- Acciones compartidas por las dos interfaces: enriquecer y desconocer un
+  juego, rescatar desconocidos, actualizar y regenerar la biblioteca
+- Qué juegos se enseñan según las tiendas marcadas
+
+Las pruebas de interfaz van aparte: necesitan una ventana (aunque sea fuera de
+pantalla) y datos reales, así que no entran en `pytest`.
 
 ---
 

@@ -2,10 +2,14 @@
 Frontend 3D de Puntueitor: carrusel de cajas de juego con ficha, navegable
 con teclado o mando.
 
-Alternativa a la TUI (`gui/`), no un reemplazo: las dos leen la misma
-biblioteca cacheada y ninguna toca `core/`. Es solo lectura — no lanza el
-pipeline ni pide nada a IGDB; lo único que baja de la red son las carátulas
-que falten, y en segundo plano.
+Alternativa a la TUI (`tui/`), no un reemplazo: las dos leen y escriben la
+misma biblioteca, y comparten las operaciones en `core/services/`
+(`game_actions`, `unknown_actions`, `library_refresh`).
+
+Arrancó siendo solo lectura y ya no lo es: desde aquí se enriquece un juego,
+se desconoce, se rescatan desconocidos, se actualiza la biblioteca y se
+regenera entera. Todo lo que va a la red ocurre en hilos propios y se recoge
+en `_update`, para que el carrusel siga navegable mientras.
 
 Ejecutar con:
     python -m puntueitor.gui3d.app
