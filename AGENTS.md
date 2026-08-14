@@ -977,6 +977,41 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Las tiendas marcadas deciden DOS cosas
+
+El ajuste "TIENDAS A CARGAR" (Opciones → Configuración) gobierna:
+
+1. **De qué tiendas se escanea** — `pipeline.load_steam_library.load_library`
+   construye su lista de tiendas desde la config y salta las desmarcadas. Ya
+   funcionaba.
+2. **Qué juegos se enseñan** — esto faltaba: los juegos de una tienda
+   desmarcada seguían en el carrusel y en la lista de la TUI.
+
+Lo segundo lo resuelven `library_ops.active_stores()` e
+`is_in_active_stores(game, activas)`, que aplican **las dos interfaces al
+pintar**: `gui3d._visible_entries` (junto a los ocultos y los filtros) y
+`tui.widgets.game_list.populate_games` (junto a los ocultos).
+
+**No se filtra dentro de `repo.load()`** a propósito. Esa función es la Regla de
+Oro —`resolvers` es la única fuente de verdad de qué está en la biblioteca— y
+hacerla mentir según un ajuste de presentación rompería a quien la usa para
+decidir qué escribir o qué enriquecer. Filtrando al pintar, además, volver a
+marcar la tienda devuelve los juegos al instante y en su sitio del orden, sin
+releer el disco.
+
+Reglas del filtro:
+
+- Basta con que **una** de las tiendas del juego esté marcada: hay 82 juegos en
+  más de una en la biblioteca real, y desmarcar Epic no debe llevarse el juego
+  que también tienes en Steam.
+- Un juego **sin ninguna tienda conocida se enseña siempre**: no pertenece a
+  ninguna desmarcada, así que esconderlo sería inventarse un criterio.
+- Desmarcarlas todas deja el carrusel vacío, que es un estado válido.
+
+**Aviso**: con una tienda desmarcada, **Regenerar todo borra sus juegos de la
+base de datos** — se vacía entera y solo se repuebla lo marcado. Actualizar no,
+porque no borra nada. Es la diferencia entre "no lo veo" y "ya no lo tengo".
+
 ## Vaciar una base de datos: NUNCA borrando el fichero
 
 `BaseCacher` mantiene **una conexión abierta por hilo** (`_connect`). En cuanto

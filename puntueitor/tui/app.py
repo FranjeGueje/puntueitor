@@ -343,7 +343,14 @@ class PuntueitorApp(App):
         self.notify(f"Añadido: {game.title}")
 
     def action_configure(self) -> None:
-        self.push_screen(ConfigurationScreen())
+        def repoblar(_result=None) -> None:
+            # Las tiendas marcadas deciden qué se enseña (ver
+            # `GameList.populate_games`), así que hay que repintar la lista
+            # al volver: si no, el cambio no se nota hasta reiniciar.
+            if not getattr(self, "_showing_unknowns", False):
+                self.query_one(GameList).populate_games(self.current_library)
+
+        self.push_screen(ConfigurationScreen(), repoblar)
 
     def action_toggle_hidden(self) -> None:
         game_list = self.query_one(GameList)

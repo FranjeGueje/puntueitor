@@ -4,6 +4,10 @@ from textual.message import Message
 from textual.content import Text
 from textual import on
 
+from puntueitor.core.services.library_ops import (
+    active_stores,
+    is_in_active_stores,
+)
 from puntueitor.core.models import Library, Game
 
 
@@ -65,14 +69,22 @@ class GameList(Vertical):
 
         self.games_map.clear()
 
+        # Las tiendas desmarcadas en la configuración no se enseñan. Se filtra
+        # aquí, al pintar, y no en `repo.load()`: esa función es la fuente de
+        # verdad de qué hay en la biblioteca y hacerla mentir según un ajuste
+        # de presentación rompería a quien la usa para decidir qué escribir.
+        # Las tiendas se leen una vez, no por juego.
+        activas = active_stores()
+        games = [g for g in library.games if is_in_active_stores(g, activas)]
+
         if self.show_hidden:
-            visible_games = list(library.games)
+            visible_games = list(games)
             count = len(visible_games)
             count_label.update(f"Biblioteca: {count} juegos (mostrando ocultos)")
         else:
-            visible_games = [g for g in library.games if not g.hidden]
+            visible_games = [g for g in games if not g.hidden]
             count = len(visible_games)
-            hidden_count = len(library.games) - count
+            hidden_count = len(games) - count
             count_text = f"Biblioteca: {count} juegos"
             if hidden_count:
                 count_text += f" ({hidden_count} ocultos)"

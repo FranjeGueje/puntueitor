@@ -151,6 +151,7 @@ from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS, ConfigManager
 from puntueitor.core.models import Library, Stores
 from puntueitor.core.services import unknown_actions
 from puntueitor.core.services.game_actions import forget_game
+from puntueitor.core.services.library_ops import active_stores, is_in_active_stores
 from puntueitor.core.services.library_service import LibraryService
 from puntueitor.gui3d import menus, scoring_config, scoring_info, state
 from puntueitor.gui3d.filters import (
@@ -1081,14 +1082,19 @@ class App(ShowBase):
         """
         Qué juegos deben verse en el carrusel ahora mismo.
 
-        Único sitio donde se decide, para que el arranque y el interruptor
-        de ocultos no puedan discrepar. Cuando se conecten los filtros del
-        menú de "Filtrar y ordenar", el resto de condiciones van aquí.
+        Único sitio donde se decide, para que el arranque, el interruptor de
+        ocultos, los filtros y las tiendas marcadas no puedan discrepar.
+
+        Las tiendas se leen UNA vez y no por juego: `ConfigManager` es un
+        singleton, pero preguntárselo 1266 veces por cada reordenación solo
+        es gratis en apariencia.
         """
+        activas = active_stores()
         return [
             entry for entry in self.entries
             if (self._show_hidden or not (entry.game and entry.game.hidden))
             and self.filters.matches(entry.game)
+            and is_in_active_stores(entry.game, activas)
         ]
 
     def _apply_order(self, reset_selection: bool = False) -> None:
@@ -1906,6 +1912,11 @@ class App(ShowBase):
         for field, value in self._settings.items():
             setattr(config, field, value)
         manager.save()
+
+        # Las tiendas marcadas deciden qué se ve (ver `_visible_entries`),
+        # así que el cambio tiene que notarse ya, sin reiniciar.
+        self._apply_order()
+        self._on_selection_changed()
 
         self.notifier.show("Configuración guardada")
         logger.info("gui3d: configuración de la aplicación guardada")
