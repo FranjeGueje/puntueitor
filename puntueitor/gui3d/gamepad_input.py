@@ -25,7 +25,11 @@ EVENT_PREFIX = "gamepad"
 # repetición. Antes se detectaba el flanco aquí y había que soltar el stick
 # para volver a moverse, que era justo lo que impedía recorrer el carrusel
 # dejándolo echado.
-STICK_THRESHOLD = 0.5
+#
+# Subido de 0.5 a 0.6 tras probarlo: con el umbral bajo, el stick empezaba a
+# mover el carrusel antes de que se notara haberlo movido, y un stick con
+# holgura (los mandos usados la cogen) podía navegar solo.
+STICK_THRESHOLD = 0.6
 
 # La cruceta de muchos mandos (Xbox entre ellos) NO llega como botones: el
 # kernel la expone como el eje "hat" ABS_HAT0X/ABS_HAT0Y, y Panda3D no lo
@@ -56,6 +60,21 @@ _DPAD_SIDES = ("left", "right", "up", "down")
 # RELEASE antes de que vuelva a contar como pulsado.
 TRIGGER_PRESS_THRESHOLD = 0.6
 TRIGGER_RELEASE_THRESHOLD = 0.35
+
+# El stick DERECHO (el del Editor Rápido) necesita la misma histéresis que
+# los gatillos, y por la misma razón, pero aquí se nota mucho más: cada
+# empujón ESCRIBE en la base de datos.
+#
+# Con un solo umbral, un stick que se queda rozándolo —o que al soltarlo
+# rebota y vuelve a pasar por él— dispara el gesto varias veces seguidas. Se
+# vio en un mando de Xbox 360: un solo empujón dejaba en el log
+# "backlog = True / False / True / False", o sea el estado marcado y
+# desmarcado sin tocar nada más.
+#
+# El de pulsar va ALTO (hay que echar el stick a conciencia) y el de soltar
+# BAJO (hay que devolverlo casi al centro antes de que cuente otro).
+RSTICK_PRESS_THRESHOLD = 0.7
+RSTICK_RELEASE_THRESHOLD = 0.3
 
 
 class GamepadInput(DirectObject):
@@ -100,6 +119,9 @@ class GamepadInput(DirectObject):
         self._on_jump = on_jump
         # Un flanco por gatillo, ver `update`.
         self._triggers_held = {"hidden": False, "refresh": False}
+        # Empujón del stick derecho ya contado, hasta que vuelva al centro
+        # (ver `right_stick`).
+        self._rstick_held: tuple[int, int] = (0, 0)
 
         self._device_manager = InputDeviceManager.get_global_ptr()
         self._device: InputDevice | None = None
@@ -152,6 +174,7 @@ class GamepadInput(DirectObject):
         # "soltar" no llegó nunca y el estado se habría quedado pulsado para
         # siempre, con el carrusel corriendo solo.
         self._dpad_held = dict.fromkeys(_DPAD_SIDES, False)
+        self._rstick_held = (0, 0)
         self._app.attach_input_device(device, prefix=EVENT_PREFIX)
         self._bind_buttons()
         logger.info(f"gui3d: mando conectado: {device.name}")
@@ -318,10 +341,16 @@ class GamepadInput(DirectObject):
         una sacudida es exactamente lo que haría desconfiar de un modo en el
         que cada empujón escribe en la base de datos.
 
+        **Con histéresis** (ver `RSTICK_PRESS_THRESHOLD`): una vez contado un
+        empujón, hay que devolver el stick casi al centro para que cuente el
+        siguiente. Sin eso, un solo empujón marcaba y desmarcaba el estado
+        varias veces, que es como se comportaba de verdad en un mando.
+
         Es ESTADO, como `direction()`: quien lo use tiene que detectar el
         flanco por su cuenta si no quiere repetición.
         """
         if self._device is None:
+            self._rstick_held = (0, 0)
             return (0, 0)
 
         eje_x = self._device.find_axis(InputDevice.Axis.right_x)
@@ -330,13 +359,23 @@ class GamepadInput(DirectObject):
         # El stick da +1 hacia arriba; aquí se cuenta al revés.
         y = -eje_y.value if eje_y else 0.0
 
-        if abs(x) < STICK_THRESHOLD and abs(y) < STICK_THRESHOLD:
+        if self._rstick_held != (0, 0):
+            # Ya hay un empujón contado: solo se suelta cuando el stick ha
+            # vuelto casi al centro EN LOS DOS EJES. Mientras tanto se sigue
+            # devolviendo lo mismo, así que quien mire el flanco no ve nada.
+            if max(abs(x), abs(y)) <= RSTICK_RELEASE_THRESHOLD:
+                self._rstick_held = (0, 0)
+            return self._rstick_held
+
+        if max(abs(x), abs(y)) < RSTICK_PRESS_THRESHOLD:
             return (0, 0)
         if abs(x) == abs(y):
             return (0, 0)
         if abs(x) > abs(y):
-            return (1 if x > 0 else -1, 0)
-        return (0, 1 if y > 0 else -1)
+            self._rstick_held = (1 if x > 0 else -1, 0)
+        else:
+            self._rstick_held = (0, 1 if y > 0 else -1)
+        return self._rstick_held
 
     def update(self) -> None:
         """

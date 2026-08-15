@@ -282,10 +282,16 @@ COVER_BACKFILL_INFLIGHT = 6
 # una pulsación corta, y luego repite cada vez más rápido, de
 # NAV_REPEAT_INTERVAL a NAV_REPEAT_MIN_INTERVAL, para poder recorrer una
 # biblioteca de más de mil juegos sin machacar el botón.
-NAV_REPEAT_DELAY = 0.35
-NAV_REPEAT_INTERVAL = 0.12
-NAV_REPEAT_MIN_INTERVAL = 0.045
-NAV_REPEAT_ACCEL_TIME = 1.2
+#
+# La cadencia se bajó tras probarla con mando: iba a 8 juegos por segundo de
+# salida y llegaba a 22, y con eso pasarse del juego que buscas es lo normal,
+# no la excepción. Ahora sale a 5 y sube a 12,5 tras dos segundos aguantando.
+# Cruzar la biblioteca entera no es cosa de esto: para eso están el salto de
+# grupo (L1/R1) y volver al principio (L3).
+NAV_REPEAT_DELAY = 0.40
+NAV_REPEAT_INTERVAL = 0.20
+NAV_REPEAT_MIN_INTERVAL = 0.08
+NAV_REPEAT_ACCEL_TIME = 2.0
 
 # Tope de repeticiones por frame, por si el frame se alarga (un tirón, o la
 # ventana recuperando el foco): sin él, un dt grande se traduciría en un
