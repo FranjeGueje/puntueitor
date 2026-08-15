@@ -158,21 +158,39 @@ class ConfigManager:
             self.config_dir.mkdir(parents=True, exist_ok=True)
             self.config = Config()
             self.save()
-            logger.info(f"Created new config file: {self.config_file}")
+            logger.info(
+                f"configuración nueva creada en {self.config_file}: hay que "
+                "rellenar las credenciales (Opciones → Configuración)"
+            )
         else:
             try:
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    logger.info(f"Loaded config data: {data.keys()}")
 
                 # Filter fields that exist in Config dataclass
                 config_field_names = {f.name for f in fields(Config)}
                 config_data = {k: v for k, v in data.items() if k in config_field_names}
+                # Lo que sobra se dice: casi siempre es una clave mal escrita
+                # a mano, y hasta ahora se descartaba sin más.
+                sobrantes = set(data) - config_field_names
+                if sobrantes:
+                    logger.warning(
+                        f"{self.config_file} tiene ajustes que no se reconocen "
+                        f"y se ignoran: {', '.join(sorted(sobrantes))}"
+                    )
 
                 self.config = Config(**config_data)
-                logger.info(f"Config loaded: steam_is_active={self.config.steam_is_active}, gog_is_active={self.config.gog_is_active}, epic_is_active={self.config.epic_is_active}, amazon_is_active={self.config.amazon_is_active}")
+                # El detalle (tiendas activas, credenciales que faltan) lo
+                # escribe `logging_setup` en la cabecera de la sesión, en un
+                # solo sitio y sin volcar los nombres de las claves.
+                logger.debug(f"configuración leída de {self.config_file}")
             except (json.JSONDecodeError, OSError) as e:
-                logger.error(f"Error loading config: {e}")
+                logger.error(
+                    f"no se pudo leer {self.config_file}: {e}. Se arranca con "
+                    "los valores por defecto, así que faltarán las "
+                    "credenciales; si se guarda algo desde la aplicación, ese "
+                    "fichero se sustituirá"
+                )
                 self.config = Config()
 
     def save(self):

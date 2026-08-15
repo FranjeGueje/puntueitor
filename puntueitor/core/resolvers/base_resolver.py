@@ -68,12 +68,12 @@ class BaseResolver(ABC):
         cleaned = title.strip()
         if len(cleaned) < MIN_SEARCH_LEN:
             logger.warning(
-                f"{self.STORE}: skipping fallback search for {store_id}: "
-                f"invalid title '{title}'"
+                f"[{self.STORE}] no se puede buscar el id {store_id}: su "
+                f"título no sirve ('{title}')"
             )
             return None
 
-        logger.debug(f"{self.STORE}: fallback search for {store_id} using '{cleaned}'")
+        logger.debug(f"[{self.STORE}] buscando '{cleaned}' por título (id {store_id})")
         return self.igdb.search_by_title(
             cleaned[:MAX_SEARCH_LEN], limit=limit, cache_results=True
         )
@@ -88,11 +88,11 @@ class BaseResolver(ABC):
         title = self._extract_title(raw)
 
         if not store_id:
-            logger.warning(f"{store} game missing ID, skipping: {title}")
+            logger.warning(f"[{store}] '{title}' no trae identificador; se omite")
             return []
 
         if self.unknown_cacher.is_unknown(store, store_id):
-            logger.debug(f"Skipping known unknown {store} game: {title}")
+            logger.debug(f"[{store}] '{title}' ya estaba marcado como desconocido")
             return []
 
         igdb_ids: list[int] | None = None
@@ -101,7 +101,10 @@ class BaseResolver(ABC):
 
         if not igdb_ids:
             if self.cacher and not self.cacher.available:
-                logger.warning(f"{store}: skipping '{title}' — resolver cache unavailable")
+                logger.warning(
+                    f"[{store}] '{title}' sin resolver: la base de datos de la "
+                    "biblioteca no está disponible"
+                )
                 return []
 
             results = self._search(raw, store_id, title)
@@ -114,7 +117,17 @@ class BaseResolver(ABC):
                 if self.cacher:
                     self.cacher.set_igdb_ids(store, store_id, igdb_ids)
             else:
-                logger.warning(f"{store} game not found in IGDB: {title} (ID: {store_id})")
+                # A INFO y no a WARNING: que un juego no esté en IGDB es
+                # normal (demos, herramientas, betas) y no hay nada que
+                # arreglar — queda en Desconocidos para identificarlo a mano.
+                # Los fallos de RED al buscar no llegan aquí: los lanza
+                # `_search` como excepción y los cuenta el pipeline aparte, y
+                # mezclarlos era lo que hacía que un corte de internet
+                # pareciera "IGDB no conoce ninguno de tus juegos".
+                logger.info(
+                    f"[{store}] '{title}' (id {store_id}) no está en IGDB; "
+                    "va a Desconocidos"
+                )
                 self.unknown_cacher.save_unknown(store, title, store_id)
 
         return self._build_games(igdb_ids, store_id, refresh)
@@ -127,7 +140,11 @@ class BaseResolver(ABC):
             try:
                 raw_game = self.igdb.get_game(igdb_id=igdb_id, refresh=refresh)
             except Exception as e:
-                logger.warning(f"{self.STORE}: could not fetch IGDB game {igdb_id}: {e}")
+                from puntueitor.core.diagnostics import describe_error
+                logger.warning(
+                    f"[{self.STORE}] no se pudo traer de IGDB la ficha "
+                    f"{igdb_id}: {describe_error(e, 'IGDB')}"
+                )
                 continue
             game = IGMapperGame.map_to_game(raw_game)
             game.set_store(self.STORE, store_id)

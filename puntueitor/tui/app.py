@@ -41,6 +41,8 @@ from puntueitor import __version__
 
 from puntueitor.core.config import ConfigManager
 from puntueitor.core import paths
+from puntueitor.core.diagnostics import describe_error
+from puntueitor.core.logging_setup import setup_logging
 from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.services.library_service import LibraryService
 
@@ -113,14 +115,14 @@ class PuntueitorApp(App):
             self.run_worker(self._initial_load_worker, thread=True)
         except Exception as e:
             game_list.populate_games(Library.from_iterable(()))
-            self.notify(f"Error cargando librería: {e}", severity="error")
+            self.notify(f"No se pudo cargar la biblioteca: {describe_error(e)}", severity="error")
 
     def _initial_load_worker(self):
         try:
             library = self.repo.load()
             self.call_from_thread(self._on_initial_loaded, library)
         except Exception as e:
-            self.call_from_thread(self.notify, f"Error cargando librería: {e}", severity="error")
+            self.call_from_thread(self.notify, f"No se pudo cargar la biblioteca: {describe_error(e)}", severity="error")
 
     def _save_filter_state(self) -> None:
         if self._is_restoring:
@@ -294,7 +296,7 @@ class PuntueitorApp(App):
     def _do_igdb_search(self, query: str, unknown: dict) -> None:
         results, error = search_igdb(query)
         if error is not None:
-            self.notify(f"Error en búsqueda IGDB: {error}", severity="error")
+            self.notify(f"No se pudo buscar: {describe_error(error, 'IGDB')}", severity="error")
             return
         if not results:
             self.notify("Sin resultados en IGDB", severity="warning")
@@ -412,7 +414,7 @@ class PuntueitorApp(App):
             try:
                 urllib.request.urlretrieve(game.cover_url, cover_path)
             except Exception as e:
-                self.call_from_thread(self.notify, f"Error descargando carátula: {e}", severity="error")
+                self.call_from_thread(self.notify, f"No se pudo descargar la carátula: {describe_error(e)}", severity="error")
                 return
         subprocess.Popen(["xdg-open", str(cover_path)])
 
@@ -921,14 +923,8 @@ if __name__ == "__main__":
     # `paths.migrate_legacy_paths`.
     paths.migrate_legacy_paths()
 
-    log_path = paths.log_file()
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-        filename=str(log_path),
-        filemode="w",
-    )
+    # Sin consola: la TUI se dibuja sobre el terminal y escribir ahí le rompe
+    # la pantalla.
+    setup_logging("TUI")
     app = PuntueitorApp()
     app.run()

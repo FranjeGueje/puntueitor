@@ -150,6 +150,8 @@ from puntueitor.gui3d.fonts import (
     ui_font,
 )
 from puntueitor.core import paths
+from puntueitor.core.diagnostics import describe_error
+from puntueitor.core.logging_setup import setup_logging
 from puntueitor.core.repository.library_repository import (
     EXTRA_FIELDS,
     LibraryRepository,
@@ -176,7 +178,9 @@ from puntueitor.gui3d.sample_data import build_sample_entries
 from puntueitor.gui3d import sorting
 from puntueitor.gui3d.store_colors import as_text_color, primary_store_color
 
-logging.basicConfig(level=logging.INFO)
+# El logging NO se configura aquí: hacerlo al importar es lo que dejaba al
+# carrusel escribiendo solo a stderr y sin fichero. Lo monta `main()` con
+# `setup_logging`, después de la migración de rutas.
 logger = logging.getLogger(__name__)
 
 WINDOW_TITLE = "Puntueitor 3D"
@@ -2281,7 +2285,7 @@ class App(ShowBase):
             return
 
         if not result.ok:
-            self.notifier.show(f"Error enriqueciendo: {result.error}")
+            self.notifier.show(f"No se pudo enriquecer: {describe_error(result.error)}")
             return
         if not result.found:
             self.notifier.show(f"Sin datos para {entry.title}")
@@ -2608,7 +2612,7 @@ class App(ShowBase):
     def _on_refresh_done(self, done) -> None:
         self.refresh_text.hide()
         if not done.ok:
-            self.notifier.show(f"Error actualizando: {done.error}")
+            self.notifier.show(f"No se pudo actualizar: {describe_error(done.error)}")
             return
         # Los juegos AÑADIDOS, no lo que emitió el pipeline: un juego que
         # está en dos tiendas se emite dos veces, así que ese número no es el
@@ -2859,7 +2863,7 @@ class App(ShowBase):
 
     def _on_search_done(self, job, results, error) -> None:
         if error is not None:
-            self.notifier.show(f"Error buscando: {error}")
+            self.notifier.show(f"No se pudo buscar: {describe_error(error, 'IGDB')}")
             return
         if not results:
             self.notifier.show("Sin resultados en IGDB")
@@ -3221,6 +3225,13 @@ def main() -> None:
     # dejaría los datos del usuario huérfanos en la ruta antigua. Ver
     # `paths.migrate_legacy_paths`.
     paths.migrate_legacy_paths()
+
+    # Y justo después, porque escribe el log en su sitio definitivo. Hasta
+    # ahora el carrusel solo hacía un `basicConfig` a stderr al importarse:
+    # lanzado desde Steam, que es como se usa, no quedaba ni una línea en
+    # ninguna parte. `console=True` mantiene además la salida por terminal de
+    # siempre para quien lo abra desde una.
+    setup_logging("Carrusel 3D", console=True)
 
     resolution = parse_args(sys.argv[1:])
     if resolution is not None:

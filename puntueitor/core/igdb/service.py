@@ -8,8 +8,29 @@ from typing import Any
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.cachers.igdb_cacher import IGDBCacher
 from puntueitor.core import paths
+from puntueitor.core.diagnostics import describe_error, is_auth_error, is_offline
 
 logger = logging.getLogger(__name__)
+
+
+class IGDBError(RuntimeError):
+    """
+    Fallo hablando con IGDB, con el mensaje ya listo para enseñar.
+
+    Se parte en dos subclases porque lo que el usuario tiene que hacer es
+    distinto y opuesto: con `IGDBAuthError` hay que ir a Configuración a tocar
+    las credenciales, y con `IGDBUnavailableError` no hay nada que tocar, hay
+    que esperar o mirar la red. Antes las dos eran el mismo `RuntimeError` con
+    el texto en crudo de la librería.
+    """
+
+
+class IGDBAuthError(IGDBError):
+    """Las credenciales de IGDB faltan o las han rechazado."""
+
+
+class IGDBUnavailableError(IGDBError):
+    """No se pudo llegar a IGDB: sin red, caído o limitando peticiones."""
 
 
 class IGDBService:
@@ -34,7 +55,7 @@ class IGDBService:
         if cache_dir is None:
             cache_dir = paths.data_dir()
         db_path = Path(cache_dir) / "puntueitor.db"
-        logger.info(f"IGDBService: IGDBCacher at {db_path}")
+        logger.debug(f"caché de IGDB en {db_path}")
         self.cacher = IGDBCacher(db_path)
 
         self.token = self._load_token_from_disk()
@@ -57,6 +78,15 @@ class IGDBService:
             )
             return
 
+        # Antes de salir a la red: sin credenciales no hay nada que intentar,
+        # y el error que devolvía IGDB por no mandarlas no se parecía en nada
+        # a "te falta ponerlas".
+        if not self.client_id or not self.client_secret:
+            raise IGDBAuthError(
+                "faltan las credenciales de IGDB (Client ID y Client Secret). "
+                "Ponlas en Opciones → Configuración"
+            )
+
         try:
             raw_token = igdbpy.utils.generate_api_key(
                 client_id=self.client_id,
@@ -75,8 +105,18 @@ class IGDBService:
                 access_token=self.token["access_token"],
             )
         except Exception as e:
-            logger.error(f"Token renewal failed: {e}")
-            raise RuntimeError(f"IGDB token renewal failed: {e}") from e
+            detalle = describe_error(e, "IGDB")
+            logger.error(f"no se pudo autenticar contra IGDB: {detalle}")
+            if is_offline(e):
+                raise IGDBUnavailableError(detalle) from e
+            if is_auth_error(e):
+                raise IGDBAuthError(
+                    "IGDB ha rechazado las credenciales. Comprueba el Client "
+                    "ID y el Client Secret en Opciones → Configuración"
+                ) from e
+            # Sin código de estado no se puede afirmar cuál de las dos cosas
+            # es; se cuenta lo que se sabe y no se inventa un culpable.
+            raise IGDBError(detalle) from e
     
     def _load_token_from_disk(self) -> dict | None:
         if not paths.igdb_token_file().exists():
@@ -125,7 +165,11 @@ class IGDBService:
                 # siempre por un fallo puntual del cliente.
                 last_error = e
                 if attempt < self.MAX_RETRIES - 1 and self._is_retryable_error(e):
-                    logger.warning(f"IGDB request failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}. Retrying in {delay}s...")
+                    logger.warning(
+                        f"IGDB falló (intento {attempt + 1} de "
+                        f"{self.MAX_RETRIES}): {describe_error(e, 'IGDB')}. "
+                        f"Se reintenta en {delay}s"
+                    )
                     time.sleep(delay)
                     delay *= 2
                 continue
@@ -135,7 +179,12 @@ class IGDBService:
 
             return raw
 
-        raise RuntimeError(f"IGDB request failed after {self.MAX_RETRIES} attempts: {last_error}") from last_error
+        detalle = describe_error(last_error, "IGDB") if last_error else "sin detalle"
+        if last_error is not None and is_auth_error(last_error):
+            raise IGDBAuthError(detalle) from last_error
+        raise IGDBUnavailableError(
+            f"{detalle} (tras {self.MAX_RETRIES} intentos)"
+        ) from last_error
     
     
     def _cachear_list(self, query: list[dict]) -> None:
@@ -143,7 +192,9 @@ class IGDBService:
             try:
                 self.cacher.save_game(r)
             except Exception as e:
-                logger.warning(f"Failed to cache game {r.get('id')}: {e}")
+                logger.warning(
+                    f"no se pudo guardar en caché el juego {r.get('id')}: {e}"
+                )
 
     
     # --------------------------- 

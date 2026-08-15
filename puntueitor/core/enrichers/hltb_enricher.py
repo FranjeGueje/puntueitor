@@ -61,7 +61,11 @@ class HLTBEnricher(GameEnricher):
         except Exception as e:
             # Fallo transitorio: no lo marcamos como comprobado para poder
             # reintentar en la siguiente pasada.
-            logger.error(f"Error searching HLTB for {game.title}: {e}")
+            from puntueitor.core.diagnostics import describe_error
+            logger.warning(
+                f"no se pudo consultar la duración de '{game.title}': "
+                f"{describe_error(e, 'HowLongToBeat')}"
+            )
             return game
 
         if not entry:

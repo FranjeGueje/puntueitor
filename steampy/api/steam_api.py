@@ -1,9 +1,13 @@
 import json
+import logging
 import requests
 import time
 import threading
 
 from puntueitor.core.cachers.steam_user_cacher import SteamUserCacher
+from puntueitor.core.diagnostics import describe_error
+
+logger = logging.getLogger(__name__)
 
 
 class SteamApi:
@@ -29,15 +33,30 @@ class SteamApi:
     # Helpers privados
     # -----------------------------
     def _request_json(self, url: str, params: dict) -> dict | None:
-        """Realiza una petición GET y devuelve JSON o None."""
+        """
+        Realiza una petición GET y devuelve JSON o None.
+
+        El None se queda —quien llama ya cuenta con él— pero DEJANDO DICHO por
+        qué. Antes esto se tragaba toda excepción en silencio, así que no tener
+        internet, tener la API key mal o que Steam estuviera caído acababan
+        exactamente igual: cero juegos y ni una línea en el log que lo
+        explicara.
+
+        La URL se registra sin `params` a propósito: ahí dentro va la API key.
+        """
         self._rate_limit_wait()
+        endpoint = url.rstrip("/").rsplit("/", 2)[-2:][0]
         try:
             response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             return response.json()
-        except requests.RequestException:
+        except requests.RequestException as error:
+            logger.warning(f"[{endpoint}] {describe_error(error, 'Steam')}")
             return None
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as error:
+            logger.warning(
+                f"Steam ({endpoint}) devolvió una respuesta ilegible: {error}"
+            )
             return None
 
     def _rate_limit_wait(self):
@@ -131,10 +150,24 @@ class SteamApi:
 
         data = self._request_json(url, params)
         if not data:
+            # El porqué ya lo ha registrado `_request_json`.
             return None
 
         entry = data.get("response", {}).get("games")
-        if save_cache and entry:
+        if not entry:
+            # Steam contesta 200 y un `response` VACÍO cuando el perfil es
+            # privado o el SteamID no es el que se cree. Sin esto era
+            # indistinguible de "no tienes juegos", que es lo que parecía.
+            logger.warning(
+                f"Steam no devolvió ningún juego para el usuario {steamid}: "
+                "lo normal es que el perfil (o los detalles del juego) esté en "
+                "privado, o que el Steam ID no sea correcto. "
+                "Revísalo en Opciones → Configuración"
+            )
+            return entry
+
+        logger.info(f"Steam: {len(entry)} juegos en la biblioteca de {steamid}")
+        if save_cache:
             user_cacher.save_games(entry)
 
         return entry

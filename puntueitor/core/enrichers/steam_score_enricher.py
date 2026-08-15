@@ -97,7 +97,14 @@ class SteamScoreEnricher(GameEnricher):
             response.raise_for_status()
             summary = response.json().get("query_summary", {})
         except Exception as e:
-            logger.debug(f"Steam reviews request failed for app {steam_id}: {e}")
+            from puntueitor.core.diagnostics import describe_error
+            # A DEBUG: esto se llama una vez por juego y un fallo suelto no
+            # rompe nada (se conserva la nota que ya hubiera). Lo que sí se
+            # ve, si falla en serie, es el resumen de la carga.
+            logger.debug(
+                f"sin reseñas de Steam para la app {steam_id}: "
+                f"{describe_error(e, 'Steam')}"
+            )
             return None
 
         if not summary.get("total_reviews"):

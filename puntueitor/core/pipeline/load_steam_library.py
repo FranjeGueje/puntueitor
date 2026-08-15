@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
+from puntueitor.core.diagnostics import describe_error
 from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.models import Game
 from puntueitor.core.models.selection_context import SelectionContext
@@ -105,19 +106,30 @@ def load_library(
 
     executor = ThreadPoolExecutor(max_workers=4) if enrichers else None
 
-    def process_game(raw_item: dict, resolver, store_name: str) -> Game | None:
+    def process_game(raw_item: dict, resolver, store_name: str, cuenta: dict) -> Game | None:
         """Resuelve un juego crudo y elige el mejor candidato."""
         title = raw_item.get("title") or raw_item.get("name") or "Unknown"
         try:
             games = resolver.resolve(raw=raw_item, refresh=refresh)
             if not games:
+                cuenta["sin_resolver"] += 1
                 return None
+            cuenta["resueltos"] += 1
             return steam_selector.select(games, SelectionContext(title=str(title)))
         except Exception as e:
-            logger.warning(
-                f"Error processing game from {store_name}: {e} for '{title}'",
-                exc_info=True,
-            )
+            cuenta["errores"] += 1
+            # El primero con traza, para poder investigar; los demás solo
+            # contados. Cuando IGDB no responde fallan los mil juegos, y mil
+            # tracebacks idénticos hacen el log ilegible justo cuando más
+            # falta hace leerlo.
+            if cuenta["errores"] == 1:
+                logger.warning(
+                    f"[{store_name}] falló '{title}': "
+                    f"{describe_error(e, 'IGDB')}",
+                    exc_info=True,
+                )
+            else:
+                logger.debug(f"[{store_name}] falló '{title}': {e}")
             return None
 
     def submit_enrichment(game: Game) -> None:
@@ -133,18 +145,43 @@ def load_library(
     ) -> Generator[Game, None, None]:
         """Resuelve los juegos crudos de una tienda, emitiéndolos uno a uno."""
         total = len(raw_items)
+        cuenta = {"resueltos": 0, "sin_resolver": 0, "errores": 0}
         for index, raw_item in enumerate(raw_items, start=1):
             title = raw_item.get("title") or raw_item.get("name") or "Unknown"
             if progress_callback:
                 progress_callback(index, total, f"[{label}] {title}")
 
-            game = process_game(raw_item, resolver, label.lower())
+            game = process_game(raw_item, resolver, label, cuenta)
             if game:
                 submit_enrichment(game)
                 yield game
 
+        # El resumen es lo que hace el log legible: mil líneas sueltas no
+        # dicen si la carga fue bien, y una sola sí.
+        resumen = (
+            f"{label}: {total} juegos en la tienda, {cuenta['resueltos']} "
+            f"identificados, {cuenta['sin_resolver']} sin identificar"
+        )
+        if cuenta["errores"]:
+            logger.warning(f"{resumen}, {cuenta['errores']} con ERRORES")
+        else:
+            logger.info(resumen)
+
     def steam_items() -> Sequence[dict]:
-        if not (api_key and user):
+        # Steam activa pero sin con qué preguntar. Antes esto devolvía la
+        # tupla vacía sin decir nada, y el usuario se quedaba sin sus juegos
+        # de Steam y sin ninguna pista de por qué.
+        if not api_key:
+            logger.warning(
+                "Steam está activa pero no hay API key: no se cargará ningún "
+                "juego de Steam (Opciones → Configuración)"
+            )
+            return ()
+        if not user:
+            logger.warning(
+                "Steam está activa pero no hay Steam ID: no se cargará ningún "
+                "juego de Steam (Opciones → Configuración)"
+            )
             return ()
         return SteamApi().owned_games(
             api_key, user, use_cache=not (refresh or force_store_refresh)
@@ -157,6 +194,10 @@ def load_library(
     def heroic_items(store: str) -> Sequence[dict]:
         nonlocal heroic_path, heroic_path_resolved
         if not heroic_loader:
+            logger.warning(
+                f"{store.upper()} está activa pero la carga se ha montado sin "
+                "lector de Heroic: no se cargará ninguno de sus juegos"
+            )
             return ()
 
         if not heroic_path_resolved:
@@ -164,6 +205,12 @@ def load_library(
             heroic_path_resolved = True
 
         if not heroic_path:
+            # El porqué ya lo ha registrado `find_heroic_path`, con las rutas
+            # en las que ha buscado.
+            logger.warning(
+                f"{store.upper()} está activa pero no hay carpeta de Heroic: "
+                "no se cargará ninguno de sus juegos"
+            )
             return ()
 
         getter = {
@@ -181,9 +228,18 @@ def load_library(
         ("amazon", "Amazon", AmazonHeroicResolver, lambda: heroic_items("amazon")),
     )
 
+    if not stores:
+        logger.warning(
+            "no hay ninguna tienda activa: no hay nada que cargar "
+            "(Opciones → Configuración)"
+        )
+
+    total_emitidos = 0
+
     try:
         for key, label, resolver_cls, get_items in sources:
             if key not in stores:
+                logger.debug(f"{label} desactivada; se salta")
                 continue
             try:
                 raw_items = get_items()
@@ -191,11 +247,23 @@ def load_library(
                     continue
                 resolver = resolver_cls(igdb=engine, cache_file=CACHE_RESOLVERS)
             except Exception as e:
-                logger.warning(f"Error loading games from {label}: {e}")
+                logger.warning(f"no se pudo leer {label}: {describe_error(e, label)}")
                 continue
 
-            yield from load_store(label, resolver, raw_items)
+            for game in load_store(label, resolver, raw_items):
+                total_emitidos += 1
+                yield game
     finally:
+        # La última línea, y la que se mira primero: si aquí pone cero, todo
+        # lo de arriba explica por qué.
+        if total_emitidos:
+            logger.info(f"Carga terminada: {total_emitidos} juegos")
+        else:
+            logger.warning(
+                "Carga terminada SIN NINGÚN JUEGO. Los avisos anteriores "
+                "dicen por qué (credenciales, conexión o tiendas sin datos)"
+            )
+
         # No esperamos a los enrichers: siguen escribiendo por el callback.
         if executor:
             executor.shutdown(wait=False)
