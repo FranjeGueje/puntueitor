@@ -33,16 +33,33 @@ OPTIONS_ITEMS = [
 
 ADVANCED_TITLE = "Avanzado"
 
+UPDATE_EXTRAS_KEY = "adv:update_extras"
 ENRICH_ALL_KEY = "adv:enrich_all"
 REGENERATE_KEY = "adv:regenerate"
 
-#: Las dos operaciones gordas, apartadas del resto: las dos tiran datos y las
-#: dos tardan minutos, así que no deben estar a un botón de distancia de las
-#: de todos los días.
+#: Las operaciones gordas, apartadas del resto: todas tardan minutos y dos de
+#: ellas tiran datos, así que no deben estar a un botón de distancia de las de
+#: todos los días. En orden de menos a más destructiva, y la única que no
+#: borra nada, primero: es la que casi siempre se quiere.
 ADVANCED_ITEMS = [
-    MenuItem(ENRICH_ALL_KEY, "Enriquecer todo"),
+    MenuItem(UPDATE_EXTRAS_KEY, "Enriquecer todo"),
+    MenuItem(ENRICH_ALL_KEY, "Enriquecer todo DESTRUCTIVO"),
     MenuItem(REGENERATE_KEY, "Regenerar todo"),
 ]
+
+#: El enriquecido no destructivo: no hay nada que perder, así que su aviso no
+#: lleva ninguna línea en rojo (`warning=0`); solo cuenta lo que va a tardar.
+UPDATE_EXTRAS_TITLE = "Enriquecer todo"
+UPDATE_EXTRAS_NOTE = (
+    "Se volverán a buscar los datos extra de",
+    "todos tus juegos: duración y",
+    "puntuaciones.",
+    "",
+    "No se borra nada: los datos se",
+    "actualizan encima. Es un proceso",
+    "laborioso y llevará varios minutos.",
+)
+UPDATE_EXTRAS_YES = "Sí, enriquecer todo"
 
 #: El aviso de cada una. Las líneas marcadas como advertencia van primero y se
 #: pintan en rojo (ver `build_confirm_items`): son las que dicen qué se pierde.

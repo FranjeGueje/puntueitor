@@ -111,6 +111,7 @@ from puntueitor.gui3d.refresh import (
     PROGRESS,
     REGENERATE,
     SOFT,
+    UPDATE_EXTRAS,
     RefreshWorker,
 )
 from puntueitor.gui3d.game_case import make_placeholder_texture
@@ -1207,7 +1208,7 @@ class App(ShowBase):
         # e items se rehacen en cada apertura (ver `_ask_confirm`). El de
         # salir se queda aparte porque es fijo y no va sobre ningún juego.
         self.confirm_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
-        # Las dos operaciones que tiran datos, apartadas de las de diario.
+        # Las operaciones largas, apartadas de las de diario.
         self.advanced_menu = Menu(
             self.aspect2d, menus.ADVANCED_TITLE, menus.ADVANCED_ITEMS,
             hint=_menu_hint(),
@@ -1504,6 +1505,8 @@ class App(ShowBase):
             self._open_gui3d_menu()
         elif key == "advanced":
             self._push_menu(self.advanced_menu)
+        elif key == menus.UPDATE_EXTRAS_KEY:
+            self._confirm_update_extras()
         elif key == menus.ENRICH_ALL_KEY:
             self._confirm_enrich_all()
         elif key == menus.REGENERATE_KEY:
@@ -2367,8 +2370,22 @@ class App(ShowBase):
         self._on_selection_changed()
         logger.info("gui3d: carrusel vaciado")
 
+    def _confirm_update_extras(self) -> None:
+        """
+        Opciones -> Avanzado -> Enriquecer todo.
+
+        `warning=0`: no hay ninguna línea que pintar en rojo porque no se
+        pierde nada, solo se reescribe encima.
+        """
+        self._ask_confirm(
+            menus.UPDATE_EXTRAS_TITLE,
+            menus.UPDATE_EXTRAS_NOTE,
+            menus.UPDATE_EXTRAS_YES,
+            lambda: self._start_library_job(UPDATE_EXTRAS),
+        )
+
     def _confirm_enrich_all(self) -> None:
-        """Opciones -> Avanzado -> Enriquecer todo (la "E" de la TUI)."""
+        """Opciones -> Avanzado -> Enriquecer todo DESTRUCTIVO (la "E" de la TUI)."""
         self._ask_confirm(
             menus.ENRICH_ALL_TITLE,
             menus.ENRICH_ALL_WARNING + menus.ENRICH_ALL_NOTE,

@@ -17,6 +17,7 @@ from puntueitor.core.services.library_refresh import (
     enrich_all,
     refresh_library,
     regenerate_library,
+    update_extras,
 )
 
 
@@ -244,4 +245,106 @@ class TestEnrichAll:
     def test_reports_progress(self, poblado, enricher):
         vistos = []
         enrich_all(poblado, on_progress=lambda i, total, name: vistos.append((i, total)))
+        assert vistos == [(1, 1)]
+
+
+class TestUpdateExtras:
+    """
+    La hermana NO destructiva: reescribe encima sin vaciar la tabla.
+
+    Es lo que la separa de `enrich_all`, y lo que se comprueba aquí: si esto
+    se corta a la mitad —cerrar la ventana, quedarse sin red— los juegos a los
+    que no llegó tienen que conservar sus datos, no quedarse sin ellos.
+    """
+
+    def _falsos(self, monkeypatch, hltb):
+        import puntueitor.core.enrichers.hltb_enricher as hltb_mod
+        import puntueitor.core.enrichers.steam_score_enricher as steam_mod
+        import puntueitor.core.resolvers.hltb_resolver as resolver_mod
+
+        class Passthrough:
+            def __init__(self, **kwargs): ...
+            def enrich(self, game):
+                return game
+
+        monkeypatch.setattr(resolver_mod, "HLTBResolver", lambda *a, **k: object())
+        monkeypatch.setattr(hltb_mod, "HLTBEnricher", hltb)
+        monkeypatch.setattr(steam_mod, "SteamScoreEnricher", Passthrough)
+
+    @pytest.fixture
+    def encuentra(self, monkeypatch):
+        """Devuelve el juego con OTRA duración: 7.0 donde había 10.0."""
+        class Fake:
+            def __init__(self, **kwargs): ...
+            def enrich(self, game):
+                import dataclasses
+                return dataclasses.replace(game, duration_hours=7.0)
+
+        self._falsos(monkeypatch, Fake)
+
+    @pytest.fixture
+    def no_encuentra(self, monkeypatch):
+        """No sabe nada de este juego y devuelve lo que le dieron."""
+        class Fake:
+            def __init__(self, **kwargs): ...
+            def enrich(self, game):
+                return game
+
+        self._falsos(monkeypatch, Fake)
+
+    def test_rewrites_on_top(self, poblado, encuentra):
+        assert poblado.extras_cacher.get_extras(1)["duration_hours"] == 10.0
+
+        cambiados = update_extras(poblado)
+
+        assert cambiados == 1
+        assert poblado.extras_cacher.get_extras(1)["duration_hours"] == 7.0
+
+    def test_interrupted_keeps_everything(self, poblado, encuentra):
+        """
+        Lo importante: cortado antes del primer juego, el dato viejo sigue
+        ahí. Con `enrich_all` a estas alturas ya estaría borrado.
+        """
+        update_extras(poblado, should_stop=lambda: True)
+
+        assert poblado.extras_cacher.get_extras(1)["duration_hours"] == 10.0
+
+    def test_nothing_found_keeps_the_old_value(self, poblado, no_encuentra):
+        """No encontrar nada no puede pisar un dato bueno con un None."""
+        cambiados = update_extras(poblado)
+
+        assert cambiados == 0
+        assert poblado.extras_cacher.get_extras(1)["duration_hours"] == 10.0
+
+    def test_asks_again_for_what_is_already_known(self, poblado, monkeypatch):
+        """
+        Con `overwrite=False` el enricher se salta el juego que ya tiene
+        duración, y aquí no se vacía la tabla antes: sin `overwrite=True` no
+        se actualizaría absolutamente nada.
+        """
+        recibido = {}
+
+        class Fake:
+            def __init__(self, **kwargs):
+                recibido.update(kwargs)
+            def enrich(self, game):
+                return game
+
+        self._falsos(monkeypatch, Fake)
+        update_extras(poblado)
+
+        assert recibido["overwrite"] is True
+
+    def test_keeps_the_library_intact(self, poblado, encuentra):
+        update_extras(poblado)
+
+        assert poblado.resolvers_cacher.get_stores_for_igdb_id(1) == {"steam": "12345"}
+        assert poblado.unknown_cacher.is_unknown("epic", "abc")
+        assert poblado.library_cacher.get_all_statuses()[1]["favorite"]
+
+    def test_reports_progress(self, poblado, encuentra):
+        vistos = []
+        update_extras(
+            poblado, on_progress=lambda i, total, name: vistos.append((i, total)),
+        )
         assert vistos == [(1, 1)]

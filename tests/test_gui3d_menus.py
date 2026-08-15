@@ -125,12 +125,32 @@ class TestAdvancedMenu:
         keys = [i.key for i in menus.OPTIONS_ITEMS]
         assert keys == ["config", "gui3d", "advanced", "quit"]
 
-    def test_two_heavy_operations(self):
+    def test_three_heavy_operations(self):
+        """De menos a más destructiva, y la que no borra nada, primero."""
         items = menus.ADVANCED_ITEMS
         assert [i.key for i in items] == [
-            menus.ENRICH_ALL_KEY, menus.REGENERATE_KEY,
+            menus.UPDATE_EXTRAS_KEY, menus.ENRICH_ALL_KEY, menus.REGENERATE_KEY,
         ]
-        assert [i.label for i in items] == ["Enriquecer todo", "Regenerar todo"]
+        assert [i.label for i in items] == [
+            "Enriquecer todo",
+            "Enriquecer todo DESTRUCTIVO",
+            "Regenerar todo",
+        ]
+
+    def test_the_destructive_one_is_marked_as_such(self):
+        """
+        Las dos se llaman igual; lo único que las separa de un vistazo es esa
+        palabra, así que si desaparece la etiqueta miente.
+        """
+        destructiva = next(
+            i for i in menus.ADVANCED_ITEMS if i.key == menus.ENRICH_ALL_KEY
+        )
+        assert "DESTRUCTIVO" in destructiva.label
+
+    def test_update_extras_promises_not_to_delete(self):
+        aviso = " ".join(menus.UPDATE_EXTRAS_NOTE).lower()
+        assert "no se borra nada" in aviso
+        assert "minutos" in aviso
 
     def test_regenerate_warning_says_what_is_lost(self):
         aviso = " ".join(menus.REGENERATE_WARNING).lower()

@@ -10,17 +10,21 @@ suya: montar el servicio de IGDB, el lector de Heroic y los enrichers, llamar
 al pipeline y guardar lo que va saliendo. Lo que cada interfaz hace con eso —
 barra de estado, filas, cajas del carrusel— se queda en cada interfaz.
 
-Tres operaciones, de menos a más destructiva, las mismas que ofrece la TUI:
+Cuatro operaciones, de menos a más destructiva:
 
-* `refresh_library()` (su tecla "r") — **no borra nada**. No se vuelve a pedir
-  a IGDB nada ya cacheado, así que una biblioteca resuelta apenas toca la red
-  y lo único que se resuelve de verdad son los juegos nuevos.
+* `refresh_library()` (la tecla "r" de la TUI) — **no borra nada**. No se
+  vuelve a pedir a IGDB nada ya cacheado, así que una biblioteca resuelta
+  apenas toca la red y lo único que se resuelve de verdad son los juegos
+  nuevos.
+* `update_extras()` — **tampoco borra nada**. Vuelve a preguntar la duración y
+  las notas de todos los juegos y las escribe encima de las que hubiera. Si
+  algo no se encuentra o la red falla, se queda el valor viejo.
 * `enrich_all()` (su "E") — borra los datos extra (duración, notas) y los
   vuelve a buscar. La biblioteca sigue siendo la misma.
 * `regenerate_library()` (su "R") — borra `puntueitor.db` entero y lo
   reconstruye. Cientos de peticiones y minutos.
 
-Las tres son funciones con nombre propio y no una sola con banderas: en el
+Las cuatro son funciones con nombre propio y no una sola con banderas: en el
 sitio de la llamada tiene que leerse qué se va a perder.
 
 `force_store_refresh` va aparte de `refresh` porque solo afecta al listado de
@@ -198,9 +202,94 @@ def enrich_all(
     hltb = HLTBEnricher(client=HLTBResolver(), extras_cacher=repo.extras_cacher)
     steam = SteamScoreEnricher(igdb_cacher=repo.igdb_cacher)
 
+    # Con la tabla recién vaciada, "hay dato" y "es nuevo" son lo mismo.
+    def hubo_datos(game: Game, enriched: Game) -> bool:
+        return any(
+            getattr(enriched, field) is not None for field in ENRICHED_FIELDS
+        )
+
+    return _enrich_loop(
+        repo, hltb, steam, worth_saving=hubo_datos,
+        on_game=on_game, on_progress=on_progress, should_stop=should_stop,
+    )
+
+
+def update_extras(
+    repo: LibraryRepository,
+    *,
+    on_game: Callable[[Game], None] | None = None,
+    on_progress: Callable[[int, int, str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> int:
+    """
+    Vuelve a buscar los datos extra de toda la biblioteca SIN borrar nada.
+
+    Hermana no destructiva de `enrich_all`: mismo recorrido y mismas preguntas
+    a HowLongToBeat y a Steam, pero los resultados se escriben ENCIMA de los
+    que ya hubiera en vez de partir de una tabla vacía. Devuelve cuántos juegos
+    cambiaron de verdad.
+
+    Es la diferencia que importa cuando esto se corta a medias —cerrar la
+    ventana, quedarse sin red—: con `enrich_all`, los juegos borrados a los que
+    no le dio tiempo a llegar se quedan sin sus datos y no vuelven. Aquí lo
+    peor que puede pasar es que la mitad de la biblioteca siga con los datos de
+    antes.
+
+    Los enrichers van con `overwrite=True`, y eso es lo que sustituye al
+    borrado: sin él no se actualizaría nada, porque los dos se saltan el juego
+    que ya tiene valor (y HLTB también el ya buscado sin éxito, `hltb_checked`)
+    — vaciar la tabla era justo la forma de esquivar esos atajos. Y como los
+    dos devuelven el juego intacto cuando la consulta falla o no encuentra
+    nada, un dato bueno nunca se pisa con un None.
+
+    BLOQUEA y tarda: una petición de red por juego.
+    """
+    from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
+    from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
+    from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+
+    logger.info("actualizando los datos extra de la biblioteca")
+
+    hltb = HLTBEnricher(
+        client=HLTBResolver(), overwrite=True, extras_cacher=repo.extras_cacher,
+    )
+    steam = SteamScoreEnricher(overwrite=True, igdb_cacher=repo.igdb_cacher)
+
+    # Aquí los juegos llegan CON sus extras, así que "tiene datos" lo cumple
+    # casi cualquiera y no dice nada: lo que se cuenta es que haya cambiado.
+    # `Game` es un dataclass y los enrichers usan `replace`, así que comparar
+    # vale.
+    def cambio(game: Game, enriched: Game) -> bool:
+        return enriched != game
+
+    return _enrich_loop(
+        repo, hltb, steam, worth_saving=cambio,
+        on_game=on_game, on_progress=on_progress, should_stop=should_stop,
+    )
+
+
+def _enrich_loop(
+    repo: LibraryRepository,
+    hltb,
+    steam,
+    *,
+    worth_saving: Callable[[Game, Game], bool],
+    on_game: Callable[[Game], None] | None,
+    on_progress: Callable[[int, int, str], None] | None,
+    should_stop: Callable[[], bool] | None,
+) -> int:
+    """
+    El recorrido que comparten `enrich_all` y `update_extras`.
+
+    Lo único que las distingue una vez montados los enrichers es qué cuenta
+    como resultado que merezca guardarse, y eso entra por `worth_saving`.
+
+    Se guarda juego a juego, no al final: esto dura minutos y cortarlo a la
+    mitad no debe tirar lo ya averiguado.
+    """
     games = list(repo.load())
     total = len(games)
-    enriquecidos = 0
+    guardados = 0
 
     for index, game in enumerate(games, start=1):
         if should_stop is not None and should_stop():
@@ -215,11 +304,11 @@ def enrich_all(
             logger.warning(f"no se pudo enriquecer {game.title!r}: {error}")
             continue
 
-        if any(getattr(enriched, field) is not None for field in ENRICHED_FIELDS):
+        if worth_saving(game, enriched):
             repo.save_game(enriched)
-            enriquecidos += 1
+            guardados += 1
             if on_game is not None:
                 on_game(enriched)
 
-    logger.info(f"enriquecidos {enriquecidos} de {total} juegos")
-    return enriquecidos
+    logger.info(f"enriquecidos {guardados} de {total} juegos")
+    return guardados
