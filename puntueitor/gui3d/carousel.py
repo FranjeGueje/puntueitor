@@ -683,6 +683,24 @@ class Carousel:
         self._layout(animate=False)
         return True
 
+    def jump_to_start(self) -> bool:
+        """
+        Vuelve a la primera posición del recorrido.
+
+        Con una biblioteca de verdad —más de mil juegos— volver al principio
+        desde la mitad son cientos de pasos, y ni siquiera saltando de grupo
+        se llega rápido.
+
+        Sin animar, como `jump_to_group`: es un salto largo y recorrer
+        cientos de cajas por el camino no cuenta nada. Devuelve si se ha
+        movido, para que quien llama sepa si merece la pena refrescar.
+        """
+        if self.is_empty or self._selected_pos == 0:
+            return False
+        self._selected_pos = 0
+        self._layout(animate=False)
+        return True
+
     def group_at_selection(self, groups: list) -> object:
         """El grupo de la selección actual, dada la lista paralela `groups`."""
         if not groups or self._selected_pos >= len(groups):

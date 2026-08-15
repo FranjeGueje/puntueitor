@@ -544,6 +544,7 @@ class App(ShowBase):
             on_labels=self._toggle_labels,
             on_hidden=self._toggle_hidden,
             on_refresh=self._refresh_library,
+            on_jump_start=self._jump_start,
             on_jump=self._jump_group,
         )
 
@@ -903,6 +904,7 @@ class App(ShowBase):
             "r": (self._refresh_library, []),
             "q": (self._jump_group, [-1]),
             "w": (self._jump_group, [1]),
+            "home": (self._jump_start, []),
         }
         self._bind_shortcuts()
 
@@ -1748,6 +1750,24 @@ class App(ShowBase):
     def _rebind_shortcuts_task(self, task):
         self._bind_shortcuts()
         return task.done
+
+    def _jump_start(self) -> None:
+        """
+        L3 (o la tecla Inicio): al principio del carrusel.
+
+        Sobre `active_carousel` y no sobre `self.carousel`, así que vale
+        también en el modo desconocidos: allí quiere decir lo mismo y no hay
+        motivo para bloquearlo, al revés que `_jump_group`, que va por grupos
+        de la ordenación y en desconocidos no hay.
+
+        Sin aviso: el salto se ve solo. `_jump_group` sí avisa, pero porque la
+        etiqueta del grupo al que llega no está en ninguna otra parte.
+        """
+        if self._typing or self.active_menu is not None:
+            return
+        if not self.active_carousel.jump_to_start():
+            return
+        self._on_selection_changed()
 
     def _jump_group(self, direction: int) -> None:
         """

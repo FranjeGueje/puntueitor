@@ -77,6 +77,7 @@ class GamepadInput(DirectObject):
         on_labels: Callable[[], None] | None = None,
         on_hidden: Callable[[], None] | None = None,
         on_refresh: Callable[[], None] | None = None,
+        on_jump_start: Callable[[], None] | None = None,
         on_jump: Callable[[int], None] | None = None,
     ):
         super().__init__()
@@ -90,6 +91,7 @@ class GamepadInput(DirectObject):
             "labels": on_labels,
             "hidden": on_hidden,
             "refresh": on_refresh,
+            "jump_start": on_jump_start,
         }
         # Aparte del resto: lleva argumento (hacia dónde saltar), así que no
         # encaja en el diccionario de gestos sin parámetros de `_fire`.
@@ -179,6 +181,10 @@ class GamepadInput(DirectObject):
             # Ojo con el nombre: no tiene NADA que ver con el gesto "back"
             # de volver atrás, que es el botón B.
             "back": "options",
+            # L3, el clic del stick izquierdo: al principio del carrusel. Es
+            # un botón normal y llega como evento, al contrario que los
+            # gatillos (ver `update`).
+            "lstick": "jump_start",
         }
         for button, gesture in bindings.items():
             self.accept(f"{EVENT_PREFIX}-{button}", self._fire, [gesture])

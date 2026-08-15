@@ -231,6 +231,7 @@ mismo fichero:
 |---|---|---|
 | `←` `→` | Stick / cruceta | Navegar por la biblioteca |
 | `Q` `W` | `L1` `R1` | Saltar al grupo anterior/siguiente (letra o tramo de nota) |
+| `Inicio` | `L3` | Volver al principio del carrusel |
 | `Enter` | `A` | Menú del juego: estados, enriquecer, desconocer |
 | `Esc` | `B` | Volver |
 | `Esc` | `Select` | Opciones (configuración, ajustes del carrusel, avanzado, salir) |
