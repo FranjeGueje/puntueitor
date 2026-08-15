@@ -236,6 +236,7 @@ mismo fichero:
 | `←` `→` | Stick / cruceta | Navegar por la biblioteca |
 | `Q` `W` | `L1` `R1` | Saltar al grupo anterior/siguiente (letra o tramo de nota) |
 | `Inicio` | `L3` | Volver al principio del carrusel |
+| `E` | `R3` | Entrar y salir del **Editor Rápido** |
 | `Enter` | `A` | Menú del juego: estados, enriquecer, desconocer |
 | `Esc` | `B` | Volver |
 | `Esc` | `Select` | Opciones (configuración, ajustes del carrusel, avanzado, salir) |
@@ -250,6 +251,25 @@ mismo fichero:
 En los menús, `↑`/`↓` navegan, `←`/`→` cambian los valores que los tienen
 (pesos, horas, filtros de tres estados) y `A` elige. La barra de abajo recuerda
 en todo momento qué hace cada botón.
+
+### Editor Rápido
+
+Marcar estados juego a juego sin abrir ningún menú, que es lo que la TUI hace
+con `F1`/`F2`/`F3`. Se entra y se sale con `R3` o con `E`, solo desde el
+carrusel de la biblioteca, y mientras está activo el resto de menús avisan de
+que hay que salir primero (siguen funcionando navegar, `Y` etiquetas y `L2`
+ocultos).
+
+| Stick derecho | Tecla | Estado |
+|---|---|---|
+| ↑ | `I` | Pendiente de jugar |
+| ↓ | `K` | Terminado |
+| ← | `J` | Oculto |
+| → | `L` | Favorito |
+
+Ocultar un juego se aplica **al salir** del modo, no al momento: si no, la caja
+que acabas de marcar desaparecería de debajo y la selección saltaría a otra
+mientras sigues editando.
 
 **Opciones → Avanzado** guarda lo que no es de todos los días: enriquecer todo
 (en sus dos versiones, la que escribe encima y la que borra antes), regenerar

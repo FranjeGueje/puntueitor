@@ -78,6 +78,7 @@ class GamepadInput(DirectObject):
         on_hidden: Callable[[], None] | None = None,
         on_refresh: Callable[[], None] | None = None,
         on_jump_start: Callable[[], None] | None = None,
+        on_editor: Callable[[], None] | None = None,
         on_jump: Callable[[int], None] | None = None,
     ):
         super().__init__()
@@ -92,6 +93,7 @@ class GamepadInput(DirectObject):
             "hidden": on_hidden,
             "refresh": on_refresh,
             "jump_start": on_jump_start,
+            "editor": on_editor,
         }
         # Aparte del resto: lleva argumento (hacia dónde saltar), así que no
         # encaja en el diccionario de gestos sin parámetros de `_fire`.
@@ -185,6 +187,8 @@ class GamepadInput(DirectObject):
             # un botón normal y llega como evento, al contrario que los
             # gatillos (ver `update`).
             "lstick": "jump_start",
+            # R3: entra y sale del Editor Rápido.
+            "rstick": "editor",
         }
         for button, gesture in bindings.items():
             self.accept(f"{EVENT_PREFIX}-{button}", self._fire, [gesture])
@@ -301,6 +305,38 @@ class GamepadInput(DirectObject):
             self._hat_axis_v, InputDevice.Axis.left_y,
             invert_hat=True,
         )
+
+    def right_stick(self) -> tuple[int, int]:
+        """
+        Hacia dónde está echado el stick DERECHO: (x, y) de -1 a 1.
+
+        En la convención de pantalla, +1 a la derecha y +1 hacia ABAJO, que es
+        la que espera quien lo consume (la tabla del Editor Rápido).
+
+        **Un solo eje a la vez**: con el stick en diagonal gana el que más se
+        haya movido, y si empatan no se devuelve nada. Marcar dos estados de
+        una sacudida es exactamente lo que haría desconfiar de un modo en el
+        que cada empujón escribe en la base de datos.
+
+        Es ESTADO, como `direction()`: quien lo use tiene que detectar el
+        flanco por su cuenta si no quiere repetición.
+        """
+        if self._device is None:
+            return (0, 0)
+
+        eje_x = self._device.find_axis(InputDevice.Axis.right_x)
+        eje_y = self._device.find_axis(InputDevice.Axis.right_y)
+        x = eje_x.value if eje_x else 0.0
+        # El stick da +1 hacia arriba; aquí se cuenta al revés.
+        y = -eje_y.value if eje_y else 0.0
+
+        if abs(x) < STICK_THRESHOLD and abs(y) < STICK_THRESHOLD:
+            return (0, 0)
+        if abs(x) == abs(y):
+            return (0, 0)
+        if abs(x) > abs(y):
+            return (1 if x > 0 else -1, 0)
+        return (0, 1 if y > 0 else -1)
 
     def update(self) -> None:
         """

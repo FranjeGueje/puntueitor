@@ -354,6 +354,55 @@ GAME_FLAGS = (
     ("favorite", "Favorito"),
 )
 
+# ──────────────────────────────
+# Editor Rápido
+# ──────────────────────────────
+
+#: Qué estado marca cada dirección del stick derecho, en coordenadas de
+#: PANTALLA: (x, y) con +1 hacia la derecha y +1 hacia ABAJO.
+#:
+#: Vive aquí, y no en `app.py`, por dos motivos: es dato y no comportamiento,
+#: y así se puede probar sin abrir una ventana de Panda3D.
+EDITOR_FLAGS = {
+    (0, -1): "backlog",     # arriba
+    (0, 1): "finished",     # abajo
+    (-1, 0): "hidden",      # izquierda
+    (1, 0): "favorite",     # derecha
+}
+
+#: Las mismas cuatro direcciones en teclado, imitando la cruz del stick
+#: derecho. No se usan las flechas a propósito: esas navegan el carrusel y
+#: entran en desconocidos, y quedarse sin poder cambiar de juego mientras
+#: editas quitaría al modo justo lo que lo hace rápido.
+EDITOR_KEYS = {
+    "i": (0, -1),
+    "k": (0, 1),
+    "j": (-1, 0),
+    "l": (1, 0),
+}
+
+EDITOR_ON = "Editor Rápido ACTIVADO"
+EDITOR_OFF = "Editor Rápido desactivado"
+#: Lo que se contesta a un botón que en este modo no hace lo suyo. Se avisa
+#: en vez de ignorar en silencio: pulsar y que no pase nada parece que la
+#: aplicación se ha colgado.
+EDITOR_BLOCKED = "{gesto}: sal del Editor Rápido primero"
+
+#: Cómo se llama cada estado al anunciarlo. `GAME_FLAGS` no vale tal cual
+#: porque ahí "Pendiente de jugar" es una casilla y aquí es un aviso corto.
+EDITOR_LABELS = {
+    "finished": "Terminado",
+    "hidden": "Oculto",
+    "backlog": "Pendiente",
+    "favorite": "Favorito",
+}
+
+
+def editor_notice(field: str, value: bool) -> str:
+    """Lo que se enseña al marcar o desmarcar un estado."""
+    return f"{EDITOR_LABELS.get(field, field)}: {'sí' if value else 'no'}"
+
+
 #: Las dos acciones de "AVANZADO". Van separadas de las casillas porque no
 #: son un estado que se marca y se desmarca: una tarda (va a la red) y la
 #: otra saca el juego de la biblioteca, así que las dos preguntan antes.

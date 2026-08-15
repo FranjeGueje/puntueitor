@@ -121,6 +121,11 @@ from puntueitor.gui3d.unknowns import ADOPT, SEARCH, STORE, UnknownJob, UnknownW
 from puntueitor.gui3d.ficha import FIELD_LABELS, build_description, build_values
 from puntueitor.gui3d.fonts import (
     ICON_GAMEPAD_L1,
+    ICON_GAMEPAD_R3,
+    ICON_GAMEPAD_RSTICK_DOWN,
+    ICON_GAMEPAD_RSTICK_LEFT,
+    ICON_GAMEPAD_RSTICK_RIGHT,
+    ICON_GAMEPAD_RSTICK_UP,
     ICON_GAMEPAD_L2,
     ICON_GAMEPAD_LEFT_RIGHT,
     ICON_GAMEPAD_R1,
@@ -373,6 +378,29 @@ def _build_unknown_help_text() -> str:
     )
 
 
+def _build_editor_help_text() -> str:
+    """
+    La barra del Editor Rápido: las cuatro direcciones del stick derecho y
+    cómo salir.
+
+    Texto aparte, como el del modo desconocidos, y por el mismo motivo:
+    `help_text` se creó con `mayChange=False` porque no cambia nunca mientras
+    recorres la biblioteca, y ponerlo a True encarecería cada frame de todas
+    las sesiones por un modo en el que se entra a ratos.
+    """
+    kb_lr = ICON_KEYBOARD_LEFT + ICON_KEYBOARD_RIGHT
+    return (
+        f"EDITOR RÁPIDO   -   "
+        f"{icon_markup(kb_lr)} / {icon_markup(ICON_GAMEPAD_LEFT_RIGHT)}"
+        f"  navegar   -   "
+        f"I / {icon_markup(ICON_GAMEPAD_RSTICK_UP)}  pendiente   -   "
+        f"K / {icon_markup(ICON_GAMEPAD_RSTICK_DOWN)}  terminado   -   "
+        f"J / {icon_markup(ICON_GAMEPAD_RSTICK_LEFT)}  ocultar   -   "
+        f"L / {icon_markup(ICON_GAMEPAD_RSTICK_RIGHT)}  favorito   -   "
+        f"E / {icon_markup(ICON_GAMEPAD_R3)}  salir"
+    )
+
+
 def _menu_hint(extra: str = "") -> str:
     """
     Pista de teclas al pie de un menú: navegar, elegir y volver.
@@ -517,6 +545,12 @@ class App(ShowBase):
         self.unknown_worker = None
         # Último valor del eje vertical, para disparar solo en el flanco.
         self._mode_v_direction = 0
+
+        # Editor Rápido (R3 o "e"): el stick derecho marca los estados del
+        # juego seleccionado sin abrir su menú. `_editor_stick` guarda la
+        # última posición leída, otra vez para disparar solo en el flanco.
+        self._editor_mode = False
+        self._editor_stick = (0, 0)
         # Sobre qué desconocido se está buscando o adoptando ahora mismo.
         self._unknown_job_target = None
         # Sistema de scoring que se está configurando y sus valores en
@@ -552,6 +586,7 @@ class App(ShowBase):
             on_refresh=self._refresh_library,
             on_jump_start=self._jump_start,
             on_jump=self._jump_group,
+            on_editor=self._toggle_editor_mode,
         )
 
         self.task_mgr.add(self._update, "carousel-update")
@@ -696,6 +731,14 @@ class App(ShowBase):
             fg=(0.55, 0.55, 0.6, 1), align=TextNode.A_center, mayChange=False,
             font=font,
         )
+        # La del Editor Rápido, en el mismo sitio y oculta: se turnan.
+        self.editor_help_text = OnscreenText(
+            parent=self.ficha_frame, text=_build_editor_help_text(),
+            pos=(0, -0.955), scale=0.032,
+            fg=(0.55, 0.55, 0.6, 1), align=TextNode.A_center, mayChange=False,
+            font=font,
+        )
+        self.editor_help_text.hide()
 
         self._setup_unknown_hud(font)
         self._resize_ficha()
@@ -911,7 +954,12 @@ class App(ShowBase):
             "q": (self._jump_group, [-1]),
             "w": (self._jump_group, [1]),
             "home": (self._jump_start, []),
+            "e": (self._toggle_editor_mode, []),
         }
+        # Las cuatro del Editor Rápido, en la misma tabla para que se suelten
+        # solas al abrir un cuadro de texto: ahí son letras que se escriben.
+        for tecla, direccion in menus.EDITOR_KEYS.items():
+            self._shortcuts[tecla] = (self._editor_gesture, [direccion])
         self._bind_shortcuts()
 
     def _bind_shortcuts(self) -> None:
@@ -1409,11 +1457,15 @@ class App(ShowBase):
 
     def _open_options_menu(self) -> None:
         """Select / Esc sobre el carrusel."""
+        if self._blocked_in_editor("Opciones"):
+            return
         self._toggle_root_menu(self.options_menu, "options")
 
     def _open_scoring_menu(self) -> None:
         """Start / Tab sobre el carrusel."""
         if self._blocked_in_unknown_mode("Puntueitor"):
+            return
+        if self._blocked_in_editor("Puntueitor"):
             return
         self._toggle_root_menu(self.scoring_menu, "scoring")
 
@@ -1436,6 +1488,8 @@ class App(ShowBase):
         if self.active_menu is self.scoring_menu:
             self._configure_focused_scoring()
         elif not self._blocked_in_unknown_mode("Filtrar"):
+            if self._blocked_in_editor("Filtrar"):
+                return
             self._open_filter_menu()
 
     def _open_game_menu(self) -> None:
@@ -1476,7 +1530,7 @@ class App(ShowBase):
         if menu is None:
             if self._unknown_mode:
                 self._open_unknown_menu()
-            else:
+            elif not self._blocked_in_editor("Menú del juego"):
                 self._open_game_menu()
             return
 
@@ -2189,10 +2243,10 @@ class App(ShowBase):
         propósito — la de extras es caché regenerable y esta no, para que
         borrar la caché no te borre los terminados y los favoritos.
 
-        Se mandan LOS CUATRO estados, no solo el que se acaba de tocar:
-        `set_status` reescribe la fila entera (es un UPSERT), así que
-        pasarle uno solo pondría los otros tres a False. Es exactamente lo
-        que hace la TUI en `gui/app.py:_toggle_game_flag`.
+        El detalle de qué se escribe y dónde está en `_persist_flags`, que
+        comparte con el Editor Rápido: son la misma operación por dos caminos
+        distintos, y duplicarla es como se acaba poniendo tres estados a
+        False sin querer.
         """
         entry = self._game_menu_entry
         game = entry.game if entry else None
@@ -2201,13 +2255,7 @@ class App(ShowBase):
             return
 
         setattr(game, field, item.checked)
-        self.library_repository.library_cacher.set_status(
-            game.igdb_id,
-            finished=game.finished,
-            hidden=game.hidden,
-            backlog=game.backlog,
-            favorite=game.favorite,
-        )
+        self._persist_flags(game)
         logger.info(
             f"gui3d: {game.title!r}: {field} = {item.checked}"
         )
@@ -2356,6 +2404,8 @@ class App(ShowBase):
         Avanzado, y esas preguntan.
         """
         if self._typing or self._blocked_in_unknown_mode("Actualizar"):
+            return
+        if self._blocked_in_editor("Actualizar"):
             return
         self._start_library_job(SOFT)
 
@@ -2762,11 +2812,131 @@ class App(ShowBase):
             return
         self._mode_v_direction = direction
 
+        if direction and self._blocked_in_editor("Desconocidos"):
+            # Con el editor activo, arriba y abajo no cambian de modo: los
+            # desconocidos no tienen estados que editar, y entrar ahí sin
+            # querer con el stick en la mano dejaría el editor activo sobre
+            # un carrusel que no lo entiende.
+            return
+
         if direction < 0:
             if not self._unknown_mode:
                 self._enter_unknown_mode()
         elif direction > 0:
             self._exit_unknown_mode()
+
+    # ── Editor Rápido ──
+
+    def _toggle_editor_mode(self) -> None:
+        """
+        R3 (o la tecla "e"): entra y sale del Editor Rápido.
+
+        Solo desde el carrusel principal y sin nada abierto encima. En
+        desconocidos no tiene sentido —un desconocido no tiene estados— y con
+        un menú abierto el stick derecho no se está mirando.
+        """
+        if self._typing or self.active_menu is not None:
+            return
+        if self._unknown_mode:
+            self.notifier.show("Editor Rápido: solo en la biblioteca")
+            return
+
+        self._editor_mode = not self._editor_mode
+        # Se olvida la última posición del stick: si se sale y se entra con el
+        # stick echado, el flanco tiene que volver a contarse desde cero.
+        self._editor_stick = (0, 0)
+
+        if self._editor_mode:
+            self.help_text.hide()
+            self.editor_help_text.show()
+            self.notifier.show(menus.EDITOR_ON)
+        else:
+            self.editor_help_text.hide()
+            self.help_text.show()
+            self.notifier.show(menus.EDITOR_OFF)
+            # Lo que se haya ocultado durante la sesión se aplica AHORA, al
+            # salir (ver `_editor_gesture`).
+            if self._hidden_filter_dirty:
+                self._apply_hidden_filter()
+                self._hidden_filter_dirty = False
+        logger.info(f"gui3d: editor rápido {'on' if self._editor_mode else 'off'}")
+
+    def _blocked_in_editor(self, gesture: str = "") -> bool:
+        """
+        Los gestos que el Editor Rápido se come, y por qué se avisa.
+
+        Hermana de `_blocked_in_unknown_mode`: en este modo el stick derecho
+        escribe en la base de datos, así que abrir menús por encima es pedir
+        equivocarse de juego. Se avisa en vez de ignorar en silencio, y el
+        aviso dice CÓMO salir.
+        """
+        if not self._editor_mode:
+            return False
+        if gesture:
+            self.notifier.show(menus.EDITOR_BLOCKED.format(gesto=gesture))
+        return True
+
+    def _update_editor(self) -> None:
+        """
+        Lee el stick derecho una vez por frame, y solo actúa en el FLANCO.
+
+        Sin esto, mantener el stick echado marcaría y desmarcaría el estado
+        sesenta veces por segundo. El teclado no pasa por aquí: sus teclas ya
+        son eventos sueltos.
+        """
+        if not self._editor_mode or self.gamepad is None:
+            return
+        direccion = self.gamepad.right_stick()
+        if direccion == self._editor_stick:
+            return
+        self._editor_stick = direccion
+        if direccion != (0, 0):
+            self._editor_gesture(direccion)
+
+    def _editor_gesture(self, direction: tuple[int, int]) -> None:
+        """Una dirección del editor: conmuta el estado que le toque."""
+        if not self._editor_mode or self._typing or self.active_menu is not None:
+            return
+        field = menus.EDITOR_FLAGS.get(direction)
+        entry = self.carousel.selected
+        if field is None or entry is None or entry.game is None:
+            return
+
+        game = entry.game
+        nuevo = not bool(getattr(game, field))
+        setattr(game, field, nuevo)
+        self._persist_flags(game)
+        self.carousel.rebuild_labels(entry.key, game, self._labels_visible)
+        self.notifier.show(menus.editor_notice(field, nuevo))
+
+        if field == "hidden":
+            # No se re-filtra al momento, igual que en el menú de juego: la
+            # caja que acabas de marcar desaparecería de debajo y la
+            # selección saltaría a otro juego mientras sigues editando. Se
+            # apunta y se aplica al salir del modo.
+            self._hidden_filter_dirty = True
+
+    def _persist_flags(self, game) -> None:
+        """
+        Escribe los cuatro estados del juego en `library.sqlite`.
+
+        LOS CUATRO, no solo el que se acaba de tocar: `set_status` reescribe
+        la fila entera (es un UPSERT), así que pasarle uno solo pondría los
+        otros tres a False.
+
+        Van a `library_cacher` y NO a `save_game()` del repositorio, que fue
+        el primer intento y no guardaba nada: ese solo persiste los extras
+        (duración, notas de Steam) y los estados del usuario viven en OTRA
+        base de datos a propósito — la de extras es caché regenerable y esta
+        no, para que borrar la caché no te borre los terminados.
+        """
+        self.library_repository.library_cacher.set_status(
+            game.igdb_id,
+            finished=game.finished,
+            hidden=game.hidden,
+            backlog=game.backlog,
+            favorite=game.favorite,
+        )
 
     def _blocked_in_unknown_mode(self, gesture: str = "") -> bool:
         """
@@ -3171,6 +3341,7 @@ class App(ShowBase):
         self._update_navigation(dt)
         self._update_menu_cycle(dt)
         self._update_mode_switch(dt)
+        self._update_editor()
         self.active_carousel.update(dt)
 
         for key, path in self.cover_loader.poll():

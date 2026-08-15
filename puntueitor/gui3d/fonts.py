@@ -85,6 +85,16 @@ ICON_GAMEPAD_R2 = chr(0x21B3)                 # gamepad-r2
 # generación del mando; PromptFont solo trae el dibujo rotulado SELECT.
 ICON_GAMEPAD_SELECT = chr(0x21F7)             # gamepad-select
 
+# El stick DERECHO: pulsarlo (R3) y sus cuatro direcciones, que son los
+# gestos del Editor Rápido. Todos comprobados dibujándolos, que es la única
+# forma de estar seguro: la fuente no trae nombres de glifo (todos son
+# `uniXXXX`), así que deducir un codepoint por la serie es una apuesta.
+ICON_GAMEPAD_R3 = chr(0x21DB)                 # right-stick-press
+ICON_GAMEPAD_RSTICK_UP = chr(0x21BF)          # right-stick-up
+ICON_GAMEPAD_RSTICK_DOWN = chr(0x21C3)        # right-stick-down
+ICON_GAMEPAD_RSTICK_LEFT = chr(0x21BD)        # right-stick-left
+ICON_GAMEPAD_RSTICK_RIGHT = chr(0x21C1)       # right-stick-right
+
 
 def icon_markup(text: str) -> str:
     """

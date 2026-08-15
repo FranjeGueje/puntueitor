@@ -120,6 +120,76 @@ class TestUnknownMenus:
         assert SEARCH_LIMIT <= MAX_VISIBLE_ITEMS
 
 
+class TestEditorRapido:
+    """
+    La tabla de gestos del Editor Rápido.
+
+    Es lo único del modo que se puede probar sin abrir una ventana, y es
+    justo donde un despiste no se nota al leer el código: invertir arriba y
+    abajo marcaría como terminado lo que querías dejar pendiente, y encima
+    lo escribiría en la base de datos.
+    """
+
+    def test_it_covers_exactly_the_four_flags(self):
+        """
+        Ni uno menos (un estado inalcanzable desde el editor) ni uno más (una
+        dirección que escribe un campo que no existe). Si mañana se añade un
+        estado a `GAME_FLAGS`, este test avisa de que hay que decidir si entra.
+        """
+        campos = set(menus.EDITOR_FLAGS.values())
+        assert campos == {campo for campo, _ in menus.GAME_FLAGS}
+
+    def test_no_field_is_repeated(self):
+        assert len(set(menus.EDITOR_FLAGS.values())) == len(menus.EDITOR_FLAGS)
+
+    def test_the_four_directions_are_perpendicular(self):
+        """
+        Nada de diagonales: el mando devuelve un solo eje a propósito, y una
+        entrada diagonal en la tabla sería inalcanzable.
+        """
+        for x, y in menus.EDITOR_FLAGS:
+            assert (x, y) != (0, 0)
+            assert x == 0 or y == 0
+            assert abs(x) <= 1 and abs(y) <= 1
+
+    def test_down_is_finished_and_up_is_backlog(self):
+        """Lo pedido, y lo que un despiste invertiría. +1 es ABAJO."""
+        assert menus.EDITOR_FLAGS[(0, 1)] == "finished"
+        assert menus.EDITOR_FLAGS[(0, -1)] == "backlog"
+        assert menus.EDITOR_FLAGS[(-1, 0)] == "hidden"
+        assert menus.EDITOR_FLAGS[(1, 0)] == "favorite"
+
+    def test_the_keys_match_the_stick(self):
+        """
+        Teclado y mando no pueden divergir: las teclas apuntan a las MISMAS
+        direcciones, así que basta con mirar una tabla para saber las dos.
+        """
+        assert set(menus.EDITOR_KEYS.values()) == set(menus.EDITOR_FLAGS)
+        assert menus.EDITOR_KEYS["k"] == (0, 1)   # terminado, como abajo
+        assert menus.EDITOR_KEYS["i"] == (0, -1)  # pendiente, como arriba
+
+    def test_the_keys_are_not_arrows(self):
+        """Las flechas siguen navegando: sin eso el modo no sería rápido."""
+        assert not any(
+            tecla.startswith("arrow") for tecla in menus.EDITOR_KEYS
+        )
+
+    def test_every_flag_has_a_name_to_announce(self):
+        for campo in menus.EDITOR_FLAGS.values():
+            assert menus.EDITOR_LABELS.get(campo)
+
+    def test_the_notice_says_which_way_it_went(self):
+        assert menus.editor_notice("finished", True) != menus.editor_notice(
+            "finished", False
+        )
+        assert "Terminado" in menus.editor_notice("finished", True)
+
+    def test_the_blocked_message_says_how_to_get_out(self):
+        aviso = menus.EDITOR_BLOCKED.format(gesto="Filtrar")
+        assert "Filtrar" in aviso
+        assert "Editor" in aviso
+
+
 class TestAdvancedMenu:
     def test_between_puntueitor3d_and_quit(self):
         keys = [i.key for i in menus.OPTIONS_ITEMS]
