@@ -19,6 +19,7 @@ Ejecutar con:
 import argparse
 import dataclasses
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -2459,10 +2460,21 @@ class App(ShowBase):
 
     def _do_restore(self, ruta: Path) -> None:
         """
-        Restaura y CIERRA. No es una comodidad: las bases se acaban de
-        reescribir por debajo de unas conexiones SQLite que siguen abiertas y
-        que no se han enterado de nada. Seguir con la aplicación abierta
-        significa servir datos viejos y, al cerrar, pisar lo restaurado.
+        Restaura y CIERRA EN SECO, con `os._exit`.
+
+        Lo de cerrar no es una comodidad: los ficheros se acaban de reescribir
+        por debajo de una aplicación que sigue viva, y seguir aquí sería
+        trabajar con datos que ya no están en disco.
+
+        Y lo de cerrar así, sin el `userExit()` de siempre, tampoco: un cierre
+        ordenado ESCRIBE. Guarda los filtros del carrusel encima del
+        `gui3d.json` recién restaurado, y las conexiones SQLite abiertas
+        consolidan su estado al cerrarse. `os._exit` no ejecuta `atexit` ni
+        destructores, así que nadie escribe nada más — que es justo lo que se
+        necesita cuando lo que hay en disco es lo bueno.
+
+        `restore_backup` ya deja los ficheros a salvo por su cuenta (escribe
+        en inodos nuevos), así que esto es el segundo cinturón, no el único.
         """
         try:
             resultado = backup.restore_backup(ruta)
@@ -2471,7 +2483,8 @@ class App(ShowBase):
             self.notifier.show(str(error))
             return
         logger.info(f"gui3d: copia restaurada ({resultado.files} ficheros), cerrando")
-        self.userExit()
+        logging.shutdown()
+        os._exit(0)
 
     def _confirm_update_extras(self) -> None:
         """

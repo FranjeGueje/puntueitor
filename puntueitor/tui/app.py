@@ -494,11 +494,24 @@ class PuntueitorApp(App):
             except backup.BackupError as error:
                 self.notify(str(error), severity="error")
                 return
-            self.workers.cancel_all()
-            self.exit(
-                message=f"Copia restaurada ({result.files} ficheros). "
-                        "Vuelve a abrir Puntueitor."
+            logger.info(f"copia restaurada ({result.files} ficheros), cerrando")
+            # Se sale EN SECO, no con `self.exit()`. Un cierre ordenado
+            # escribe: las conexiones SQLite abiertas consolidan su estado al
+            # cerrarse, encima de unos ficheros que se acaban de restaurar.
+            # `os._exit` no ejecuta `atexit` ni destructores, así que nadie
+            # escribe nada más. (`restore_backup` ya deja los ficheros a salvo
+            # escribiendo en inodos nuevos; esto es el segundo cinturón.)
+            #
+            # Antes hay que devolver el terminal a su estado normal, o se
+            # queda en modo aplicación y sin cursor.
+            if self._driver is not None:
+                self._driver.stop_application_mode()
+            print(
+                f"Copia restaurada ({result.files} ficheros). "
+                "Vuelve a abrir Puntueitor."
             )
+            logging.shutdown()
+            os._exit(0)
 
         def handle_path(path: str | None) -> None:
             if not path or not path.strip():

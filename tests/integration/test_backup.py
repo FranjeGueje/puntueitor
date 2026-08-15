@@ -158,6 +158,63 @@ class TestBasesDeDatos:
         assert not paths.library_db().with_name("library.sqlite-wal").exists()
 
 
+class TestRestaurarConLaAplicacionAbierta:
+    """
+    El fallo que se llevó por delante la biblioteca del usuario.
+
+    Restaurar desde dentro de la aplicación significa escribir encima de unos
+    ficheros que SQLite tiene ABIERTOS. Con un `open(destino, "wb")` se trunca
+    el fichero sobre el MISMO inodo que tienen esas conexiones: al cerrarse
+    después vuelcan su estado encima y lo restaurado desaparece. Se quedó el
+    esquema y cero filas, y el carrusel —que cae a los juegos de muestra con
+    la biblioteca vacía— parecía "mockeado".
+    """
+
+    def test_an_open_connection_cannot_undo_the_restore(self, poblado):
+        create_backup(poblado)
+
+        # Se vacía la base COMO SI la aplicación siguiera trabajando: en modo
+        # WAL —el que usan los cachers— y con la conexión ABIERTA, que es la
+        # parte que importa. Al cerrarla, SQLite consolida su WAL sobre el
+        # fichero, y ahí es donde se perdía lo restaurado.
+        viva = sqlite3.connect(paths.library_db())
+        viva.execute("PRAGMA journal_mode=WAL")
+        viva.execute("DELETE FROM estados")
+        viva.commit()
+
+        restore_backup(poblado)
+        # ...y ahora la aplicación se cierra.
+        viva.close()
+
+        con = sqlite3.connect(paths.library_db())
+        assert con.execute("SELECT COUNT(*) FROM estados").fetchone() == (1,)
+        con.close()
+
+    def test_restoring_makes_a_new_file(self, poblado):
+        """
+        La propiedad de la que depende lo anterior: se escribe en un inodo
+        NUEVO, no en el que ya estaba. Quien tuviera el viejo abierto se queda
+        con un huérfano y no puede tocar lo restaurado.
+        """
+        create_backup(poblado)
+        antes = paths.library_db().stat().st_ino
+
+        restore_backup(poblado)
+
+        assert paths.library_db().stat().st_ino != antes
+
+    def test_no_leftovers(self, poblado):
+        """El temporal de cada fichero no puede quedarse por ahí."""
+        create_backup(poblado)
+        restore_backup(poblado)
+
+        sobras = [
+            p.name for p in paths.data_dir().iterdir()
+            if ".restaurando" in p.name
+        ]
+        assert sobras == []
+
+
 class TestZipsQueNoSonNuestros:
     def test_without_manifest(self, tmp_path):
         ajeno = tmp_path / "ajeno.zip"

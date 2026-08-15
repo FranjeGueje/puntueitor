@@ -134,8 +134,19 @@ def _copy_database(source: Path, destination: Path) -> None:
     usuario— y puede dar directamente un fichero a medio escribir.
     `Connection.backup` lo resuelve: sincroniza y entrega un fichero ya
     consolidado, que además se puede guardar solo, sin satélites.
+
+    Y se abre en lectura-escritura, NO con `mode=ro`, aunque de aquí solo se
+    lea: para ver lo que hay en el `-wal` hace falta el índice `-shm`, y una
+    conexión de solo lectura no siempre lo puede abrir. El resultado sería una
+    copia sin lo último que hizo el usuario, que es justo lo que se venía a
+    evitar. `mode=ro` queda como último recurso para una base sin permiso de
+    escritura, donde peor es no copiar nada.
     """
-    origen = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    try:
+        origen = sqlite3.connect(str(source))
+        origen.execute("PRAGMA quick_check").fetchone()
+    except sqlite3.Error:
+        origen = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
     try:
         copia = sqlite3.connect(destination)
         try:
@@ -254,6 +265,35 @@ def _target_for(name: str) -> Path | None:
     return destino
 
 
+def _write_new_file(zf: zipfile.ZipFile, info: zipfile.ZipInfo, destino: Path) -> None:
+    """
+    Escribe una entrada del zip en un fichero NUEVO y lo pone en su sitio.
+
+    Que sea un inodo nuevo y no el de antes es lo único que hace segura una
+    restauración con la aplicación abierta, y no es una sutileza: escribir con
+    `open(destino, "wb")` TRUNCA el fichero que ya existe, sobre el mismo
+    inodo que SQLite tiene abierto. Las conexiones vivas no se enteran, siguen
+    con sus páginas en memoria, y al cerrarse vuelcan su estado encima: lo
+    recién restaurado desaparece y queda una base con el esquema y ninguna
+    fila. Pasó de verdad, y se llevó por delante una biblioteca entera.
+
+    Con `os.replace` el fichero antiguo se queda huérfano —quien lo tenga
+    abierto sigue trabajando contra él sin molestar a nadie— y lo restaurado
+    es intocable para el proceso que ya estaba en marcha.
+
+    El temporal va en la MISMA carpeta a propósito: `os.replace` solo es
+    atómico dentro del mismo sistema de ficheros.
+    """
+    temporal = destino.with_name(destino.name + ".restaurando")
+    try:
+        with zf.open(info) as origen, open(temporal, "wb") as salida:
+            shutil.copyfileobj(origen, salida)
+        os.replace(temporal, destino)
+    except BaseException:
+        temporal.unlink(missing_ok=True)
+        raise
+
+
 def _clear_sidecars(path: Path) -> None:
     """
     Borra los `-wal`/`-shm` que hubiera junto a una base recién restaurada.
@@ -310,8 +350,7 @@ def restore_backup(source: Path) -> RestoreResult:
                     continue
 
                 destino.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(info) as origen, open(destino, "wb") as salida:
-                    shutil.copyfileobj(origen, salida)
+                _write_new_file(zf, info, destino)
                 if destino.suffix in _DATABASE_SUFFIXES:
                     _clear_sidecars(destino)
                 restaurados += 1
