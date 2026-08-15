@@ -120,6 +120,69 @@ class TestUnknownMenus:
         assert SEARCH_LIMIT <= MAX_VISIBLE_ITEMS
 
 
+class TestCreditos:
+    """
+    La pantalla de créditos.
+
+    Lo que se comprueba no es la redacción sino lo que la licencia OBLIGA a
+    que esté (los iconos de Flaticon piden atribución) y lo que hace que se
+    pueda leer entera.
+    """
+
+    def test_it_is_in_the_options_menu(self):
+        keys = [i.key for i in menus.OPTIONS_ITEMS]
+        assert keys == ["config", "gui3d", "advanced", "credits", "quit"]
+
+    def test_it_fits_on_one_screen(self):
+        """
+        La condición de la que depende todo: el menú centra su ventana
+        visible en el elemento con foco, y aquí solo hay uno, el último. Si
+        la lista pasara de `MAX_VISIBLE_ITEMS`, las primeras líneas quedarían
+        fuera y no habría forma de llegar a ellas.
+        """
+        from puntueitor.gui3d.menu import MAX_VISIBLE_ITEMS
+        assert len(menus.build_credits_items()) <= MAX_VISIBLE_ITEMS
+
+    def test_only_the_back_item_takes_focus(self):
+        items = menus.build_credits_items()
+        enfocables = [i.key for i in items if i.focusable]
+        assert enfocables == [menus.CREDITS_BACK_KEY]
+        assert items[-1].key == menus.CREDITS_BACK_KEY
+
+    def test_it_credits_the_icon_authors(self):
+        """
+        Los cuatro de Flaticon, que es lo que exige su licencia. Estaban solo
+        en `assets/labels/creditos.txt`, donde no los ve quien usa la
+        aplicación.
+        """
+        texto = " ".join(i.label for i in menus.build_credits_items())
+        for autor in ("alien.studio", "vectorsmarket15", "Stellalunart",
+                      "Design Circle"):
+            assert autor in texto
+
+    def test_it_credits_the_fonts_with_their_licence(self):
+        texto = " ".join(i.label for i in menus.build_credits_items())
+        assert "Robert Jablonski" in texto   # Hussar Print A
+        assert "Yukari Hafner" in texto      # PromptFont
+        assert "OFL" in texto
+
+    def test_it_credits_the_author_and_the_licence(self):
+        texto = " ".join(i.label for i in menus.build_credits_items())
+        assert "FranjeGueje" in texto
+        assert "MIT" in texto
+
+    def test_the_version_is_not_hardcoded(self):
+        """Para no tener que tocar esto en cada release."""
+        from puntueitor import __version__
+        texto = " ".join(i.label for i in menus.build_credits_items())
+        assert __version__ in texto
+
+    def test_it_credits_where_the_data_comes_from(self):
+        texto = " ".join(i.label for i in menus.build_credits_items())
+        for fuente in ("IGDB", "HowLongToBeat", "Steam", "Heroic"):
+            assert fuente in texto
+
+
 class TestEditorRapido:
     """
     La tabla de gestos del Editor Rápido.
@@ -191,9 +254,10 @@ class TestEditorRapido:
 
 
 class TestAdvancedMenu:
-    def test_between_puntueitor3d_and_quit(self):
+    def test_between_puntueitor3d_and_credits(self):
         keys = [i.key for i in menus.OPTIONS_ITEMS]
-        assert keys == ["config", "gui3d", "advanced", "quit"]
+        assert keys.index("advanced") == keys.index("gui3d") + 1
+        assert keys[-1] == "quit"
 
     def test_the_heavy_operations(self):
         """

@@ -24,8 +24,68 @@ OPTIONS_ITEMS = [
     MenuItem("config", "Configuración"),
     MenuItem("gui3d", "Puntueitor3D"),
     MenuItem("advanced", "Avanzado"),
+    MenuItem("credits", "Créditos"),
     MenuItem("quit", "Salir"),
 ]
+
+# ──────────────────────────────
+# Créditos (Opciones -> Créditos)
+# ──────────────────────────────
+
+CREDITS_TITLE = "Créditos"
+CREDITS_BACK_KEY = "credits:back"
+
+#: Los cinco iconos de las etiquetas salen de Flaticon, cuya licencia
+#: gratuita EXIGE atribución. Estaba solo en `assets/labels/creditos.txt`,
+#: que no lo ve nadie que use la aplicación; el fichero se queda donde está
+#: (es el original, con sus enlaces) y esto es lo que se enseña.
+CREDITS_ICONS = "alien.studio, vectorsmarket15,"
+CREDITS_ICONS_2 = "Stellalunart y Design Circle"
+
+#: Los autores de las dos tipografías están LEÍDOS de la tabla `name` de cada
+#: .otf, no deducidos: el OFL que acompaña a PromptFont no lleva línea de
+#: copyright, así que el único sitio donde consta es dentro de la fuente.
+CREDITS_FONT_HUSSAR = "Hussar Print A — Robert Jablonski"
+CREDITS_FONT_PROMPT = "PromptFont — Yukari Hafner"
+
+
+def build_credits_items() -> list[MenuItem]:
+    """
+    La pantalla de créditos: quién ha hecho qué y bajo qué licencia.
+
+    Todo son cabeceras (`kind="header"`) menos el "Volver": no reciben foco,
+    así que el mando las salta y no se puede "elegir" una línea de texto.
+
+    **Tiene que caber en `MAX_VISIBLE_ITEMS`.** El menú centra su ventana
+    visible en el elemento con foco, y aquí solo hay uno, el último: si la
+    lista creciera, las primeras líneas quedarían fuera y no habría forma de
+    llegar a ellas. Hay un test que lo comprueba.
+    """
+    from puntueitor import __version__
+
+    lineas = (
+        f"Puntueitor {__version__} — Licencia MIT",
+        "Desarrollo: FranjeGueje",
+        "",
+        "ICONOS (Flaticon)",
+        CREDITS_ICONS,
+        CREDITS_ICONS_2,
+        "",
+        "TIPOGRAFÍAS (SIL OFL 1.1)",
+        CREDITS_FONT_HUSSAR,
+        CREDITS_FONT_PROMPT,
+        "",
+        "DATOS",
+        "IGDB, HowLongToBeat, Steam y Heroic",
+        "",
+        "Hecho con Panda3D y Textual",
+    )
+    items = [
+        MenuItem(f"cred{i}", linea, kind="header")
+        for i, linea in enumerate(lineas)
+    ]
+    items.append(MenuItem(CREDITS_BACK_KEY, "Volver"))
+    return items
 
 # ──────────────────────────────
 # Avanzado (Opciones -> Avanzado)

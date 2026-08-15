@@ -1275,6 +1275,11 @@ class App(ShowBase):
             self.aspect2d, menus.ADVANCED_TITLE, menus.ADVANCED_ITEMS,
             hint=_menu_hint(),
         )
+        # Solo lectura: quién ha hecho los iconos, las tipografías y el resto.
+        self.credits_menu = Menu(
+            self.aspect2d, menus.CREDITS_TITLE, menus.build_credits_items(),
+            hint=_menu_hint(),
+        )
         # Los dos del modo desconocidos: título e items dinámicos.
         self.unknown_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
         self.unknown_results_menu = Menu(self.aspect2d, "", [], hint=_menu_hint())
@@ -1287,6 +1292,7 @@ class App(ShowBase):
             self.scoring_config_menu, self.filter_menu, self.game_menu,
             self.settings_menu, self.gui3d_menu, self.confirm_menu,
             self.unknown_menu, self.unknown_results_menu, self.advanced_menu,
+            self.credits_menu,
         )
 
     @property
@@ -1573,6 +1579,10 @@ class App(ShowBase):
             self._open_gui3d_menu()
         elif key == "advanced":
             self._push_menu(self.advanced_menu)
+        elif key == "credits":
+            self._push_menu(self.credits_menu)
+        elif key == menus.CREDITS_BACK_KEY:
+            self._pop_menu()
         elif key == menus.UPDATE_EXTRAS_KEY:
             self._confirm_update_extras()
         elif key == menus.ENRICH_ALL_KEY:

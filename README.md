@@ -394,6 +394,30 @@ versión sale de `puntueitor/__init__.py`.
 
 ---
 
-## 📄 Licencia
+## 📄 Licencia y créditos
 
 MIT © 2026 FranjeGueje. Ver [`LICENSE`](LICENSE).
+
+También dentro de la aplicación, en **Opciones → Créditos** del carrusel.
+
+**Iconos de las etiquetas** — [Flaticon](https://www.flaticon.com), que pide
+atribución: favorito por *alien.studio*, duración por *vectorsmarket15*, nota
+por *Stellalunart* y pendiente/terminado por *Design Circle*. Los enlaces
+originales están en
+[`assets/labels/creditos.txt`](puntueitor/gui3d/assets/labels/creditos.txt).
+
+**Tipografías**, las dos bajo [SIL OFL 1.1](https://scripts.sil.org/OFL), con
+su licencia junto al fichero:
+
+- [Hussar Print A](http://cannotintospacefonts.blogspot.com) — Robert
+  Jablonski / Cannot Into Space Fonts.
+- [PromptFont](https://shinmera.com/promptfont) — Yukari Hafner. Es la que
+  dibuja los botones de mando y las teclas de la barra de ayuda.
+
+**Datos** — [IGDB](https://www.igdb.com) (fichas y carátulas),
+[HowLongToBeat](https://howlongtobeat.com) (duración), Steam (biblioteca y
+reseñas) y [Heroic](https://heroicgameslauncher.com) (GOG, Epic y Amazon).
+Puntueitor no está asociado con ninguno de ellos.
+
+**Hecho con** [Panda3D](https://www.panda3d.org) y
+[Textual](https://textual.textualize.io).
