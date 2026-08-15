@@ -2906,6 +2906,10 @@ class App(ShowBase):
         nuevo = not bool(getattr(game, field))
         setattr(game, field, nuevo)
         self._persist_flags(game)
+        # Con el mismo formato que el del menú de juego, y diciendo que vino
+        # del editor: aquí se marca de corrido y muy rápido, así que el log
+        # es la única forma de reconstruir qué se tocó si algo sale raro.
+        logger.info(f"gui3d: [editor] {game.title!r}: {field} = {nuevo}")
         self.carousel.rebuild_labels(entry.key, game, self._labels_visible)
         self.notifier.show(menus.editor_notice(field, nuevo))
 
