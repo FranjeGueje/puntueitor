@@ -21,6 +21,7 @@ import dataclasses
 import logging
 import re
 import sys
+from pathlib import Path
 
 from direct.gui.DirectGui import DirectFrame
 from direct.gui.OnscreenText import OnscreenText
@@ -154,7 +155,7 @@ from puntueitor.core.repository.library_repository import (
 )
 from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS, ConfigManager
 from puntueitor.core.models import Library, Stores
-from puntueitor.core.services import unknown_actions
+from puntueitor.core.services import backup, unknown_actions
 from puntueitor.core.services.game_actions import forget_game
 from puntueitor.core.services.library_ops import active_stores, is_in_active_stores
 from puntueitor.core.services.library_service import LibraryService
@@ -1513,6 +1514,10 @@ class App(ShowBase):
             self._confirm_enrich_all()
         elif key == menus.REGENERATE_KEY:
             self._confirm_regenerate()
+        elif key == menus.BACKUP_KEY:
+            self._ask_backup_path()
+        elif key == menus.RESTORE_KEY:
+            self._ask_restore_path()
         elif key == "quit":
             self._push_menu(self.quit_menu)
         elif key == "quit_yes":
@@ -2389,6 +2394,84 @@ class App(ShowBase):
         self.carousel.clear()
         self._on_selection_changed()
         logger.info("gui3d: carrusel vaciado")
+
+    # ── Copia de seguridad ──
+
+    def _ask_backup_path(self) -> None:
+        """
+        Opciones -> Avanzado -> Copia de seguridad.
+
+        Se propone el escritorio ya escrito, que es lo que hace que esto se
+        pueda usar con el mando sin escribir una ruta entera: basta con
+        aceptar. Esc o B cancelan sin hacer nada, como en cualquier otro
+        cuadro de texto.
+        """
+        self._open_text_prompt(
+            title=menus.BACKUP_TITLE,
+            initial=str(backup.default_backup_path()),
+            on_accept=self._do_backup,
+        )
+
+    def _do_backup(self, text: str) -> None:
+        """
+        Escribe el zip. En el hilo principal a propósito: con la biblioteca
+        real son un par de segundos (casi todo el peso son carátulas), no los
+        minutos de una actualización, y montar otro trabajador para eso sería
+        más código del que ahorra.
+        """
+        ruta = text.strip()
+        if not ruta:
+            return
+        try:
+            resultado = backup.create_backup(Path(ruta))
+        except backup.BackupError as error:
+            logger.warning(f"gui3d: no se pudo copiar: {error}")
+            self.notifier.show(str(error))
+            return
+        self.notifier.show(
+            f"Copia guardada: {resultado.path.name} "
+            f"({resultado.megabytes:.1f} MB)"
+        )
+
+    def _ask_restore_path(self) -> None:
+        """Opciones -> Avanzado -> Restaurar copia: primero la ruta."""
+        self._open_text_prompt(
+            title=menus.BACKUP_TITLE_RESTORE,
+            initial=str(backup.default_backup_path()),
+            on_accept=self._confirm_restore,
+        )
+
+    def _confirm_restore(self, text: str) -> None:
+        """
+        Y después la confirmación, que aquí no es un trámite: restaurar
+        sobrescribe la biblioteca, los estados y las claves.
+        """
+        ruta = text.strip()
+        if not ruta:
+            return
+        self._ask_confirm(
+            menus.RESTORE_CONFIRM_TITLE,
+            menus.RESTORE_WARNING + menus.RESTORE_NOTE,
+            menus.RESTORE_YES,
+            lambda: self._do_restore(Path(ruta)),
+            warning=len(menus.RESTORE_WARNING),
+        )
+
+    def _do_restore(self, ruta: Path) -> None:
+        """
+        Restaura y CIERRA. No es una comodidad: las bases se acaban de
+        reescribir por debajo de unas conexiones SQLite que siguen abiertas y
+        que no se han enterado de nada. Seguir con la aplicación abierta
+        significa servir datos viejos y, al cerrar, pisar lo restaurado.
+        """
+        try:
+            resultado = backup.restore_backup(ruta)
+        except backup.BackupError as error:
+            logger.warning(f"gui3d: no se pudo restaurar: {error}")
+            self.notifier.show(str(error))
+            return
+        logger.info(f"gui3d: copia restaurada ({resultado.files} ficheros), cerrando")
+        self.userExit()
 
     def _confirm_update_extras(self) -> None:
         """

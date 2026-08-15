@@ -36,6 +36,8 @@ ADVANCED_TITLE = "Avanzado"
 UPDATE_EXTRAS_KEY = "adv:update_extras"
 ENRICH_ALL_KEY = "adv:enrich_all"
 REGENERATE_KEY = "adv:regenerate"
+BACKUP_KEY = "adv:backup"
+RESTORE_KEY = "adv:restore"
 
 #: Las operaciones gordas, apartadas del resto: todas tardan minutos y dos de
 #: ellas tiran datos, así que no deben estar a un botón de distancia de las de
@@ -45,7 +47,30 @@ ADVANCED_ITEMS = [
     MenuItem(UPDATE_EXTRAS_KEY, "Enriquecer todo"),
     MenuItem(ENRICH_ALL_KEY, "Enriquecer todo DESTRUCTIVO"),
     MenuItem(REGENERATE_KEY, "Regenerar todo"),
+    MenuItem(BACKUP_KEY, "Copia de seguridad"),
+    MenuItem(RESTORE_KEY, "Restaurar copia"),
 ]
+
+#: Las dos de la copia. Guardar no puede salir mal, así que solo se pide la
+#: ruta; restaurar sobrescribe TODO y por eso lleva además su confirmación en
+#: rojo.
+BACKUP_TITLE = "Copia de seguridad"
+BACKUP_HINT = "Dónde guardar el zip"
+BACKUP_TITLE_RESTORE = "Restaurar copia"
+RESTORE_HINT = "Ruta del zip a restaurar"
+
+RESTORE_CONFIRM_TITLE = "¡IMPORTANTE!"
+RESTORE_WARNING = (
+    "Se SOBRESCRIBIRÁN todos tus datos",
+    "actuales con los de la copia:",
+    "biblioteca, estados y configuración.",
+)
+RESTORE_NOTE = (
+    "Al terminar, Puntueitor3D se cerrará.",
+    "Vuelve a abrirlo para ver la copia",
+    "restaurada.",
+)
+RESTORE_YES = "Sí, restaurar la copia"
 
 #: El enriquecido no destructivo: no hay nada que perder, así que su aviso no
 #: lleva ninguna línea en rojo (`warning=0`); solo cuenta lo que va a tardar.

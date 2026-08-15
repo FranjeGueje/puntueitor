@@ -214,6 +214,8 @@ mismo fichero:
 | `F2` | **Backlog** | Marca/desmarca el juego seleccionado como backlog |
 | `F3` | **Favorito** | Marca/desmarca el juego seleccionado como favorito |
 | `v` | **Carátula** | Abre la carátula del juego en el visor de imágenes del sistema |
+| `b` | **Copia de seguridad** | Guarda toda tu instalación en un zip (por defecto, en el escritorio) |
+| `B` | **Restaurar copia** | Vuelca un zip sobre tus datos actuales y cierra la aplicación |
 | `q` | **Salir** | Cierra la aplicación |
 
 ### En diálogos modales
@@ -247,8 +249,22 @@ En los menús, `↑`/`↓` navegan, `←`/`→` cambian los valores que los tien
 (pesos, horas, filtros de tres estados) y `A` elige. La barra de abajo recuerda
 en todo momento qué hace cada botón.
 
-**Opciones → Avanzado** guarda las dos operaciones que tardan y tiran datos —
-enriquecer todo y regenerar todo—, cada una con su aviso de lo que se pierde.
+**Opciones → Avanzado** guarda lo que no es de todos los días: enriquecer todo
+(en sus dos versiones, la que escribe encima y la que borra antes), regenerar
+todo, y la **copia de seguridad** y su restauración. Cada operación que pierde
+algo lo avisa antes, en rojo.
+
+### Copias de seguridad
+
+Disponible en las dos interfaces (`b` y `B` en la TUI, Avanzado en el
+carrusel). El zip lleva las cuatro carpetas de Puntueitor: la configuración con
+tus claves, las dos bases de datos —incluidos los estados de tu biblioteca, que
+no se pueden recuperar de ninguna API— y las carátulas ya descargadas. Se
+propone guardarlo en el escritorio.
+
+Al restaurar se sobrescriben los datos actuales y la aplicación se cierra:
+tiene las bases abiertas mientras corre, así que hay que volver a abrirla para
+que lea lo recuperado.
 
 ---
 

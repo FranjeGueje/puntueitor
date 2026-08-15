@@ -125,17 +125,29 @@ class TestAdvancedMenu:
         keys = [i.key for i in menus.OPTIONS_ITEMS]
         assert keys == ["config", "gui3d", "advanced", "quit"]
 
-    def test_three_heavy_operations(self):
-        """De menos a más destructiva, y la que no borra nada, primero."""
+    def test_the_heavy_operations(self):
+        """
+        Las tres de regenerar, de menos a más destructiva y con la que no
+        borra nada primero, y detrás las dos de la copia.
+        """
         items = menus.ADVANCED_ITEMS
         assert [i.key for i in items] == [
             menus.UPDATE_EXTRAS_KEY, menus.ENRICH_ALL_KEY, menus.REGENERATE_KEY,
+            menus.BACKUP_KEY, menus.RESTORE_KEY,
         ]
         assert [i.label for i in items] == [
             "Enriquecer todo",
             "Enriquecer todo DESTRUCTIVO",
             "Regenerar todo",
+            "Copia de seguridad",
+            "Restaurar copia",
         ]
+
+    def test_restore_warns_about_what_it_overwrites(self):
+        aviso = " ".join(menus.RESTORE_WARNING).lower()
+        assert "sobrescribir" in aviso
+        # Que se cierra hay que decirlo: si no, parece que no ha pasado nada.
+        assert "cerrará" in " ".join(menus.RESTORE_NOTE)
 
     def test_the_destructive_one_is_marked_as_such(self):
         """

@@ -1,6 +1,7 @@
 import os
 import threading
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 from textual.app import App, ComposeResult
@@ -16,11 +17,13 @@ from puntueitor.tui.screens.sorting import SortingScreen
 from puntueitor.tui.screens.filtering import FilteringScreen
 from puntueitor.tui.screens.filter_input import FilterInputScreen
 from puntueitor.tui.screens.reload_confirmation import ReloadConfirmationScreen
+from puntueitor.tui.screens.restore_confirmation import RestoreConfirmationScreen
 from puntueitor.tui.screens.scoring import ScoringScreen
 from puntueitor.tui.screens.game_options import GameOptionsScreen
 from puntueitor.tui.screens.unknown_menu import UnknownMenuScreen
 from puntueitor.tui.screens.igdb_search_results import IGDBSearchResults
 from puntueitor.core.repository.library_repository import LibraryRepository
+from puntueitor.core.services import backup
 from puntueitor.core.services.game_actions import enrich_game, forget_game
 from puntueitor.core.services.library_refresh import (
     refresh_library,
@@ -58,6 +61,8 @@ class PuntueitorApp(App):
         ("f2", "toggle_backlog", "Backlog"),
         ("f3", "toggle_favorite", "Favorito"),
         ("v", "show_cover", "Carátula"),
+        ("b", "backup", "Copia de seguridad"),
+        ("B", "restore_backup", "Restaurar copia"),
         ("q", "request_quit", "Salir"),
     ]
 
@@ -444,6 +449,74 @@ class PuntueitorApp(App):
 
     def _refresh_footer(self) -> None:
         self.screen.refresh_bindings()
+
+    def action_backup(self) -> None:
+        """
+        "b": guardar toda la instalación en un zip.
+
+        La ruta viene ya escrita con el escritorio, así que casi siempre basta
+        con dar a ENTER; ESC cancela sin hacer nada.
+        """
+        def handle_path(path: str | None) -> None:
+            if not path or not path.strip():
+                return
+            try:
+                result = backup.create_backup(Path(path.strip()))
+            except backup.BackupError as error:
+                self.notify(str(error), severity="error")
+                return
+            self.notify(
+                f"Copia guardada en {result.path} ({result.megabytes:.1f} MB)"
+            )
+
+        self.push_screen(
+            FilterInputScreen(
+                "Copia de seguridad",
+                "Ruta del zip...",
+                default=str(backup.default_backup_path()),
+            ),
+            handle_path,
+        )
+
+    def action_restore_backup(self) -> None:
+        """
+        "B": volcar una copia sobre los datos actuales.
+
+        Dos pasos, ruta y confirmación, porque esto sobrescribe la biblioteca,
+        los estados y las claves. Y al terminar se SALE: las bases se acaban
+        de reescribir por debajo de unas conexiones SQLite que siguen abiertas
+        y que no se han enterado; seguir aquí significaría servir datos viejos
+        y pisar lo restaurado al cerrar.
+        """
+        def do_restore(path: str) -> None:
+            try:
+                result = backup.restore_backup(Path(path))
+            except backup.BackupError as error:
+                self.notify(str(error), severity="error")
+                return
+            self.workers.cancel_all()
+            self.exit(
+                message=f"Copia restaurada ({result.files} ficheros). "
+                        "Vuelve a abrir Puntueitor."
+            )
+
+        def handle_path(path: str | None) -> None:
+            if not path or not path.strip():
+                return
+            ruta = path.strip()
+            self.push_screen(
+                RestoreConfirmationScreen(ruta),
+                lambda ok: do_restore(ruta) if ok else None,
+            )
+
+        self.push_screen(
+            FilterInputScreen(
+                "Restaurar copia",
+                "Ruta del zip...",
+                default=str(backup.default_backup_path()),
+            ),
+            handle_path,
+        )
 
     def action_request_quit(self) -> None:
         def check_quit(should_quit: bool) -> None:
