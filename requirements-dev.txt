@@ -1,0 +1,9 @@
+# Lo que hace falta para desarrollar y para empaquetar, no para usar la
+# aplicación. Se instala con:
+#     pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0
+# Lo usan build.sh y build3d.sh, que hasta ahora se lo instalaban solos en
+# cada compilación.
+pyinstaller>=6.0

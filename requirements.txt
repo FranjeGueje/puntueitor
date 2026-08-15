@@ -1,5 +1,8 @@
+# Mínimos, no versiones exactas: lo que se pide es que exista la API que
+# usamos, no atarse a lo que hay hoy en el .venv de desarrollo.
 igdbpy==0.1.1
-howlongtobeatpy
-textual
-rich
-panda3d
+howlongtobeatpy>=1.0.22
+requests>=2.31
+textual>=8.0
+rich>=13.0
+panda3d>=1.10.16

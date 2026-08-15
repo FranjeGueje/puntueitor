@@ -2,6 +2,98 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
+## [2.0.0] - 2026-08-15
+
+Puntueitor deja de ser una aplicación de terminal con una interfaz y pasa a
+tener **dos**: la de siempre y un carrusel 3D pensado para jugar en el sofá,
+con mando y sin teclado. Las dos comparten exactamente los mismos datos y los
+mismos servicios; lo único que cambia es cómo se enseñan.
+
+### ⚠️ Al actualizar desde 1.x
+
+- **Los ficheros de datos se mueven solos** la primera vez que arranques.
+  Estaban repartidos entre `~/.cache` y `~/.config`, y pasan a las rutas
+  estándar XDG: los ajustes a `~/.config/puntueitor`, las bases de datos a
+  `~/.local/share/puntueitor` y el log a `~/.local/state/puntueitor`. No se
+  pierde nada y no hay que hacer nada; el traslado nunca sobrescribe.
+  Lo importante es **por qué**: `puntueitor.db` guarda la relación de tus
+  juegos con IGDB, que cuesta horas de red reconstruir, y vivía en `~/.cache`,
+  un directorio cuyo contrato es justamente que se puede borrar.
+- Las columnas nuevas de la base se añaden al vuelo. No hay que regenerar nada.
+- Aun así, **haz una copia antes de actualizar**: ahora se hace desde la propia
+  aplicación (`b` en la TUI, Opciones → Avanzado en el carrusel).
+
+### Añadido
+
+- **Carrusel 3D (`puntueitor.gui3d`), interfaz completa en Panda3D**: cajas de
+  juego en un arco navegable, ficha del seleccionado, carátulas cargadas bajo
+  demanda, etiquetas de estado sobre la caja (favorito, terminado, pendiente,
+  nota y duración), fondo y tipografía propios.
+- **Mando con hot-plug**, conectable y desconectable en caliente, con todas
+  las acciones accesibles sin teclado. La cruceta se detecta por tres vías
+  distintas porque ninguna funciona en todos los mandos.
+- **Menús apilables** en el carrusel: opciones, configuración, scoring y sus
+  ajustes, filtros, ordenación y el menú de cada juego.
+- **Modo desconocidos** en el carrusel: los juegos que IGDB no ha sabido
+  identificar, en cajas negras con su título, y la posibilidad de buscarlos a
+  mano o de volver a intentarlo por tienda.
+- **Copia de seguridad y restauración** en las dos interfaces: toda tu
+  instalación en un zip —ajustes, las dos bases de datos y las carátulas— y de
+  vuelta. Las bases se copian con la API de SQLite y no por bytes, porque
+  están abiertas mientras se copian.
+- **Enriquecer y desconocer un juego suelto**, sin tocar el resto de la
+  biblioteca.
+- **Actualizar y regenerar la biblioteca desde el carrusel**, con los juegos
+  apareciendo según se resuelven.
+- Salto rápido por grupos de la ordenación (L1/R1) y vuelta al principio del
+  carrusel (L3 o la tecla Inicio).
+- La suite de tests entra en el repositorio: **409 tests**, con aislamiento
+  para todos.
+
+### Cambiado
+
+- **Nueva versión: 2.0.0.**
+- `puntueitor.gui` pasa a llamarse **`puntueitor.tui`**, ahora que hay dos
+  interfaces y "gui" ya no distingue nada.
+- **Las tiendas desmarcadas dejan de verse** en las dos interfaces, y tampoco
+  se consultan al actualizar. La configuración de tiendas vive en
+  `~/.config` y afecta a las dos por igual.
+- **El log explica los fallos en vez de enseñar excepciones**: distingue no
+  tener internet de que las credenciales no valgan, avisa cuando una tienda
+  está activa pero no se puede consultar, y termina cada carga con un resumen
+  por tienda. Las dos interfaces escriben en el mismo fichero —el carrusel
+  antes no dejaba ninguna línea— y el log rota en vez de borrarse al arrancar.
+- Los ajustes de scoring se guardan en su propio `scoring.json`, aparte del
+  fichero que tiene tus claves de API: es el que más se reescribe y el otro es
+  el que más duele perder.
+- El arranque del carrusel pasa de 5,9 s a 1,5 s cargando las carátulas bajo
+  demanda.
+
+### Corregido
+
+- **Importar `core.paths` movía ficheros del `$HOME` real.** Como lo importa
+  medio proyecto, bastaba con lanzar la suite de tests para que se manosearan
+  los ficheros del usuario. Un módulo que se importa no debe tocar el disco.
+- **Restaurar una copia se perdía al cerrar la aplicación**: los ficheros se
+  escribían sobre el mismo inodo que SQLite tenía abierto, y las conexiones
+  vivas volcaban su estado encima al cerrarse, dejando las bases con el
+  esquema y ninguna fila. Ahora se escribe en un fichero nuevo.
+- **Regenerar la biblioteca no vaciaba la base**: se borraba el fichero, pero
+  los cachers mantienen una conexión abierta por hilo y seguían contestando
+  desde el inodo huérfano, así que todo lo reconstruido acababa en un fichero
+  fantasma. Ahora se vacían las tablas.
+- Corrupción intermitente de carátulas en el carrusel.
+- Al desconocer un juego se guardaba con el nombre que le da IGDB en vez del
+  que tiene en su tienda, que es justo el que hace falta para reconocerlo.
+- El cuadro de texto dejaba de aceptar teclas a los ~29 caracteres: no cabía
+  ni un Client Secret de IGDB ni la ruta de Heroic.
+- «Enriquecer todo» borraba los datos extra antes de empezar, así que
+  interrumpirlo a la mitad dejaba sin duración ni notas a los juegos que no
+  había dado tiempo a procesar. Ahora hay dos versiones y la que no borra es
+  la primera.
+- Y diez errores más encontrados en la revisión del core, más los propios del
+  carrusel según se construía.
+
 ## [1.1.0] - 2026-08-11
 
 ### Corregido

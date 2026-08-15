@@ -86,6 +86,8 @@
 | **Mando** | El carrusel se maneja entero con un mando: navegar, menús, gatillos y sticks |
 | **Actualizar sin salir** | Desde cualquiera de las dos interfaces: busca en tus tiendas y añade lo nuevo |
 | **Tiendas a la carta** | Desmarcar una tienda deja de escanearla **y** de enseñar sus juegos |
+| **Copias de seguridad** | Toda tu instalación en un zip, y de vuelta, desde las dos interfaces |
+| **Diagnóstico claro** | El log distingue "sin internet" de "tu clave no vale" y resume cada carga |
 | **Caché unificada** | Una sola base de datos SQLite en `~/.local/share/puntueitor/` |
 | **Binario único** | PyInstaller — sin dependencias del sistema, 25 MB |
 
@@ -334,7 +336,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-321 tests (unitarios + integración) que cubren:
+410 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -345,6 +347,13 @@ python -m pytest tests/
 - Acciones compartidas por las dos interfaces: enriquecer y desconocer un
   juego, rescatar desconocidos, actualizar y regenerar la biblioteca
 - Qué juegos se enseñan según las tiendas marcadas
+- Copias de seguridad: ida y vuelta, zips ajenos, rutas maliciosas dentro del
+  zip y restaurar con la base de datos abierta
+- Diagnóstico de errores y que el log nunca escriba una credencial
+
+Ninguno toca la red ni tus ficheros: `tests/conftest.py` monta un sandbox
+antes de importar nada, y la suite se niega a arrancar si ese aislamiento no
+está puesto.
 
 Las pruebas de interfaz van aparte: necesitan una ventana (aunque sea fuera de
 pantalla) y datos reales, así que no entran en `pytest`.

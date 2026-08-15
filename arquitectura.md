@@ -127,6 +127,40 @@ clave de API del usuario.
 
 ---
 
+## 🤝 `core/services/`: lo que comparten las dos interfaces
+
+Con dos frontends (la TUI y el carrusel), toda operación que no sea dibujar
+tiene que vivir en un sitio al que lleguen los dos. Esa es la regla de este
+paquete, y su contrato:
+
+- **Nada de Textual ni de Panda3D dentro.** Si un servicio necesitara saber
+  cómo se enseña algo, está mal partido.
+- **Los errores se devuelven, no se lanzan** (`EnrichResult`, `AdoptResult`,
+  `BackupError`): casi todo esto corre dentro de un hilo, y una excepción ahí
+  se perdería sin dejar rastro.
+- **Los imports pesados van dentro de la función**, no arriba: importar el
+  paquete no puede arrastrar la red ni el pipeline entero.
+- **Una función con nombre propio por operación, no una con banderas.** En el
+  sitio de la llamada tiene que leerse qué se va a perder: `refresh_library`,
+  `update_extras`, `enrich_all` y `regenerate_library` hacen cosas parecidas
+  con consecuencias muy distintas.
+
+| Módulo | Qué resuelve |
+|---|---|
+| `library_refresh` | Las cuatro formas de rehacer la biblioteca, de menos a más destructiva |
+| `game_actions` | Enriquecer y desconocer un juego suelto |
+| `unknown_actions` | Rescatar un desconocido: buscarlo en IGDB o reintentar por tienda |
+| `library_ops` | Qué juegos se enseñan según las tiendas activas |
+| `store_titles` | Cómo se llama un juego en SU tienda, no en IGDB |
+| `backup` | Toda la instalación a un zip, y de vuelta |
+| `library_service` | La fachada de scoring, filtrado y ordenación |
+
+Al lado, y por el mismo motivo, `core/diagnostics.py` (traducir un fallo a una
+frase que diga qué tocar) y `core/logging_setup.py` (el log, igual para las
+dos interfaces).
+
+---
+
 ## 🔍 Resolvers: una estrategia por tienda
 
 Esta parte sí merece explicación, porque cada tienda obliga a un truco

@@ -39,14 +39,23 @@ REGENERATE_KEY = "adv:regenerate"
 BACKUP_KEY = "adv:backup"
 RESTORE_KEY = "adv:restore"
 
-#: Las operaciones gordas, apartadas del resto: todas tardan minutos y dos de
-#: ellas tiran datos, así que no deben estar a un botón de distancia de las de
-#: todos los días. En orden de menos a más destructiva, y la única que no
-#: borra nada, primero: es la que casi siempre se quiere.
+#: Las operaciones gordas, apartadas del resto: todas tardan minutos y varias
+#: tiran datos, así que no deben estar a un botón de distancia de las de todos
+#: los días.
+#:
+#: En dos secciones porque son dos cosas distintas: DATOS rehace lo que se
+#: puede volver a pedir por la red, y COPIA DE SEGURIDAD mueve tus ficheros de
+#: sitio. Las cabeceras son `kind="header"`, que no recibe foco (ver
+#: `MenuItem.focusable`) y se salta sola al navegar con el mando.
+#:
+#: Dentro de DATOS van de menos a más destructiva, y la única que no borra
+#: nada, primero: es la que casi siempre se quiere.
 ADVANCED_ITEMS = [
+    MenuItem("sec_data", "DATOS", kind="header"),
     MenuItem(UPDATE_EXTRAS_KEY, "Enriquecer todo"),
     MenuItem(ENRICH_ALL_KEY, "Enriquecer todo DESTRUCTIVO"),
-    MenuItem(REGENERATE_KEY, "Regenerar todo"),
+    MenuItem(REGENERATE_KEY, "Restaurar Puntueitor MUY DESTRUCTIVO"),
+    MenuItem("sec_backup", "COPIA DE SEGURIDAD", kind="header"),
     MenuItem(BACKUP_KEY, "Copia de seguridad"),
     MenuItem(RESTORE_KEY, "Restaurar copia"),
 ]
@@ -113,7 +122,9 @@ REGENERATE_NOTE = (
     "Es un proceso laborioso y llevará",
     "varios minutos.",
 )
-REGENERATE_YES = "Sí, regenerar todo"
+#: Repite el verbo de la entrada del menú ("Restaurar Puntueitor"), no el de
+#: la función: quien acaba de elegirla tiene que reconocer que confirma ESO.
+REGENERATE_YES = "Sí, restaurar Puntueitor"
 
 # ──────────────────────────────
 # Puntueitor3D (Opciones -> Puntueitor3D)

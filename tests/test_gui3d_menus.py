@@ -127,20 +127,29 @@ class TestAdvancedMenu:
 
     def test_the_heavy_operations(self):
         """
-        Las tres de regenerar, de menos a más destructiva y con la que no
-        borra nada primero, y detrás las dos de la copia.
+        Dos secciones: las tres de rehacer datos —de menos a más destructiva,
+        con la que no borra nada primero— y las dos de la copia.
         """
         items = menus.ADVANCED_ITEMS
-        assert [i.key for i in items] == [
-            menus.UPDATE_EXTRAS_KEY, menus.ENRICH_ALL_KEY, menus.REGENERATE_KEY,
-            menus.BACKUP_KEY, menus.RESTORE_KEY,
-        ]
         assert [i.label for i in items] == [
+            "DATOS",
             "Enriquecer todo",
             "Enriquecer todo DESTRUCTIVO",
-            "Regenerar todo",
+            "Restaurar Puntueitor MUY DESTRUCTIVO",
+            "COPIA DE SEGURIDAD",
             "Copia de seguridad",
             "Restaurar copia",
+        ]
+
+    def test_only_the_actions_take_focus(self):
+        """
+        Las cabeceras son títulos, no opciones: si recibieran foco, el mando
+        se pararía en ellas y "elegir" no haría nada.
+        """
+        enfocables = [i.key for i in menus.ADVANCED_ITEMS if i.focusable]
+        assert enfocables == [
+            menus.UPDATE_EXTRAS_KEY, menus.ENRICH_ALL_KEY, menus.REGENERATE_KEY,
+            menus.BACKUP_KEY, menus.RESTORE_KEY,
         ]
 
     def test_restore_warns_about_what_it_overwrites(self):

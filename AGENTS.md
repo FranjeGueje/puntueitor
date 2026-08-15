@@ -31,12 +31,19 @@ python -m puntueitor.gui3d.app
 ```
 
 A Panda3D frontend alongside the TUI, not a replacement. Lives in
-`puntueitor/gui3d/`, fully separate from `gui/`; neither `core/` nor `gui/`
-were touched to build it. Read-only: it never runs the pipeline or queries
-IGDB, and the only network traffic is fetching missing cover JPGs.
-Keyboard: arrows navigate, Enter confirms, Esc/Start opens the options
-submenu, Q quits. Gamepad: d-pad + face_a/face_b + start, same gestures, via
-`gamepad_input.py` (hot-plug aware).
+`puntueitor/gui3d/`, fully separate from `puntueitor/tui/`.
+
+It is NOT read-only any more: it writes user flags, resolves unknown games,
+refreshes and regenerates the library, and takes backups. Everything it does
+beyond drawing goes through `core/services/`, which is the layer both
+frontends share — see `arquitectura.md`. Anything long-running lives in a
+worker with its own daemon thread and a `queue.Queue` drained per frame
+(`covers.py`, `refresh.py`, `enrichment.py`, `unknowns.py`); never a
+`ThreadPoolExecutor`, whose non-daemon threads and `atexit` hook block the
+window from closing.
+
+Keyboard and gamepad cover the same gestures; the full table is in the
+README. Gamepad support (hot-plug aware) is in `gamepad_input.py`.
 
 Data: `real_data.py` loads the **whole** library through
 `LibraryRepository.load()` — the same loader the TUI uses. Going through the
@@ -597,16 +604,23 @@ not smuggle a `±inf` into the sort key.
 4. **Selectors** choose the best game from candidates
 5. **Repository** persists the library to disk
 
-Key concepts documented in Spanish in `LEEME.txt` and `arquitectura.md`.
+Key concepts documented in Spanish in `arquitectura.md`.
 
 ## Testing
 
 ```bash
-.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m pytest -q
 ```
 
-238 tests (pytest). The `tests/` directory is gitignored, so test changes do not
-show up in `git status` — run the suite explicitly after touching the core.
+410 tests (pytest), tracked in the repo and run in CI
+(`.github/workflows/tests.yml`).
+
+They never touch the network or the real `$HOME`: `tests/conftest.py` mounts a
+sandbox (XDG_* plus `Path.home`) BEFORE importing anything from `puntueitor`,
+and `pytest_configure` refuses to run if that isolation is not in place. Both
+halves matter — patching only the XDG variables leaves the legacy-path sources
+pointing at the real home, which is how the user's files got moved into a temp
+directory once.
 
 ## Linting / Type Checking
 

@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  push:
+    branches: [master, devel]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # La suite no toca la red ni el $HOME real: `tests/conftest.py` monta un
+      # sandbox antes de importar nada de `puntueitor`, y `pytest_configure`
+      # se niega a arrancar si ese aislamiento no está puesto.
+      - name: Tests
+        run: python -m pytest -q
