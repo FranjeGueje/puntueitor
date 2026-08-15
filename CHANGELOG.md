@@ -41,14 +41,21 @@ mismos servicios; lo único que cambia es cómo se enseñan.
   instalación en un zip —ajustes, las dos bases de datos y las carátulas— y de
   vuelta. Las bases se copian con la API de SQLite y no por bytes, porque
   están abiertas mientras se copian.
+- **Editor Rápido** en el carrusel (`R3` o `e`): las cuatro direcciones del
+  stick derecho marcan y desmarcan terminado, pendiente, oculto y favorito del
+  juego seleccionado sin abrir ningún menú. Es lo que la TUI hace con
+  `F1`/`F2`/`F3`, y lo que faltaba para poder repasar la biblioteca con el
+  mando en la mano.
+- **Pantalla de créditos** (Opciones → Créditos), con la atribución de los
+  iconos y las tipografías que exigen sus licencias.
 - **Enriquecer y desconocer un juego suelto**, sin tocar el resto de la
   biblioteca.
 - **Actualizar y regenerar la biblioteca desde el carrusel**, con los juegos
   apareciendo según se resuelven.
 - Salto rápido por grupos de la ordenación (L1/R1) y vuelta al principio del
   carrusel (L3 o la tecla Inicio).
-- La suite de tests entra en el repositorio: **409 tests**, con aislamiento
-  para todos.
+- La suite de tests entra en el repositorio: **440 tests**, con aislamiento
+  para todos, y se ejecutan en cada push (GitHub Actions).
 
 ### Cambiado
 
@@ -68,6 +75,11 @@ mismos servicios; lo único que cambia es cómo se enseñan.
   el que más duele perder.
 - El arranque del carrusel pasa de 5,9 s a 1,5 s cargando las carátulas bajo
   demanda.
+- El menú **Avanzado** se parte en dos secciones, DATOS y COPIA DE SEGURIDAD,
+  y **«Regenerar todo» pasa a llamarse «Restaurar Puntueitor MUY
+  DESTRUCTIVO»**. Se apunta porque es el nombre de una acción que borra la
+  base de datos entera: quien lo conozca por su nombre viejo tiene que poder
+  atar cabos.
 
 ### Corregido
 
@@ -82,6 +94,13 @@ mismos servicios; lo único que cambia es cómo se enseñan.
   los cachers mantienen una conexión abierta por hilo y seguían contestando
   desde el inodo huérfano, así que todo lo reconstruido acababa en un fichero
   fantasma. Ahora se vacían las tablas.
+- **El stick derecho rebotaba**: un solo empujón marcaba y desmarcaba el
+  estado varias veces seguidas, porque con un único umbral cada temblor del
+  eje alrededor de él contaba como un gesto nuevo. Ahora lleva histéresis, la
+  misma que ya tenían los gatillos.
+- La navegación del carrusel iba demasiado rápida —8 juegos por segundo de
+  salida y hasta 22— y pasarse del que buscabas era lo normal. Se ha bajado a
+  la mitad; para cruzar la biblioteca están L1/R1 y L3.
 - Corrupción intermitente de carátulas en el carrusel.
 - Al desconocer un juego se guardaba con el nombre que le da IGDB en vez del
   que tiene en su tienda, que es justo el que hace falta para reconocerlo.

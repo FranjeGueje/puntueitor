@@ -212,11 +212,29 @@ def main() -> None:
     _disparar(app, destino, "gui3d-scoring.png")
     app._close_all_menus()
 
+    # Opciones -> Avanzado, con sus dos secciones.
+    app._push_menu(app.advanced_menu)
+    _pasar_frames(app, FRAMES_ENTRE_CAPTURAS)
+    _disparar(app, destino, "gui3d-avanzado.png")
+    app._close_all_menus()
+
     # El aviso de regenerar, SIN confirmarlo: solo se abre la pregunta.
     app._confirm_regenerate()
     _pasar_frames(app, FRAMES_ENTRE_CAPTURAS)
     _disparar(app, destino, "gui3d-regenerar.png")
     app._close_all_menus()
+
+    app._push_menu(app.credits_menu)
+    _pasar_frames(app, FRAMES_ENTRE_CAPTURAS)
+    _disparar(app, destino, "gui3d-creditos.png")
+    app._close_all_menus()
+
+    # El Editor Rápido: lo que cambia es la barra de ayuda de abajo, así que
+    # se entra al modo y se retrata el carrusel tal cual.
+    app._toggle_editor_mode()
+    _pasar_frames(app, FRAMES_ENTRE_CAPTURAS)
+    _disparar(app, destino, "gui3d-editor.png")
+    app._toggle_editor_mode()
 
     print(f"\nlisto: {destino}")
     shutil.rmtree(caja, ignore_errors=True)

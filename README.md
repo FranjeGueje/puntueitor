@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.14-blue?logo=python&logoColor=white" alt="Python 3.14">
+  <img src="https://img.shields.io/badge/python-3.13+-blue?logo=python&logoColor=white" alt="Python 3.13+">
+  <img src="https://github.com/FranjeGueje/puntueitor/actions/workflows/tests.yml/badge.svg" alt="Tests">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/plataforma-linux-lightgrey" alt="Linux">
   <img src="https://img.shields.io/badge/versión-2.0.0-orange" alt="Version 2.0.0">
@@ -58,8 +59,23 @@
 </p>
 
 <p align="center">
+  <i>Editor Rápido: marcar estados con el stick derecho, sin abrir menús</i><br>
+  <img src="docs/screenshots/gui3d-editor.png" alt="Editor Rápido" width="800">
+</p>
+
+<p align="center">
+  <i>Opciones → Avanzado: lo que no es de todos los días, en dos secciones</i><br>
+  <img src="docs/screenshots/gui3d-avanzado.png" alt="Menú Avanzado" width="800">
+</p>
+
+<p align="center">
   <i>Las acciones destructivas avisan de lo que se pierde</i><br>
   <img src="docs/screenshots/gui3d-regenerar.png" alt="Aviso de regeneración" width="800">
+</p>
+
+<p align="center">
+  <i>Créditos: iconos, tipografías y de dónde salen los datos</i><br>
+  <img src="docs/screenshots/gui3d-creditos.png" alt="Créditos" width="800">
 </p>
 
 > Las del carrusel se regeneran con `python tools/capturas3d.py`, que dibuja
@@ -84,12 +100,13 @@
 | **Resolución IGDB** | Búsqueda por título con 15 resultados, o re-resolución automática por tienda |
 | **Persistencia de filtros** | Los filtros activos se guardan entre sesiones (JSON) |
 | **Mando** | El carrusel se maneja entero con un mando: navegar, menús, gatillos y sticks |
+| **Editor Rápido** | Marcar terminado, pendiente, oculto o favorito con el stick derecho, sin menús |
 | **Actualizar sin salir** | Desde cualquiera de las dos interfaces: busca en tus tiendas y añade lo nuevo |
 | **Tiendas a la carta** | Desmarcar una tienda deja de escanearla **y** de enseñar sus juegos |
 | **Copias de seguridad** | Toda tu instalación en un zip, y de vuelta, desde las dos interfaces |
 | **Diagnóstico claro** | El log distingue "sin internet" de "tu clave no vale" y resume cada carga |
 | **Caché unificada** | Una sola base de datos SQLite en `~/.local/share/puntueitor/` |
-| **Binario único** | PyInstaller — sin dependencias del sistema, 25 MB |
+| **Binario único** | PyInstaller — sin dependencias del sistema: 25 MB la TUI, 66 MB el carrusel |
 
 ---
 
@@ -239,7 +256,7 @@ mismo fichero:
 | `E` | `R3` | Entrar y salir del **Editor Rápido** |
 | `Enter` | `A` | Menú del juego: estados, enriquecer, desconocer |
 | `Esc` | `B` | Volver |
-| `Esc` | `Select` | Opciones (configuración, ajustes del carrusel, avanzado, salir) |
+| `Esc` | `Select` | Opciones (configuración, ajustes del carrusel, avanzado, créditos, salir) |
 | `Tab` | `Start` | Puntueitor: sistemas de puntuación |
 | `X` | `X` | Filtrar y ordenar |
 | `Espacio` | `Y` | Mostrar u ocultar las etiquetas de las cajas |
@@ -304,8 +321,8 @@ que lea lo recuperado.
               │  Servicios compartidos    │
               │  game_actions,            │
               │  unknown_actions,         │
-              │  library_refresh,         │
-              │  library_ops              │
+              │  library_refresh, backup, │
+              │  library_ops, store_titles│
               └──────────────┬───────────┘
                              │
               ┌──────────────┴───────────┐
@@ -356,7 +373,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-410 tests (unitarios + integración) que cubren:
+440 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -370,6 +387,8 @@ python -m pytest tests/
 - Copias de seguridad: ida y vuelta, zips ajenos, rutas maliciosas dentro del
   zip y restaurar con la base de datos abierta
 - Diagnóstico de errores y que el log nunca escriba una credencial
+- El Editor Rápido: su tabla de gestos y la histéresis del stick derecho
+  (ese test reproduce un rebote real de un mando)
 
 Ninguno toca la red ni tus ficheros: `tests/conftest.py` monta un sandbox
 antes de importar nada, y la suite se niega a arrancar si ese aislamiento no

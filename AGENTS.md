@@ -612,7 +612,7 @@ Key concepts documented in Spanish in `arquitectura.md`.
 .venv/bin/python -m pytest -q
 ```
 
-410 tests (pytest), tracked in the repo and run in CI
+440 tests (pytest), tracked in the repo and run in CI
 (`.github/workflows/tests.yml`).
 
 They never touch the network or the real `$HOME`: `tests/conftest.py` mounts a
@@ -1044,24 +1044,33 @@ que añadir una tabla no obliga a acordarse de nada).
 
 ## Operaciones gordas: Opciones → Avanzado
 
-Las dos de la TUI que tiran datos, apartadas de las de diario porque las dos
-tardan minutos y las dos preguntan antes:
+El menú va en dos secciones (`kind="header"`, que no recibe foco): **DATOS**
+y **COPIA DE SEGURIDAD**. Las de DATOS tardan minutos y las que tiran algo
+preguntan antes:
 
-- **Enriquecer todo** (`enrich_all`, la `E` de la TUI): vacía los extras y
-  vuelve a buscar duración y notas de toda la biblioteca. Los juegos se
-  **releen del repositorio después de vaciar**: los que tuviera en memoria
+- **Enriquecer todo** (`update_extras`): vuelve a preguntar duración y notas
+  y las escribe ENCIMA, sin vaciar nada. Los enrichers van con
+  `overwrite=True`, que es lo que sustituye al borrado — sin él se saltarían
+  todo juego que ya tiene valor. Es la primera de la lista porque es la que
+  casi siempre se quiere: interrumpirla no cuesta nada.
+- **Enriquecer todo DESTRUCTIVO** (`enrich_all`, la `E` de la TUI): vacía los
+  extras y vuelve a buscar duración y notas de toda la biblioteca. Los juegos
+  se **releen del repositorio después de vaciar**: los que tuviera en memoria
   quien llama conservan sus duraciones, y con `overwrite=False` el enricher se
-  saltaría justo lo que se acaba de pedir rehacer.
-- **Regenerar todo** (`regenerate_library`, la `R`): vacía `puntueitor.db`
+  saltaría justo lo que se acaba de pedir rehacer. Cortarla a la mitad deja
+  sin datos a los juegos que no llegó a procesar, y por eso ya no es la
+  entrada por defecto.
+- **Restaurar Puntueitor MUY DESTRUCTIVO** (`regenerate_library`, la `R` de la
+  TUI; la clave interna sigue siendo `REGENERATE_KEY`): vacía `puntueitor.db`
   entero —`resolvers`, caché de IGDB, extras **y desconocidos**— y lo
   reconstruye. Solo sobrevive `library.sqlite` (terminado, oculto, pendiente,
   favorito), que está en otro fichero justamente por esto: es lo único que no
   se puede volver a pedir a ninguna API.
 
-Las tres operaciones son funciones con **nombre propio** en
+Las cuatro operaciones son funciones con **nombre propio** en
 `core/services/library_refresh.py`, no una sola con banderas: en el sitio de la
 llamada tiene que leerse qué se va a perder. `RefreshWorker.start(mode)` elige
-cuál, y las tres mandan los mismos mensajes, así que el drenaje del carrusel no
+cuál, y todas mandan los mismos mensajes, así que el drenaje del carrusel no
 distingue: un juego que llega es "este juego, con más datos".
 
 `regenerate_library` vacía **la base del repositorio que recibe**
@@ -1560,7 +1569,80 @@ python-xlib to send the ClientMessage, then assert the process is gone; and
 dump `faulthandler.dump_traceback()` on a stuck run to see which thread is
 stuck where, rather than guessing.
 
+## Copias de seguridad (`core/services/backup.py`)
+
+Toda la instalación a un zip y de vuelta, desde las dos interfaces. Cuatro
+cosas que costaron y que no se deducen leyendo el código:
+
+**El zip guarda por PREFIJOS, no por rutas reales** (`config/`, `data/`,
+`cache/`, `state/`). Una copia hecha en una máquina tiene que restaurarse en
+otra donde el usuario se llame distinto o las XDG_* apunten a otro sitio.
+
+**Las bases SQLite se copian con `Connection.backup`, no con `shutil`.** Van
+en modo WAL y ABIERTAS por la aplicación que hace la copia, así que copiarlas
+por bytes deja fuera lo último que hizo el usuario. Y el origen se abre en
+lectura-escritura, no con `mode=ro`: para leer el `-wal` hace falta el índice
+`-shm`, que una conexión de solo lectura no siempre puede abrir.
+
+**Al restaurar se escribe en un fichero NUEVO y se pone en su sitio con
+`os.replace`.** Con `open(destino, "wb")` se trunca el fichero existente
+—mismo inodo que SQLite tiene abierto— y las conexiones vivas vuelcan su
+estado encima al cerrarse: la base restaurada se quedaba con el esquema y
+cero filas, y el carrusel enseñaba los juegos de muestra
+(`build_real_entries() or build_sample_entries()`). Es la trampa de "vaciar
+una base de datos" de más arriba, pero al revés. Además se borran los
+`-wal`/`-shm` que hubiera al lado: un WAL de la base anterior revierte o
+corrompe lo recién restaurado.
+
+**Después de restaurar se sale con `os._exit(0)`**, no con el cierre normal:
+un cierre ordenado escribe por su cuenta (gui3d guarda sus filtros encima del
+`gui3d.json` recién restaurado).
+
+Y la restauración **rechaza** entradas del zip con `..`, con ruta absoluta o
+fuera de los cuatro prefijos: el destino son carpetas reales del `$HOME`, así
+que sin eso un zip preparado escribe donde quiera (zip-slip).
+
+## El log (`core/logging_setup.py`, `core/diagnostics.py`)
+
+`setup_logging(frontend)` lo llaman los dos puntos de entrada **después** de
+`paths.migrate_legacy_paths()`. No se configura al importar: gui3d hacía un
+`basicConfig` sin fichero al importar su módulo, así que lanzado desde Steam
+no dejaba ni una línea en ninguna parte.
+
+`describe_error(error, servicio)` es el único sitio que traduce una excepción
+a una frase accionable, y la distinción que importa es **no confundir "no hay
+internet" con "tus credenciales no valen"**: mandar a revisar unas claves que
+estaban bien hace perder el rato e invita a romperlas. Se mira el tipo y el
+`response.status_code`; nunca se hace una petición para "comprobar si hay
+internet".
+
+Regla dura: **en el log nunca entra el VALOR de una credencial**, solo su
+nombre. El log se comparte para pedir ayuda. Hay tests que lo fijan, y la URL
+de Steam se registra sin sus `params` porque la API key viaja ahí.
+
+## Editor Rápido (R3 / tecla "e")
+
+Marca los cuatro estados con el stick derecho sin abrir menús. La tabla de
+gestos vive en `menus.EDITOR_FLAGS` / `EDITOR_KEYS` —dato, no comportamiento—
+para poder probarla sin ventana.
+
+- El stick se lee **por flanco** (`_update_editor`) y con **histéresis** en
+  `gamepad_input.right_stick()`: se cuenta al pasar de 0.7 y no se vuelve a
+  contar hasta bajar de 0.3. Con un solo umbral, un empujón real dejaba en el
+  log el estado marcado y desmarcado cuatro veces — el eje tiembla y al
+  soltarlo rebota. Aquí cada empujón ESCRIBE en la base de datos.
+- **Un solo eje**: en diagonal gana el de mayor valor absoluto. Marcar dos
+  estados de una sacudida es lo que haría desconfiar del modo.
+- `hidden` se aplica **al salir** del modo (`_hidden_filter_dirty`), como en
+  el menú de juego: re-filtrar en caliente quita de debajo la caja que estás
+  marcando.
+- La persistencia es `_persist_flags`, compartida con el menú de juego, y
+  manda LOS CUATRO estados porque `set_status` reescribe la fila entera.
+- El modo bloquea con aviso todo lo que abra algo encima (menú de juego,
+  filtros, Puntueitor, Opciones, actualizar y el cambio a desconocidos) y deja
+  pasar navegar, etiquetas y ocultos.
+
 ## Environment
 
-- Python 3.14 (from `.venv`)
+- Python 3.13 y 3.14 (el `.venv` local es 3.14; la CI prueba las dos)
 - Virtual environment: `.venv/`
