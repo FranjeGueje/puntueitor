@@ -230,6 +230,16 @@ No hace falta buscar nada dentro de la dirección: se pega entera. Si no hay
 navegador que abrir —por SSH, o en el modo juego del Deck—, la dirección
 queda en el log para que la abras donde puedas.
 
+> **Para pegar en el carrusel 3D**: `Ctrl+V`, o el botón **X** del mando. Las
+> direcciones de vuelta pasan de los cuatrocientos caracteres y teclearlas
+> con un mando no es plan.
+>
+> Panda3D no da acceso al portapapeles, así que se le pregunta al sistema:
+> `wl-paste`, `xclip` o `xsel` si los tienes, y si no a Klipper por D-Bus,
+> que en KDE Plasma **funciona sin instalar nada**. Donde no haya ninguna de
+> las dos cosas (el modo juego del Deck, por ejemplo) el aviso lo dice en vez
+> de quedarse callado.
+
 **Steam necesita además una API key**, que Valve solo entrega a mano: sácala
 de [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) y
 pégala en Configuración. Entrar por Cuentas te ahorra teclear el Steam ID,
@@ -408,7 +418,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-505 tests (unitarios + integración) que cubren:
+557 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -417,6 +427,8 @@ python -m pytest tests/
 - Proveedores de tienda: paginación, filtrado, caída a la copia guardada
   cuando no hay red y sesión caducada
 - Sesiones: renovación de tokens y qué se acepta al pegar la vuelta del login
+- Pegar en el carrusel: en qué orden se le pregunta al sistema por el
+  portapapeles, y que el botón X acabe pegando de verdad
 - Pipeline (scoring_ops, filter_library, enrichment)
 - Servicios, Cachers (5 tipos), Config, Repository
 - Acciones compartidas por las dos interfaces: enriquecer y desconocer un

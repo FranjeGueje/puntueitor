@@ -79,6 +79,51 @@ def fit_scale(text_width: float) -> float:
     return max(ENTRY_MIN_SCALE, min(ENTRY_SCALE, ENTRY_UNITS / text_width))
 
 
+#: Caracteres que no pueden entrar en un cuadro de una sola línea. El de
+#: control (0x16) es el que algunos toolkits generan al pulsar Ctrl-V: si se
+#: colara, quedaría un carácter invisible dentro de la URL que la tienda
+#: rechazaría sin que se pudiera ver por qué.
+_NO_IMPRIMIBLES = frozenset("\n\r\t\x16\x00")
+
+
+def strip_control(texto: str) -> str:
+    """
+    Quita del texto lo que un cuadro de una línea no debería llevar dentro.
+
+    Se aplica también AL ACEPTAR, y no solo a lo que se pega, porque no todo
+    entra por `insert_at`: si algún día el `DirectEntry` metiera por su
+    cuenta el carácter de control del Ctrl-V (0x16), quedaría invisible
+    dentro de la URL y la tienda rechazaría el código sin que se pudiera ver
+    el motivo. Limpiarlo en la salida cubre el caso venga de donde venga.
+    """
+    return "".join(c for c in (texto or "") if c not in _NO_IMPRIMIBLES)
+
+
+def insert_at(actual: str, pegado: str, cursor: int) -> tuple[str, int]:
+    """
+    Mete `pegado` dentro de `actual` en la posición `cursor`.
+
+    Devuelve el texto nuevo y dónde queda el cursor después, que es detrás de
+    lo pegado —como en cualquier cuadro de texto—.
+
+    Se inserta en vez de reemplazar porque reemplazar se comería lo que ya
+    hubiera escrito sin avisar. En el caso que motivó esto (pegar la URL del
+    login en un cuadro vacío) las dos cosas dan igual, pero solo una de las
+    dos se comporta bien el resto de las veces.
+
+    Es una función suelta, y no un método, para poder probarla sin abrir
+    ninguna ventana — igual que `fit_scale`.
+    """
+    limpio = strip_control(pegado)
+    if not limpio:
+        return actual, cursor
+
+    # Un cursor fuera de sitio no puede romper nada: se pega al final, que es
+    # lo que el usuario esperaría de todas formas.
+    posicion = cursor if 0 <= cursor <= len(actual) else len(actual)
+    return actual[:posicion] + limpio + actual[posicion:], posicion + len(limpio)
+
+
 class TextPrompt:
     """Cuadro de texto modal. Se construye una vez y se reutiliza."""
 
@@ -233,6 +278,31 @@ class TextPrompt:
         self._visible = False
         self.root.hide()
 
+    def paste(self, texto: str) -> int:
+        """
+        Pega `texto` donde esté el cursor. Devuelve cuántos caracteres entraron.
+
+        `enterText()` no sirve aquí: reemplaza TODO el contenido (es lo que
+        hace `open()` con el valor inicial). Hay que empalmar a mano y
+        recolocar el cursor.
+        """
+        if not self._visible:
+            return 0
+
+        nuevo, cursor = insert_at(
+            self._entry.get(), texto, self._entry.getCursorPosition(),
+        )
+        if nuevo == self._entry.get():
+            return 0
+
+        pegados = len(nuevo) - len(self._entry.get())
+        self._entry.set(nuevo)
+        self._entry.setCursorPosition(cursor)
+        # Igual que al teclear: la letra encoge según lo que quepa, y pegando
+        # cuatrocientos caracteres de golpe hay más que recalcular que nunca.
+        self._fit()
+        return pegados
+
     def accept_text(self) -> None:
         """Confirma lo escrito (Enter, o el botón A)."""
         if self._visible:
@@ -251,4 +321,4 @@ class TextPrompt:
         accept = self._on_accept
         self.close()
         if accept:
-            accept(text.strip())
+            accept(strip_control(text).strip())

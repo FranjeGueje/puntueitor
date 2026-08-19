@@ -43,6 +43,18 @@ con su carpeta.
 - Los tokens se guardan en `~/.cache/puntueitor/`, solo legibles por ti, y se
   renuevan solos.
 
+- **Pegar en el carrusel 3D**, con `Ctrl+V` o el botón **X** del mando. Sin
+  esto, el login de las tiendas obligaba a teclear a mano una dirección de
+  cuatrocientos caracteres, con un mando y desde el sofá.
+
+  Panda3D no expone el portapapeles, así que se pregunta al sistema en
+  orden: `wl-paste`, `xclip`, `xsel` y, si no hay ninguno, **Klipper por
+  D-Bus**, que es lo que hace que funcione en KDE Plasma sin instalar nada.
+  Ni `tkinter` ni `pyperclip` valían: la primera no importa sin el paquete
+  `tk` del sistema y la segunda, en Linux, se apoya en esas mismas
+  herramientas. Donde no hay ninguna vía —el modo juego del Deck— se dice,
+  en vez de fallar en silencio.
+
 ### Cambiado
 
 - `core/providers/` es la capa nueva: cada tienda sabe pedirse a sí misma y

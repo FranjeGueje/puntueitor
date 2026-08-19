@@ -1020,6 +1020,50 @@ already reads (`app_name`/`appid`, `title`, `store_url` on Epic). Do not
 "normalise" them into a common shape: the resolvers are what interpret them,
 and they would all break at once for nothing.
 
+## Pasting into the 3D text prompt
+
+Panda3D has no clipboard API — `panda3d.core` has only `ClipPlaneAttrib`, and
+`DirectGui` never mentions paste. So `core/services/clipboard.py` asks the
+system, trying several ways in order and taking the first that answers.
+
+Two things that look like the obvious answer and are not, documented so
+nobody "fixes" this into them later:
+
+- **`tkinter`** (`Tk().clipboard_get()`) is stdlib but needs the system `tk`
+  package. On the machine this was written on, importing it fails outright:
+  `libtk8.6.so: cannot open shared object file`.
+- **`pyperclip`** reads nothing itself on Linux — it shells out to
+  `xclip`/`xsel`/`wl-clipboard` or uses Qt/GTK bindings. It would be one more
+  dependency failing in exactly the same places.
+
+What makes it work with **nothing installed** on KDE is Klipper over D-Bus
+(`qdbus6`, or `gdbus` from glib2). `gdbus` returns GVariant — `('text',)` —
+parsed with `ast.literal_eval` (not `eval`: it executes nothing), with a
+manual unwrap as backup.
+
+Gamescope (Deck game mode) has neither Klipper nor `wl-paste`. That case is
+reported to the user, not swallowed.
+
+`read_clipboard()` catches **every** exception per source, deliberately: it
+runs on the frame-drawing thread, and no system tool misbehaving should take
+the app down over a failed paste.
+
+**`Ctrl+V` is bound inside `_open_text_prompt`, not in `self._shortcuts`** —
+that table is exactly what `_release_shortcuts` drops when the prompt opens,
+and this is the one binding that must be live *while* typing. Panda3D emits
+`"control-v"` because `ShowBase` registers Control as a ButtonThrower
+modifier (`ShowBase.py:1722-1727`).
+
+**Gamepad X pastes when the prompt is open.** No free button was left, and
+none was needed: pad input never goes through the keyboard, so X already
+reached `_on_filter_key` while typing and just returned on `self._typing`.
+Context-dependent meaning is how A and B already work.
+
+Control characters are stripped **on accept** as well as on paste
+(`strip_control`). If `DirectEntry` ever inserted the 0x16 of Ctrl-V itself,
+it would sit invisibly inside the URL and the store would reject the code
+with nothing to see.
+
 ## OAuth: why everything is copy-paste, including Steam
 
 GOG, Epic and Amazon pin their `redirect_uri` to a domain of their own — we

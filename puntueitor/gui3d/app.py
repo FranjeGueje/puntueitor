@@ -424,8 +424,17 @@ def _menu_hint(extra: str = "") -> str:
 
 
 def _prompt_hint() -> str:
-    """Pista del cuadro de texto: aceptar y cancelar."""
+    """
+    Pista del cuadro de texto: pegar, aceptar y cancelar.
+
+    Pegar va PRIMERO a propósito. Es lo que la mayoría viene a hacer aquí
+    —el login de las tiendas acaba pegando una URL enorme— y es lo único de
+    los tres que no se adivina.
+
+    No hay icono de tecla "V" en la fuente, así que ese lado va como texto.
+    """
     return (
+        f"Ctrl+V / {icon_markup(ICON_XBOX_X)}  pegar   -   "
         f"{icon_markup(ICON_KEYBOARD_ENTER)} / {icon_markup(ICON_XBOX_A)}  aceptar   -   "
         f"{icon_markup(ICON_KEYBOARD_ESCAPE)} / {icon_markup(ICON_XBOX_B)}  cancelar"
     )
@@ -1491,10 +1500,21 @@ class App(ShowBase):
 
     def _on_filter_key(self) -> None:
         """
-        La tecla "x" / botón X. Dentro del menú de scoring configura el
-        sistema enfocado; en el resto de casos abre —o cierra— el menú de
+        La tecla "x" / botón X, que hace tres cosas según dónde estés: con el
+        cuadro de texto abierto PEGA, dentro del menú de scoring configura el
+        sistema enfocado, y en el resto de casos abre —o cierra— el menú de
         filtrar y ordenar.
+
+        Que pegue desde aquí no es un apaño: el mando no pasa por el teclado,
+        así que cada acción alcanzable con él comprueba `self._typing` y se
+        va — o sea que X, mientras se escribe, no hacía nada. Se le da ese
+        hueco en vez de buscar un botón libre, porque no queda ninguno y
+        porque A y B ya funcionan igual, significando una cosa u otra según
+        lo que haya en pantalla.
         """
+        if self.text_prompt.is_open:
+            self._paste_into_prompt()
+            return
         if self._typing:
             return
         if self.active_menu is self.scoring_menu:
@@ -1793,6 +1813,12 @@ class App(ShowBase):
         abriría otro menú encima (ver `_release_shortcuts`).
         """
         self._release_shortcuts()
+        # Pegar se engancha AQUÍ y no en `self._shortcuts`, que es lo que
+        # `_release_shortcuts` acaba de soltar entero: esto tiene que estar
+        # activo justamente mientras el cuadro está abierto, que es al revés
+        # que todo lo demás. Panda3D emite "control-v" porque `ShowBase`
+        # registra Control como modificador del ButtonThrower.
+        self.accept("control-v", self._paste_into_prompt)
         if self.active_menu is not None:
             self.active_menu.hide()
         self.text_prompt.open(
@@ -1820,6 +1846,7 @@ class App(ShowBase):
         Con un frame de margen, ese "enter" rezagado no lo escucha nadie.
         Esc no se ve afectado porque nunca se llega a soltar.
         """
+        self.ignore("control-v")
         self.task_mgr.remove(_REBIND_TASK)
         self.task_mgr.do_method_later(
             0, self._rebind_shortcuts_task, _REBIND_TASK,
@@ -1830,6 +1857,32 @@ class App(ShowBase):
             self.active_menu.show()
         if on_accept is not None:
             on_accept(text)
+
+    def _paste_into_prompt(self) -> None:
+        """
+        Pega el portapapeles en el cuadro (Ctrl-V, o el botón X del mando).
+
+        Existe por el login de las tiendas: se vuelve del navegador con una
+        URL de cuatrocientos caracteres en el portapapeles, y sin esto había
+        que teclearla — con un mando, si estás en el sofá.
+        """
+        if not self.text_prompt.is_open:
+            return
+
+        from puntueitor.core.services.clipboard import read_clipboard
+
+        texto, motivo = read_clipboard()
+        if motivo:
+            self.notifier.show(motivo)
+            return
+
+        pegados = self.text_prompt.paste(texto)
+        if pegados:
+            self.notifier.show(f"Pegados {pegados} caracteres")
+        else:
+            # Pasa si el portapapeles solo traía saltos de línea, que el
+            # cuadro no admite. Decirlo evita quedarse mirando la pantalla.
+            self.notifier.show("No había nada que pegar")
 
     def _rebind_shortcuts_task(self, task):
         self._bind_shortcuts()
