@@ -29,11 +29,11 @@ class SteamProvider(LibraryProvider):
     def is_ready(self) -> tuple[bool, str]:
         if not self.api_key:
             return False, (
-                "no hay API key de Steam (Opciones → Configuración)"
+                "no hay API key de Steam (Opciones → Cuentas)"
             )
         if not self.user_id:
             return False, (
-                "no hay Steam ID (Opciones → Configuración)"
+                "no hay Steam ID (Opciones → Cuentas)"
             )
         return True, ""
 

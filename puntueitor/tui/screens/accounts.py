@@ -4,7 +4,7 @@ Con qué se identifica Puntueitor ante cada servicio.
 Junta las tres cosas que antes estaban repartidas entre dos pantallas y son
 la misma: las credenciales de IGDB, las de Steam y las sesiones de las
 tiendas que sí tienen login. Lo que se carga —qué tiendas— se queda en
-Configuración, que es otra decisión y se toma en otro momento.
+Tiendas, que es otra decisión y se toma en otro momento.
 
 Steam sale como CAMPOS DE TEXTO y no como una fila de conectar: no tiene
 OAuth para terceros, y enseñarlo igual que a GOG haría creer que entrando por

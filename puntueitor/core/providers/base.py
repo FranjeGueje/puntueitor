@@ -44,7 +44,7 @@ class LibraryProvider(ABC):
         Si se puede llamar a la tienda ahora mismo y, si no, por qué.
 
         El motivo se le enseña al usuario tal cual, así que tiene que decirle
-        QUÉ HACER —«no hay API key: Opciones → Configuración»—, no solo qué
+        QUÉ HACER —«no hay API key: Opciones → Cuentas»—, no solo qué
         ha fallado.
         """
 

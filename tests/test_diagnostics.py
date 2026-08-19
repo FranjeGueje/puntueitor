@@ -51,8 +51,9 @@ class TestCredenciales:
         assert is_auth_error(_http_error(estado))
         assert "credenciales" in mensaje
         # Y dónde se arregla: sin esto el usuario sabe qué pasa pero no qué
-        # hacer, que es la mitad del trabajo.
-        assert "Configuración" in mensaje
+        # hacer, que es la mitad del trabajo. Cuentas, no Tiendas: las claves
+        # están ahí desde que se separaron las dos pantallas.
+        assert "Cuentas" in mensaje
 
     def test_a_500_is_not_a_credentials_problem(self):
         """

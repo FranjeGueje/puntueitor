@@ -159,7 +159,7 @@ class ConfigManager:
             self.save()
             logger.info(
                 f"configuración nueva creada en {self.config_file}: hay que "
-                "rellenar las credenciales (Opciones → Configuración)"
+                "rellenar las credenciales (Opciones → Cuentas)"
             )
         else:
             try:

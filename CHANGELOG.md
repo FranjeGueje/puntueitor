@@ -2,7 +2,7 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
-## [No publicado]
+## [3.0.0] - 2026-08-19
 
 Puntueitor deja de leer los ficheros de otros programas. GOG, Epic y Amazon
 ya no salen de la caché en disco de Heroic, sino de **las APIs de sus
@@ -57,6 +57,13 @@ con su carpeta.
 
 ### Cambiado
 
+- **"Configuración" pasa a llamarse "Tiendas"**: desde que las credenciales
+  se fueron a Cuentas, ahí dentro solo están las casillas de qué tiendas
+  cargar, y el nombre viejo ya no describía lo que hay. De paso se repartieron
+  los avisos que mandaban a "Opciones → Configuración": los de credenciales
+  van a Cuentas y los de tiendas activas, a Tiendas. Varios llevaban desde el
+  cambio anterior mandando al sitio equivocado, y son justo los que se leen
+  cuando algo no funciona.
 - **Menú "Cuentas" propio**, el primero de Opciones, con todo lo de
   identificarse junto: credenciales de IGDB, credenciales de Steam y sesiones
   de GOG, Epic y Amazon. "Configuración" se queda con lo que de verdad es
@@ -78,6 +85,12 @@ con su carpeta.
 - Un corte de internet renovando una sesión ya no se confunde con una sesión
   caducada: antes, un rato sin red habría obligado a volver a entrar en las
   tres tiendas.
+
+- Los créditos del carrusel nombran a **legendary, gogdl y nile**, que son
+  quienes averiguaron y publicaron las APIs de Epic, GOG y Amazon. No usamos
+  su código y su licencia no obliga a nada; se les nombra porque sin ellos
+  tres de las cuatro tiendas no funcionarían. Sale de ahí *Heroic*, que ya no
+  se lee.
 
 ### Eliminado
 

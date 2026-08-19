@@ -53,7 +53,7 @@ _POR_ESTADO = {
 }
 
 #: Cuándo merece la pena decirle al usuario dónde se arregla.
-_REVISA_CONFIG = " Revísalas en Opciones → Configuración."
+_REVISA_CONFIG = " Revísalas en Opciones → Cuentas."
 
 
 def status_code(error: BaseException) -> int | None:

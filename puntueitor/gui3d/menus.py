@@ -25,7 +25,7 @@ OPTIONS_ITEMS = [
     # credenciales ni sesiones no se carga ninguna biblioteca, y todo lo
     # demás del menú opera sobre juegos que aún no existen.
     MenuItem("accounts", "Cuentas"),
-    MenuItem("config", "Configuración"),
+    MenuItem("config", "Tiendas"),
     MenuItem("gui3d", "Puntueitor3D"),
     MenuItem("advanced", "Avanzado"),
     MenuItem("credits", "Créditos"),
@@ -80,8 +80,13 @@ def build_credits_items() -> list[MenuItem]:
         CREDITS_FONT_PROMPT,
         "",
         "DATOS",
-        "IGDB, HowLongToBeat, Steam y Heroic",
-        "",
+        # Las bibliotecas de GOG, Epic y Amazon salen de APIs que sus dueños
+        # no documentan: las que hay aquí están porque legendary, gogdl y
+        # nile las averiguaron primero y lo publicaron. No usamos su código,
+        # así que su licencia no obliga a nada — se les nombra porque sin
+        # ellos tres de las cuatro tiendas no funcionarían.
+        "IGDB, HowLongToBeat, Steam,",
+        "legendary, gogdl y nile",
         "Hecho con Panda3D y Textual",
     )
     items = [
@@ -211,7 +216,7 @@ def build_gui3d_items(prefs) -> list[MenuItem]:
     Los ajustes propios del frontend 3D, con los valores EN EDICIÓN.
 
     `prefs` es la copia que se está editando, no la que está en uso: como en
-    el menú de Configuración y en los formularios de scoring, nada se aplica
+    el menú de Tiendas y en los formularios de scoring, nada se aplica
     hasta pulsar "Guardar" (ver `app.App._open_gui3d_menu`).
 
     Los dos ajustes son `kind="cycle"`, el mismo tipo que los filtros de tres
@@ -317,10 +322,10 @@ def build_filter_items(filters, tristate_label) -> list[MenuItem]:
     return items
 
 # ──────────────────────────────
-# Configuración (Opciones -> Configuración)
+# Tiendas (Opciones -> Tiendas)
 # ──────────────────────────────
 
-SETTINGS_TITLE = "Configuración"
+SETTINGS_TITLE = "Tiendas"
 
 #: Con qué se tapan las credenciales en la lista. Ni la clave de Steam ni el
 #: secreto de IGDB se enseñan al navegar el menú; sí al editarlos, porque

@@ -1084,7 +1084,7 @@ and makes the user think they picked the wrong account.
 
 ## Las tiendas marcadas deciden DOS cosas
 
-El ajuste "TIENDAS A CARGAR" (Opciones → Configuración) gobierna:
+El ajuste "TIENDAS A CARGAR" (Opciones → Tiendas) gobierna:
 
 1. **De qué tiendas se escanea** — `pipeline.load_steam_library.load_library`
    construye su lista de tiendas desde la config y salta las desmarcadas. Ya
@@ -1348,7 +1348,7 @@ Dos ajustes propios del frontend 3D, en `state.Preferences`, persistidos en
   Reactivarlo recupera los de la última vez. El rótulo nombra la mitad que se
   nota; el campo nombra las dos, porque gobierna también `_persist_filters`.
 
-Como el menú de Configuración, se edita sobre una **copia**
+Como los menús de Cuentas y Tiendas, se edita sobre una **copia**
 (`_gui3d_prefs = dataclasses.replace(self.prefs)`) y solo se aplica al pulsar
 "Guardar", así que salir con B descarta. Antes se guardaba en el acto y era el
 único menú que se comportaba así.
@@ -1370,7 +1370,7 @@ pasó: un lote de pruebas sandboxeó `XDG_DATA_HOME`/`CONFIG`/`CACHE` pero se
 dejó `XDG_STATE_HOME`, y como `gui3d.json` vive en `state_dir()` acabó escrito
 en el directorio real del usuario. `HOME` cubre las cuatro de una vez.
 
-## Settings menu (Opciones → Configuración)
+## Config menus (Opciones → Cuentas / Tiendas)
 
 There are **two** menus over the same config, and Cuentas comes first in
 Opciones — nothing loads without credentials, so everything else in that menu
@@ -1378,7 +1378,7 @@ operates on games that do not exist yet.
 
 - **Cuentas** (`build_accounts_items`): IGDB id/secret, Steam user id/API key,
   and login rows for GOG/Epic/Amazon.
-- **Configuración** (`build_settings_items`): the four store checkboxes.
+- **Tiendas** (`build_settings_items`): the four store checkboxes.
 
 Each mirrors the matching TUI screen (`tui/screens/accounts.py`,
 `tui/screens/configuration.py`).
@@ -1389,6 +1389,13 @@ token, so the API key is needed either way. Showing it like GOG implied that
 going through the browser finished the job. `SETTINGS_ACCOUNTS` and
 `accounts.CON_SESION` both exclude it; `sessions_summary()` iterates
 `CON_SESION` and not `Stores` for the same reason.
+
+**Every "Opciones → X" string in a user-facing message must name a menu that
+exists, and the right one.** When credentials moved to Cuentas, half a dozen
+warnings kept pointing at Configuración through an entire refactor — and those
+are precisely the lines someone reads when nothing works.
+`tests/test_indicaciones.py` greps the source for them and fails on both
+mistakes: a menu that no longer exists, and credentials pointed at Tiendas.
 
 Both menus share `self._settings` and `_save_settings` (`_open_config_form`).
 One copy per menu would mean saving in one clobbers what was edited in the

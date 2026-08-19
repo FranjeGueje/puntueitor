@@ -106,7 +106,7 @@ def _log_session_header(frontend: str) -> None:
     if not activas:
         logger.warning(
             "no hay ninguna tienda activa: no se cargará ningún juego "
-            "(Opciones → Configuración)"
+            "(Opciones → Tiendas)"
         )
 
     faltan = missing_credentials(config)
@@ -114,7 +114,7 @@ def _log_session_header(frontend: str) -> None:
         logger.warning(
             f"faltan credenciales: {', '.join(faltan)}. "
             "Sin ellas esas tiendas no se pueden consultar "
-            "(Opciones → Configuración)"
+            "(Opciones → Cuentas)"
         )
     else:
         logger.info("Credenciales: todas configuradas")

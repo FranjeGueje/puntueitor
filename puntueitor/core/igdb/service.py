@@ -18,7 +18,7 @@ class IGDBError(RuntimeError):
     Fallo hablando con IGDB, con el mensaje ya listo para enseñar.
 
     Se parte en dos subclases porque lo que el usuario tiene que hacer es
-    distinto y opuesto: con `IGDBAuthError` hay que ir a Configuración a tocar
+    distinto y opuesto: con `IGDBAuthError` hay que ir a Cuentas a tocar
     las credenciales, y con `IGDBUnavailableError` no hay nada que tocar, hay
     que esperar o mirar la red. Antes las dos eran el mismo `RuntimeError` con
     el texto en crudo de la librería.
@@ -84,7 +84,7 @@ class IGDBService:
         if not self.client_id or not self.client_secret:
             raise IGDBAuthError(
                 "faltan las credenciales de IGDB (Client ID y Client Secret). "
-                "Ponlas en Opciones → Configuración"
+                "Ponlas en Opciones → Cuentas"
             )
 
         try:
@@ -112,7 +112,7 @@ class IGDBService:
             if is_auth_error(e):
                 raise IGDBAuthError(
                     "IGDB ha rechazado las credenciales. Comprueba el Client "
-                    "ID y el Client Secret en Opciones → Configuración"
+                    "ID y el Client Secret en Opciones → Cuentas"
                 ) from e
             # Sin código de estado no se puede afirmar cuál de las dos cosas
             # es; se cuenta lo que se sabe y no se inventa un culpable.

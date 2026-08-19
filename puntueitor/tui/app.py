@@ -51,7 +51,7 @@ class PuntueitorApp(App):
     CSS_PATH = "styles.tcss"
     BINDINGS = [
         ("p", "select_scoring", "Puntueitor"),
-        ("c", "configure", "Configurar"),
+        ("c", "configure", "Tiendas"),
         ("a", "accounts", "Cuentas"),
         ("o", "toggle_hidden", "Ocultos"),
         ("s", "sort_library", "Ordenar"),
@@ -107,7 +107,7 @@ class PuntueitorApp(App):
 
         if missing:
             self.notify(
-                f"Configuración incompleta. Presiona 'c' para configurar. Faltan: {', '.join(missing)}",
+                f"Faltan credenciales. Pulsa 'a' (Cuentas) para ponerlas: {', '.join(missing)}",
                 severity="warning"
             )
 
@@ -800,7 +800,10 @@ class PuntueitorApp(App):
     def _check_config(self) -> bool:
         config = ConfigManager().get
         if not all([config.steam_api_key, config.steam_user_id, config.igdb_client_id, config.igdb_client_secret]):
-            self.notify("Error: Configuración incompleta. Faltan credenciales de Steam o IGDB.", severity="error")
+            self.notify(
+                "Faltan credenciales de Steam o IGDB. Pulsa 'a' para ponerlas.",
+                severity="error",
+            )
             return False
         return True
 

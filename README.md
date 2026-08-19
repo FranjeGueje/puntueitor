@@ -3,7 +3,7 @@
   <img src="https://github.com/FranjeGueje/puntueitor/actions/workflows/tests.yml/badge.svg" alt="Tests">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/plataforma-linux-lightgrey" alt="Linux">
-  <img src="https://img.shields.io/badge/versión-2.0.0-orange" alt="Version 2.0.0">
+  <img src="https://img.shields.io/badge/versión-3.0.0-orange" alt="Version 3.0.0">
 </p>
 
 <h1 align="center">🎮 Puntueitor</h1>
@@ -174,7 +174,7 @@ mientras.
 ## ⚙️ Configuración
 
 Al arrancar por primera vez, abre el diálogo de configuración —`c` en la TUI,
-Select → Configuración en el carrusel— o edita a mano
+Select → Tiendas en el carrusel— o edita a mano
 `~/.config/puntueitor/config.json`. Las dos interfaces leen y escriben el
 mismo fichero:
 
@@ -269,7 +269,7 @@ ningún permiso, así que la clave haría falta igual. Sácala de
 | Tecla | Acción | Descripción |
 |---|---|---|
 | `p` | **Puntueitor** | Abre selector de sistema de puntuación |
-| `c` | **Configurar** | Qué tiendas se cargan |
+| `c` | **Tiendas** | Qué tiendas se cargan |
 | `a` | **Cuentas** | Credenciales de IGDB y Steam, y sesiones de GOG, Epic y Amazon |
 | `o` | **Ocultos** | Alterna visibilidad de juegos marcados como ocultos |
 | `s` | **Ordenar** | Diálogo de ordenación (nombre, puntuación, duración…) |
@@ -424,7 +424,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-556 tests (unitarios + integración) que cubren:
+563 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -513,12 +513,14 @@ su licencia junto al fichero:
 
 **Datos** — [IGDB](https://www.igdb.com) (fichas y carátulas),
 [HowLongToBeat](https://howlongtobeat.com) (duración) y las APIs de Steam,
-GOG, Epic Games y Amazon (bibliotecas y reseñas). Las de GOG, Epic y Amazon
-no están documentadas por sus dueños: son las que usan
+GOG, Epic Games y Amazon (bibliotecas y reseñas).
+
+**Las APIs de GOG, Epic y Amazon las averiguaron ellos** —sus dueños no las
+documentan—, y sin ese trabajo tres de las cuatro tiendas no funcionarían:
 [gogdl](https://github.com/Heroic-Games-Launcher/heroic-gogdl),
 [Legendary](https://github.com/derrod/legendary) y
-[Nile](https://github.com/imLinguin/nile). Puntueitor no está asociado con
-ninguno de ellos.
+[Nile](https://github.com/imLinguin/nile). Puntueitor no usa su código ni
+está asociado con ellos; se les nombra porque se lo han ganado.
 
 **Hecho con** [Panda3D](https://www.panda3d.org) y
 [Textual](https://textual.textualize.io).

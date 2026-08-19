@@ -1656,7 +1656,7 @@ class App(ShowBase):
         elif key == "set3d:save":
             self._save_gui3d_settings()
         elif key.startswith(("set:", "login:")):
-            # Las dos van al menú de Configuración: `set:` son los campos que
+            # Las dos van a los menús de configuración: `set:` son los campos que
             # se editan y `login:` las filas de CUENTAS. Cuando esto solo
             # miraba `set:`, elegir una tienda no hacía nada visible — el
             # `else` de abajo se limitaba a apuntarlo en el log.
@@ -1954,7 +1954,7 @@ class App(ShowBase):
         "Puntueitor3D" dentro de Opciones: los ajustes propios del carrusel.
 
         Se edita sobre una COPIA y solo se aplica al dar a "Guardar", igual
-        que el menú de Configuración y los formularios de scoring. Así salir
+        que los menús de Cuentas y Tiendas y los formularios de scoring. Así salir
         con B descarta, que es lo que espera quien ya conoce el resto de
         menús — antes estos dos ajustes se aplicaban al instante y eran la
         excepción.
@@ -2016,7 +2016,7 @@ class App(ShowBase):
         self._open_config_form(self.accounts_menu, menus.build_accounts_items)
 
     def _open_settings_menu(self) -> None:
-        """"Configuración": qué tiendas se cargan."""
+        """"Tiendas": qué tiendas se cargan."""
         self._open_config_form(self.settings_menu, menus.build_settings_items)
 
     def _open_config_form(self, menu, builder) -> None:

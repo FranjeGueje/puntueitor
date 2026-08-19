@@ -179,8 +179,24 @@ class TestCreditos:
 
     def test_it_credits_where_the_data_comes_from(self):
         texto = " ".join(i.label for i in menus.build_credits_items())
-        for fuente in ("IGDB", "HowLongToBeat", "Steam", "Heroic"):
+        for fuente in ("IGDB", "HowLongToBeat", "Steam"):
             assert fuente in texto
+
+    def test_it_credits_the_projects_that_documented_the_store_apis(self):
+        """
+        Las APIs de GOG, Epic y Amazon no las documentan sus dueños: están
+        aquí porque legendary, gogdl y nile las averiguaron y lo publicaron.
+        No usamos su código —su licencia no obliga a nada— y aun así se les
+        nombra, porque sin ellos tres de las cuatro tiendas no funcionarían.
+        """
+        texto = " ".join(i.label for i in menus.build_credits_items())
+        for proyecto in ("legendary", "gogdl", "nile"):
+            assert proyecto in texto
+
+    def test_heroic_is_no_longer_credited(self):
+        """Ya no se lee nada suyo: acreditarlo sería mentir sobre la fuente."""
+        texto = " ".join(i.label for i in menus.build_credits_items())
+        assert "Heroic" not in texto
 
 
 class TestEditorRapido:

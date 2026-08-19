@@ -165,7 +165,7 @@ def load_library(
     if not providers:
         logger.warning(
             "no hay ninguna tienda activa: no hay nada que cargar "
-            "(Opciones → Configuración)"
+            "(Opciones → Tiendas)"
         )
 
     total_emitidos = 0

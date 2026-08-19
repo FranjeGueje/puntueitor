@@ -1,9 +1,10 @@
 """
-Qué tiendas se cargan.
+Qué tiendas se cargan. En el carrusel es Opciones → Tiendas.
 
 Las credenciales y las sesiones se fueron a la pantalla de Cuentas (tecla
 `a`): son otra cosa —con qué te identificas, no qué quieres ver— y se tocan
-en otro momento.
+en otro momento. Por eso esta pantalla dejó de llamarse "Configuración": ya
+no configura nada más que esto.
 """
 from textual.app import ComposeResult
 from textual.containers import Center, Horizontal, Middle, Vertical
@@ -38,7 +39,7 @@ class ConfigurationScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "Configuración"
+        self.title = "Tiendas"
         config = ConfigManager().get
 
         self.query_one("#store-steam", Checkbox).value = config.steam_is_active
@@ -62,7 +63,7 @@ class ConfigurationScreen(Screen):
         config.amazon_is_active = self.query_one("#store-amazon", Checkbox).value
 
         manager.save()
-        self.app.notify("Configuración guardada correctamente.", severity="information")
+        self.app.notify("Tiendas guardadas correctamente.", severity="information")
         self.dismiss()
 
     def action_cancel(self) -> None:
