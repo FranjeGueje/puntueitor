@@ -460,59 +460,66 @@ class TestMenuConfiguracion:
 
 class TestSettingsDispatch:
     """
-    Que elegir una fila de CUENTAS llegue de verdad a `_activate_setting`.
+    Que elegir una fila de CUENTAS llegue de verdad al módulo `accounts_ui`.
 
     `_activate` es un despachador puro sobre la clave, así que se le puede
     llamar sin ventana pasándole un objeto de mentira por `self`. Este es el
     test que faltaba: los de arriba comprobaban que el menú pintaba las filas
     bien, y aun así elegirlas no hacía nada porque el despacho no las miraba.
+
+    Desde que Cuentas y Tiendas salieron a `gui3d/accounts_ui.py`, `_activate`
+    ya no llama a un método de `self`: llama a una función del módulo. Se
+    parchea ahí, no en la app de mentira.
     """
 
     class AppFalsa:
-        def __init__(self):
-            self.recibidas = []
-            self.menus_abiertos = []
-
-        def _activate_setting(self, key):
-            self.recibidas.append(key)
-
-        def _open_accounts_menu(self):
-            self.menus_abiertos.append("accounts")
-
-        def _open_settings_menu(self):
-            self.menus_abiertos.append("config")
+        pass
 
     @staticmethod
-    def _elegir(key):
-        from puntueitor.gui3d.app import App
+    def _elegir(key, monkeypatch):
+        from puntueitor.gui3d import accounts_ui, app as app_module
 
-        app = TestSettingsDispatch.AppFalsa()
-        App._activate(app, menu=None, key=key)
-        return app.recibidas
+        recibidas = []
+        monkeypatch.setattr(
+            accounts_ui, "activate_setting",
+            lambda app, k: recibidas.append(k),
+        )
+        app_module.App._activate(
+            TestSettingsDispatch.AppFalsa(), menu=None, key=key,
+        )
+        return recibidas
 
-    def test_choosing_a_store_reaches_the_login(self):
-        assert self._elegir("login:gog") == ["login:gog"]
+    def test_choosing_a_store_reaches_the_login(self, monkeypatch):
+        assert self._elegir("login:gog", monkeypatch) == ["login:gog"]
 
-    def test_the_text_fields_still_work(self):
-        assert self._elegir("set:steam_api_key") == ["set:steam_api_key"]
+    def test_the_text_fields_still_work(self, monkeypatch):
+        assert self._elegir("set:steam_api_key", monkeypatch) == ["set:steam_api_key"]
 
-    def test_every_account_row_is_routed(self):
+    def test_every_account_row_is_routed(self, monkeypatch):
         for store, _ in menus.SETTINGS_ACCOUNTS:
-            assert self._elegir(f"login:{store}") == [f"login:{store}"]
+            assert self._elegir(f"login:{store}", monkeypatch) == [f"login:{store}"]
 
     @staticmethod
-    def _abrir(key):
-        from puntueitor.gui3d.app import App
+    def _abrir(key, monkeypatch):
+        from puntueitor.gui3d import accounts_ui, app as app_module
 
-        app = TestSettingsDispatch.AppFalsa()
-        App._activate(app, menu=None, key=key)
-        return app.menus_abiertos
+        abiertos = []
+        monkeypatch.setattr(
+            accounts_ui, "open_accounts_menu", lambda app: abiertos.append("accounts"),
+        )
+        monkeypatch.setattr(
+            accounts_ui, "open_settings_menu", lambda app: abiertos.append("config"),
+        )
+        app_module.App._activate(
+            TestSettingsDispatch.AppFalsa(), menu=None, key=key,
+        )
+        return abiertos
 
-    def test_the_two_option_entries_open_their_own_menu(self):
+    def test_the_two_option_entries_open_their_own_menu(self, monkeypatch):
         """
         Son dos menús distintos sobre la misma configuración. Si "accounts"
         no estuviera enrutado, elegirlo no haría nada visible — que es
         exactamente lo que pasó con las filas de CUENTAS.
         """
-        assert self._abrir("accounts") == ["accounts"]
-        assert self._abrir("config") == ["config"]
+        assert self._abrir("accounts", monkeypatch) == ["accounts"]
+        assert self._abrir("config", monkeypatch) == ["config"]

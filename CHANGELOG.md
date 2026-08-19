@@ -159,6 +159,9 @@ con su carpeta.
   sitios de `app.py` seguían usando el nombre viejo — el formulario de
   configurar un sistema (tecla X) se habría roto en el carrusel.
 
+- Cuentas, Tiendas y los ajustes de Puntueitor3D salen de `gui3d/app.py` a
+  `gui3d/accounts_ui.py`.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`

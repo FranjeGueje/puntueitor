@@ -1027,6 +1027,16 @@ moved things that do not belong together and broken an already-shipped slice.
 Extract by actual call graph, not by comment. Read who calls what before
 deciding a slice's boundary.
 
+## `gui3d.3d` names break naive extraction regexes
+
+Moving `_open_gui3d_menu` et al. to `accounts_ui.py`, a regex written as
+`[a-z_]+` to strip the `self`/`_` prefix from method names silently skipped
+every method with `gui3d` in its name — a digit inside an identifier is not
+in that character class. `[a-z0-9_]+` fixed it. Cost: four functions kept
+their old `_method(self)` shape inside the new module until a second pass
+caught it via `hasattr(App, ...)` failing on the ones that DID move but not
+the ones that silently didn't — check the diff, not just "tests pass".
+
 ## Neither frontend reimplements a core service
 
 `tui/app.py:_enrich_worker` used to be a hand-copy of

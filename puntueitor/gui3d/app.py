@@ -17,7 +17,6 @@ Ejecutar con:
     python -m puntueitor.gui3d.app --fhd
 """
 import argparse
-import dataclasses
 import logging
 import re
 import sys
@@ -164,7 +163,7 @@ from puntueitor.core.models import Stores
 from puntueitor.core.services import unknown_actions
 from puntueitor.core.services.game_actions import forget_game
 from puntueitor.core.services.library_ops import active_stores, is_in_active_stores
-from puntueitor.gui3d import backup_ui, menus, scoring_ui, state
+from puntueitor.gui3d import accounts_ui, backup_ui, menus, scoring_ui, state
 from puntueitor.gui3d.filters import (
     TRISTATE_LABELS,
     Filters,
@@ -1587,7 +1586,7 @@ class App(ShowBase):
             if menu is self.scoring_config_menu:
                 scoring_ui.toggle_config_genre(self, item)
             elif menu is self.settings_menu:
-                self._toggle_setting_store(item)
+                accounts_ui.toggle_setting_store(self, item)
             else:
                 self._on_game_flag_toggled(item)
             return
@@ -1603,11 +1602,11 @@ class App(ShowBase):
     def _activate(self, menu: Menu, key: str) -> None:
         """Qué hace elegir un elemento de menú."""
         if key == "accounts":
-            self._open_accounts_menu()
+            accounts_ui.open_accounts_menu(self)
         elif key == "config":
-            self._open_settings_menu()
+            accounts_ui.open_settings_menu(self)
         elif key == "gui3d":
-            self._open_gui3d_menu()
+            accounts_ui.open_gui3d_menu(self)
         elif key == "advanced":
             self._push_menu(self.advanced_menu)
         elif key == "credits":
@@ -1658,13 +1657,13 @@ class App(ShowBase):
         elif key == menus.CONFIRM_YES_KEY:
             self._run_confirmed_action()
         elif key == "set3d:save":
-            self._save_gui3d_settings()
+            accounts_ui.save_gui3d_settings(self)
         elif key.startswith(("set:", "login:")):
             # Las dos van a los menús de configuración: `set:` son los campos que
             # se editan y `login:` las filas de CUENTAS. Cuando esto solo
             # miraba `set:`, elegir una tienda no hacía nada visible — el
             # `else` de abajo se limitaba a apuntarlo en el log.
-            self._activate_setting(key)
+            accounts_ui.activate_setting(self, key)
         elif menu is self.scoring_menu:
             scoring_ui.apply_scorer(self, key)
         else:
@@ -1735,7 +1734,7 @@ class App(ShowBase):
         elif menu is self.scoring_config_menu:
             scoring_ui.adjust_config_value(self, item, direction)
         elif menu is self.gui3d_menu:
-            self._adjust_gui3d_setting(item, direction)
+            accounts_ui.adjust_gui3d_setting(self, item, direction)
 
     def _focused_repeats(self) -> bool:
         """
@@ -1763,7 +1762,7 @@ class App(ShowBase):
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
-        self._persist_filters()
+        accounts_ui.persist_filters(self)
         if not self.carousel.visible_count:
             self.notifier.show("Ningún juego coincide")
         else:
@@ -1777,7 +1776,7 @@ class App(ShowBase):
         self._close_all_menus()
         self._apply_order(reset_selection=True)
         self._on_selection_changed()
-        self._persist_filters()
+        accounts_ui.persist_filters(self)
         self.notifier.show("Filtros limpiados")
 
     def _apply_sort(self, sort_key: str) -> None:
@@ -1941,221 +1940,6 @@ class App(ShowBase):
         self.notifier.show(sorting.group_label(criterion, group))
 
     # ── Ajustes del frontend 3D ──
-
-    def _persist_filters(self) -> None:
-        """
-        Guarda los filtros, si el usuario quiere que se recuerden.
-
-        Con "Cargar filtros al inicio" en No NO se borra lo que ya hubiera
-        guardado, solo se deja de escribir: así, al volver a activarlo, se
-        recuperan los de la última vez en lugar de empezar de cero.
-        """
-        if self.prefs.remember_filters:
-            state.save_filters(self.filters)
-
-    def _open_gui3d_menu(self) -> None:
-        """
-        "Puntueitor3D" dentro de Opciones: los ajustes propios del carrusel.
-
-        Se edita sobre una COPIA y solo se aplica al dar a "Guardar", igual
-        que los menús de Cuentas y Tiendas y los formularios de scoring. Así salir
-        con B descarta, que es lo que espera quien ya conoce el resto de
-        menús — antes estos dos ajustes se aplicaban al instante y eran la
-        excepción.
-        """
-        self._gui3d_prefs = dataclasses.replace(self.prefs)
-        self.gui3d_menu.set_items(menus.build_gui3d_items(self._gui3d_prefs))
-        self._push_menu(self.gui3d_menu)
-
-    def _adjust_gui3d_setting(self, item, direction: int) -> None:
-        """Rota el ajuste enfocado, SOLO en la copia en edición."""
-        if item.key == "set3d:score_source":
-            fuentes = state.SCORE_SOURCES
-            actual = fuentes.index(self._gui3d_prefs.score_source)
-            self._gui3d_prefs.score_source = fuentes[
-                (actual + direction) % len(fuentes)
-            ]
-        elif item.key == "set3d:remember_filters":
-            self._gui3d_prefs.remember_filters = (
-                not self._gui3d_prefs.remember_filters
-            )
-        else:
-            return
-
-        self._refresh_gui3d_menu()
-
-    def _save_gui3d_settings(self) -> None:
-        """
-        Aplica los ajustes editados: los guarda y repinta las cajas.
-
-        El repintado va aquí y no al cambiar el valor porque hasta ahora no
-        había nada que aplicar: la copia era solo intención. `set_score_source`
-        no hace nada si la nota no ha cambiado, así que guardar sin haber
-        tocado esa opción no cuesta recorrer las cajas.
-        """
-        self.prefs = self._gui3d_prefs
-        state.save_preferences(self.prefs)
-        self.carousel.set_score_source(
-            self.prefs.score_source, self._labels_visible,
-        )
-        self.notifier.show("Configuración guardada")
-        logger.info(f"gui3d: ajustes guardados: {self.prefs}")
-        self._pop_menu()
-
-    def _refresh_gui3d_menu(self) -> None:
-        """Repinta los valores sin rehacer el menú, para no perder el foco."""
-        nuevos = {
-            item.key: item for item in menus.build_gui3d_items(self._gui3d_prefs)
-        }
-        for item in self.gui3d_menu.items:
-            nuevo = nuevos.get(item.key)
-            if nuevo is not None:
-                item.value = nuevo.value
-        self.gui3d_menu.refresh_values()
-
-    # ── Configuración de la aplicación ──
-
-    def _open_accounts_menu(self) -> None:
-        """"Cuentas": credenciales de IGDB y Steam, y sesiones de tienda."""
-        self._open_config_form(self.accounts_menu, menus.build_accounts_items)
-
-    def _open_settings_menu(self) -> None:
-        """"Tiendas": qué tiendas se cargan."""
-        self._open_config_form(self.settings_menu, menus.build_settings_items)
-
-    def _open_config_form(self, menu, builder) -> None:
-        """
-        Abre uno de los dos formularios sobre la configuración.
-
-        Los dos comparten `self._settings` y `_save_settings`: son ventanas
-        distintas a los mismos ajustes, y tener una copia por menú haría que
-        guardar en uno pisara lo editado en el otro.
-
-        Se edita sobre una COPIA de los valores guardados y solo se escribe
-        al dar a "Guardar", así que salir con B deja la configuración como
-        estaba. Importa más aquí que en otros formularios: lo que hay dentro
-        son las credenciales, y perderlas por un roce en un botón sería
-        bastante peor que perder un peso de scoring.
-        """
-        config = ConfigManager().get
-        self._settings = {
-            field: getattr(config, field)
-            for field, _, _ in menus.SETTINGS_TEXTS
-        }
-        self._settings.update({
-            field: getattr(config, field) for field, _ in menus.SETTINGS_STORES
-        })
-        self._sessions = self._read_sessions()
-        # Se recuerda con qué se pintó para poder repintarlo igual sin tener
-        # que preguntar cuál de los dos menús está delante.
-        self._settings_builder = builder
-
-        menu.set_items(builder(self._settings, self._sessions))
-        self._push_menu(menu)
-
-    def _refresh_settings_menu(self) -> None:
-        """Repinta los valores sin rehacer el menú, para no perder el foco."""
-        builder = getattr(self, "_settings_builder", menus.build_settings_items)
-        menu = (
-            self.accounts_menu
-            if builder is menus.build_accounts_items
-            else self.settings_menu
-        )
-        nuevos = {
-            item.key: item
-            for item in builder(self._settings, self._sessions)
-        }
-        for item in menu.items:
-            nuevo = nuevos.get(item.key)
-            if nuevo is not None:
-                item.value = nuevo.value
-        menu.refresh_values()
-
-    @staticmethod
-    def _read_sessions() -> dict:
-        """En qué tiendas hay sesión, para pintarlo al lado de cada una."""
-        from puntueitor.core.services import accounts
-
-        return accounts.sessions_summary()
-
-    def _activate_setting(self, key: str) -> None:
-        if key == "set:save":
-            self._save_settings()
-            return
-
-        if key.startswith("login:"):
-            self._start_login(key.removeprefix("login:"))
-            return
-
-        field = key.removeprefix("set:")
-        label = next(
-            (etiqueta for campo, etiqueta, _ in menus.SETTINGS_TEXTS if campo == field),
-            field,
-        )
-        self._open_text_prompt(
-            title=label,
-            initial=str(self._settings.get(field) or ""),
-            on_accept=lambda text: self._set_setting(field, text),
-        )
-
-    def _start_login(self, store: str) -> None:
-        """
-        Abre el navegador y deja el teclado esperando lo que hay que pegar.
-
-        Encadenado a propósito: si el aviso y el campo fueran dos pasos, el
-        usuario volvería del navegador con el portapapeles cargado a un menú
-        que ya no está esperando nada.
-        """
-        from puntueitor.core.services import accounts
-
-        resultado = accounts.open_login(store)
-        self.notifier.show(resultado.mensaje)
-        if not resultado.ok:
-            return
-
-        self._open_text_prompt(
-            title=f"Pega aquí lo que te ha dado {store.upper()}",
-            initial="",
-            on_accept=lambda texto: self._finish_login(store, texto),
-        )
-
-    def _finish_login(self, store: str, texto: str) -> None:
-        from puntueitor.core.services import accounts
-
-        resultado = accounts.finish_login(store, texto)
-        self.notifier.show(resultado.mensaje)
-        self._sessions = self._read_sessions()
-        self._refresh_settings_menu()
-
-    def _set_setting(self, field: str, text: str) -> None:
-        if field == "steam_user_id":
-            # Numérico; lo que no se entienda se queda en 0, igual que la
-            # TUI, en vez de dejar la configuración a medio escribir.
-            self._settings[field] = int(text) if text.isdigit() else 0
-        else:
-            self._settings[field] = text
-        self._refresh_settings_menu()
-
-    def _toggle_setting_store(self, item) -> None:
-        field = item.payload.get("field")
-        if field is not None:
-            self._settings[field] = item.checked
-
-    def _save_settings(self) -> None:
-        manager = ConfigManager()
-        config = manager.get
-        for field, value in self._settings.items():
-            setattr(config, field, value)
-        manager.save()
-
-        # Las tiendas marcadas deciden qué se ve (ver `_visible_entries`),
-        # así que el cambio tiene que notarse ya, sin reiniciar.
-        self._apply_order()
-        self._on_selection_changed()
-
-        self.notifier.show("Configuración guardada")
-        logger.info("gui3d: configuración de la aplicación guardada")
-        self._pop_menu()
 
     # ── Menú de juego ──
 
