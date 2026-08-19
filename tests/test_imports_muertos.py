@@ -11,6 +11,7 @@ de algo de lo que ya no depende, y eso es justo lo que uno mira para
 entender un fichero.
 """
 import ast
+import re
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -51,7 +52,13 @@ def _muertos(fichero: Path) -> list[str]:
             continue
         # Última red: que no aparezca en ninguna otra línea (anotaciones en
         # cadena, docstrings que lo nombran).
-        if any(nombre in l for i, l in enumerate(lineas, 1) if i != linea):
+        #
+        # Con LÍMITES DE PALABRA, no subcadena: buscando `backup` a secas,
+        # un `backup_ui` en otra línea lo daba por usado y el import muerto
+        # se colaba. Pasó de verdad al sacar las copias de seguridad de
+        # `gui3d/app.py`.
+        suelto = re.compile(rf"\b{re.escape(nombre)}\b")
+        if any(suelto.search(l) for i, l in enumerate(lineas, 1) if i != linea):
             continue
         muertos.append(f"{fichero.relative_to(RAIZ)}:{linea} {nombre}")
     return muertos

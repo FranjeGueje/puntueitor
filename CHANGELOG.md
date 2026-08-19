@@ -149,6 +149,10 @@ con su carpeta.
   cuando además traía su propia capa de dominio; borrada esa, lo que quedaba
   era un cliente HTTP como el otro.
 
+- Las copias de seguridad del carrusel salen de `gui3d/app.py` a su propio
+  módulo. Es el primer trozo de una clase que tenía 148 métodos, y se empieza
+  por lo que menos toca el resto.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`

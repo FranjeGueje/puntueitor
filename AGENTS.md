@@ -994,6 +994,27 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Splitting gui3d/app.py: one slice at a time, and each must be testable
+
+`App` had 148 methods in 3.595 lines. It is being split gradually, starting
+with the areas that touch the rest least. First one out: backups
+(`gui3d/backup_ui.py`).
+
+**The point is not moving lines, it is that the slice becomes testable.** A
+mixin would have split the file and changed nothing else. Instead the
+functions take the app as an explicit argument (`ask_backup_path(app)`), so
+what they need from it is visible in the signature — `_open_text_prompt`,
+`_ask_confirm`, `notifier` — and a fake app is enough to test the whole flow
+with no window. The decisions that are really decisions (`parse_path`,
+`backup_message`) come out as pure functions.
+
+The method must **leave** `App`, not be wrapped by a thin delegating one;
+there is a test asserting `App` no longer has them. Dispatch in `_activate`
+points at the module.
+
+Verify each slice against a real offscreen Panda3D window, not only fakes:
+that is what catches a dispatch that no longer arrives.
+
 ## Neither frontend reimplements a core service
 
 `tui/app.py:_enrich_worker` used to be a hand-copy of

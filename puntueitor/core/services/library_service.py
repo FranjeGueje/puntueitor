@@ -1,6 +1,6 @@
 import logging
 
-from puntueitor.core.models import Game, Library, ScoringContext
+from puntueitor.core.models import Library, ScoringContext
 from puntueitor.core.protocols import GameScorer
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.filters import NameFilter, DurationFilter, FinishedFilter, FavoriteFilter, BacklogFilter, HiddenFilter

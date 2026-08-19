@@ -432,7 +432,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-627 tests (unitarios + integración) que cubren:
+640 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
