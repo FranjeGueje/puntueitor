@@ -153,6 +153,12 @@ con su carpeta.
   módulo. Es el primer trozo de una clase que tenía 148 métodos, y se empieza
   por lo que menos toca el resto.
 
+- El scoring del carrusel sale de `gui3d/app.py` a `gui3d/scoring_ui.py`.
+  Al escribir sus tests apareció un bug real de la sesión anterior: el
+  catálogo de scoring había renombrado `config` a `config_form`, y cinco
+  sitios de `app.py` seguían usando el nombre viejo — el formulario de
+  configurar un sistema (tecla X) se habría roto en el carrusel.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`

@@ -1015,6 +1015,18 @@ points at the module.
 Verify each slice against a real offscreen Panda3D window, not only fakes:
 that is what catches a dispatch that no longer arrives.
 
+## The section comments in gui3d/app.py are not reliable boundaries
+
+Found while planning the second slice (scoring): the block marked
+`# ── Scoring ──` also contained `_on_game_flag_toggled` (game menu
+checkboxes) and `_ask_confirm`/`_run_confirmed_action` (the generic yes/no
+dialog, already used by `backup_ui.py`). The block marked `# ── Editor
+Rápido ──` contains Unknown-mode methods too. Cutting by comment would have
+moved things that do not belong together and broken an already-shipped slice.
+
+Extract by actual call graph, not by comment. Read who calls what before
+deciding a slice's boundary.
+
 ## Neither frontend reimplements a core service
 
 `tui/app.py:_enrich_worker` used to be a hand-copy of

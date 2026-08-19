@@ -160,12 +160,11 @@ from puntueitor.core.repository.library_repository import (
     LibraryRepository,
 )
 from puntueitor.core.config import DEFAULT_AVAILABLE_HOURS, ConfigManager
-from puntueitor.core.models import Library, Stores
+from puntueitor.core.models import Stores
 from puntueitor.core.services import unknown_actions
 from puntueitor.core.services.game_actions import forget_game
 from puntueitor.core.services.library_ops import active_stores, is_in_active_stores
-from puntueitor.core.services.library_service import LibraryService
-from puntueitor.gui3d import backup_ui, menus, scoring_config, scoring_info, state
+from puntueitor.gui3d import backup_ui, menus, scoring_ui, state
 from puntueitor.gui3d.filters import (
     TRISTATE_LABELS,
     Filters,
@@ -173,7 +172,7 @@ from puntueitor.gui3d.filters import (
     parse_duration,
 )
 from puntueitor.gui3d.gamepad_input import GamepadInput
-from puntueitor.gui3d.menu import Menu, MenuItem
+from puntueitor.gui3d.menu import Menu
 from puntueitor.gui3d.notifications import Notifier
 from puntueitor.gui3d.text_prompt import TextPrompt
 from puntueitor.gui3d.real_data import build_real_entries
@@ -1033,7 +1032,7 @@ class App(ShowBase):
             menu.move_focus(direction)
             if menu is self.scoring_menu:
                 # La descripción sigue al foco, como en la TUI.
-                self._refresh_scoring_description()
+                scoring_ui.refresh_scoring_description(self)
         else:
             self.active_carousel.move(direction)
             self._on_selection_changed()
@@ -1342,7 +1341,7 @@ class App(ShowBase):
         self._refresh_menu_accent()
         menu.open()
         self._menu_stack.append(menu)
-        self._show_scoring_description(menu is self.scoring_menu)
+        scoring_ui.show_scoring_description(self, menu is self.scoring_menu)
         # El foco cambia de dueño, así que se corta la repetición en curso:
         # si no, la pulsación que abrió el menú seguiría contando como
         # mantenida y el foco arrancaría ya moviéndose solo.
@@ -1374,9 +1373,9 @@ class App(ShowBase):
             self.active_menu.show()
             # Al volver del formulario de configuración se vuelve a ver la
             # lista de sistemas, y con ella su descripción.
-            self._show_scoring_description(self.active_menu is self.scoring_menu)
+            scoring_ui.show_scoring_description(self, self.active_menu is self.scoring_menu)
         else:
-            self._show_scoring_description(False)
+            scoring_ui.show_scoring_description(self, False)
             # Se vació la pila: se vuelve al carrusel, así que la ficha
             # deshace la animación y reaparece.
             self._animate_ficha(visible=True)
@@ -1528,7 +1527,7 @@ class App(ShowBase):
         if self._typing:
             return
         if self.active_menu is self.scoring_menu:
-            self._configure_focused_scoring()
+            scoring_ui.configure_focused_scoring(self)
         elif not self._blocked_in_unknown_mode("Filtrar"):
             if self._blocked_in_editor("Filtrar"):
                 return
@@ -1586,7 +1585,7 @@ class App(ShowBase):
             # el menú de juego marcan un estado del juego (y se guardan en la
             # base de datos), y en el de configuración, un género preferido.
             if menu is self.scoring_config_menu:
-                self._toggle_config_genre(item)
+                scoring_ui.toggle_config_genre(self, item)
             elif menu is self.settings_menu:
                 self._toggle_setting_store(item)
             else:
@@ -1642,7 +1641,7 @@ class App(ShowBase):
         elif key == "filter:clear":
             self._clear_filters()
         elif key.startswith("cfg:"):
-            self._activate_config(key)
+            scoring_ui.activate_config(self, key)
         elif key == menus.UNKNOWN_TITLE_KEY:
             self._prompt_unknown_search()
         elif key == menus.UNKNOWN_STORE_KEY:
@@ -1667,7 +1666,7 @@ class App(ShowBase):
             # `else` de abajo se limitaba a apuntarlo en el log.
             self._activate_setting(key)
         elif menu is self.scoring_menu:
-            self._apply_scorer(key)
+            scoring_ui.apply_scorer(self, key)
         else:
             logger.info(f"gui3d: elegido {key!r} en el menú {menu.title!r}")
 
@@ -1734,7 +1733,7 @@ class App(ShowBase):
             )
             self._refresh_filter_menu()
         elif menu is self.scoring_config_menu:
-            self._adjust_config_value(item, direction)
+            scoring_ui.adjust_config_value(self, item, direction)
         elif menu is self.gui3d_menu:
             self._adjust_gui3d_setting(item, direction)
 
@@ -2158,220 +2157,7 @@ class App(ShowBase):
         logger.info("gui3d: configuración de la aplicación guardada")
         self._pop_menu()
 
-    # ── Scoring ──
-
-    def _refresh_scoring_description(self) -> None:
-        """
-        Pone en la franja de abajo la descripción del sistema enfocado.
-
-        Se llama tras cada movimiento del foco (ver `_navigate`), que es lo
-        que hace que la descripción vaya cambiando al recorrer la lista, como
-        en la TUI.
-        """
-        item = self.scoring_menu.focused_item
-        scorer = scoring_info.BY_KEY.get(item.key) if item else None
-        if scorer is None:
-            return
-        self.scoring_title_text.setText(scorer.title)
-        self.scoring_desc_text.setText(scoring_info.description_for(scorer.key))
-
-    def _show_scoring_description(self, visible: bool) -> None:
-        if visible:
-            self._refresh_scoring_description()
-            self.scoring_frame.show()
-        else:
-            self.scoring_frame.hide()
-
-    def _apply_scorer(self, scoring_key: str) -> None:
-        """
-        A sobre un sistema: puntúa la biblioteca y ordena el carrusel por esa
-        nota.
-
-        Se delega en `LibraryService.score`, el mismo camino que usa la TUI,
-        para que las dos interfaces den exactamente el mismo ranking con la
-        misma configuración. De ahí sale una nota por juego, y con ella se
-        arma un criterio de ordenación al vuelo (`sorting.scorer_criterion`).
-        """
-        scorer = scoring_info.BY_KEY.get(scoring_key)
-        if scorer is None:
-            return
-
-        library = Library.from_iterable(
-            entry.game for entry in self.entries if entry.game is not None
-        )
-        _scored, scores = LibraryService(self.library_repository).score(
-            library, scoring_key,
-        )
-        if not scores:
-            self.notifier.show("Ese sistema no ha podido puntuar")
-            logger.warning(f"gui3d: {scoring_key!r} no devolvió puntuaciones")
-            return
-
-        self._sort_criterion = sorting.scorer_criterion(scorer.name, scores)
-        self._close_all_menus()
-        self._apply_order(reset_selection=True)
-        self._on_selection_changed()
-        self.notifier.show(f"Puntuado: {scorer.name}")
-        logger.info(f"gui3d: biblioteca puntuada con {scoring_key!r}")
-
-    def _configure_focused_scoring(self) -> None:
-        """X sobre un sistema: abre su formulario de configuración."""
-        item = self.scoring_menu.focused_item
-        scorer = scoring_info.BY_KEY.get(item.key) if item else None
-        if scorer is None:
-            return
-        self._open_scoring_config(scorer)
-
-    def _open_scoring_config(self, scorer) -> None:
-        """
-        Abre el formulario del sistema `scorer`, con los valores que tiene
-        guardados ahora mismo.
-
-        Los pesos se editan sobre una copia (`_config_weights`) y solo se
-        escriben en la configuración al dar a "Guardar": repartir tres
-        porcentajes obliga a pasar por estados que no suman 100 (bajas uno
-        para subir otro), así que guardar en cada cambio sería imposible.
-        """
-        self._config_scorer = scorer
-        if scorer.config == "weights":
-            self._config_weights = scoring_config.weights_of(scorer.key)
-        elif scorer.config == "hours":
-            self._config_hours = scoring_config.available_hours()
-        elif scorer.config == "genres":
-            self._config_genres = scoring_config.preferred_genres()
-
-        self.scoring_config_menu.set_title(f"{scorer.name}: configuración")
-        self.scoring_config_menu.set_items(self._build_config_items())
-        self._push_menu(self.scoring_config_menu)
-
-    def _build_config_items(self) -> list:
-        """Las filas del formulario, según el tipo de configuración."""
-        scorer = self._config_scorer
-        if scorer.config == "weights":
-            items = [
-                MenuItem(
-                    f"cfg:weight:{field}", label, kind="cycle",
-                    value=f"{self._config_weights[field]:g} %",
-                    payload={"weight": field},
-                )
-                for field, label in scoring_config.WEIGHT_FIELDS
-            ]
-            total = scoring_config.weights_sum(self._config_weights)
-            ok = scoring_config.weights_are_valid(self._config_weights)
-            # La suma se enseña siempre, como en la TUI: sin ella no hay
-            # forma de saber por qué "Guardar" no hace nada.
-            items.append(MenuItem(
-                "cfg:sum",
-                f"Suma: {total:g} %" + ("" if ok else "  (debe ser 100)"),
-                kind="header",
-            ))
-        elif scorer.config == "hours":
-            items = [MenuItem(
-                "cfg:hours", "Horas disponibles", kind="cycle",
-                value=f"{self._config_hours:g} h",
-                payload={"hours": True},
-            )]
-        else:
-            genres = scoring_config.all_genres()
-            items = [
-                MenuItem(
-                    f"cfg:genre:{genre}", genre, kind="check",
-                    checked=genre in self._config_genres,
-                    payload={"genre": genre},
-                )
-                for genre in genres
-            ] or [MenuItem("cfg:nogenres", "No hay géneros en la caché", kind="header")]
-
-        items.append(MenuItem("cfg:sep", "", kind="header"))
-        items.append(MenuItem("cfg:save", "Guardar"))
-        items.append(MenuItem("cfg:reset", "Restaurar valores por defecto"))
-        return items
-
-    def _refresh_config_menu(self) -> None:
-        """
-        Repinta los valores del formulario SIN rehacerlo.
-
-        Con `set_items` el foco volvía al primer elemento en cada cambio, así
-        que al mantener izquierda sobre "Usuarios" el primer paso lo bajaba a
-        él y los siguientes ya iban a "Críticos", en silencio. Aquí se
-        modifican el valor (y la etiqueta de la suma, que también cambia) de
-        los elementos que ya existen y se repintan sus textos, que es lo que
-        conserva el foco.
-        """
-        menu = self.scoring_config_menu
-        nuevos = {item.key: item for item in self._build_config_items()}
-        for item in menu.items:
-            nuevo = nuevos.get(item.key)
-            if nuevo is None:
-                continue
-            item.value = nuevo.value
-            item.label = nuevo.label
-        menu.refresh_values()
-
-    def _activate_config(self, key: str) -> None:
-        """Qué hace elegir (A) cada fila del formulario de configuración."""
-        if key == "cfg:save":
-            self._save_scoring_config()
-        elif key == "cfg:reset":
-            self._reset_scoring_config()
-        # Los pesos y las horas no responden a A: se ajustan con izquierda y
-        # derecha (ver `_adjust_config_value`).
-
-    def _adjust_config_value(self, item, direction: int) -> None:
-        """
-        Sube o baja de uno en uno el valor de la fila enfocada.
-
-        Antes cada valor abría un cuadro de texto; con dos flechas se cambia
-        en el sitio y no hay que salir del formulario para retocar un número.
-
-        Los pesos se limitan a 0-100 (un porcentaje fuera de ahí no
-        significa nada) y las horas no bajan de 1 (cero horas disponibles
-        haría que ningún juego encajara). Ni unos ni otras se guardan aquí:
-        eso es cosa de "Guardar".
-        """
-        if "weight" in item.payload:
-            field = item.payload["weight"]
-            current = self._config_weights[field]
-            self._config_weights[field] = min(100.0, max(0.0, current + direction))
-        elif "hours" in item.payload:
-            self._config_hours = max(1.0, self._config_hours + direction)
-        else:
-            return
-        self._refresh_config_menu()
-
-    def _toggle_config_genre(self, item) -> None:
-        genre = item.payload.get("genre")
-        if genre is None:
-            return
-        if item.checked:
-            self._config_genres.add(genre)
-        else:
-            self._config_genres.discard(genre)
-
-    def _save_scoring_config(self) -> None:
-        scorer = self._config_scorer
-        if scorer.config == "weights":
-            if not scoring_config.save_weights(scorer.key, self._config_weights):
-                self.notifier.show("Los pesos deben sumar 100")
-                return
-        elif scorer.config == "hours":
-            scoring_config.save_available_hours(self._config_hours)
-        elif scorer.config == "genres":
-            scoring_config.save_preferred_genres(self._config_genres)
-
-        self.notifier.show("Configuración guardada")
-        self._pop_menu()
-
-    def _reset_scoring_config(self) -> None:
-        scorer = self._config_scorer
-        if scorer.config == "weights":
-            self._config_weights = scoring_config.default_weights(scorer.key)
-        elif scorer.config == "hours":
-            self._config_hours = DEFAULT_AVAILABLE_HOURS
-        else:
-            self._config_genres = set()
-        self._refresh_config_menu()
-        self.notifier.show("Valores restaurados")
+    # ── Menú de juego ──
 
     def _on_game_flag_toggled(self, item) -> None:
         """
