@@ -1628,7 +1628,11 @@ class App(ShowBase):
             self._run_confirmed_action()
         elif key == "set3d:save":
             self._save_gui3d_settings()
-        elif key.startswith("set:"):
+        elif key.startswith(("set:", "login:")):
+            # Las dos van al menú de Configuración: `set:` son los campos que
+            # se editan y `login:` las filas de CUENTAS. Cuando esto solo
+            # miraba `set:`, elegir una tienda no hacía nada visible — el
+            # `else` de abajo se limitaba a apuntarlo en el log.
             self._activate_setting(key)
         elif menu is self.scoring_menu:
             self._apply_scorer(key)

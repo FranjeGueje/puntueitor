@@ -329,3 +329,98 @@ class TestAdvancedMenu:
     def test_no_warning_by_default(self):
         items = menus.build_confirm_items(("¿seguro?",), "Sí")
         assert not any(i.color for i in items)
+
+
+class TestSettingsAccounts:
+    """
+    Las filas de CUENTAS del menú de Configuración.
+
+    Se prueban las CLAVES, no el aspecto: son el contrato con `_activate` de
+    `gui3d/app.py`, y ya pasó que el menú pintaba las filas bien pero el
+    despacho solo miraba las que empiezan por `set:`. Elegir una tienda no
+    abría nada y el fallo solo se veía como una línea suelta en el log.
+    """
+
+    @staticmethod
+    def _cuentas(values=None, sessions=None):
+        return [
+            item for item in menus.build_settings_items(values or {}, sessions)
+            if item.key.startswith("login:")
+        ]
+
+    def test_there_is_one_row_per_store(self):
+        assert [i.key for i in self._cuentas()] == [
+            "login:gog", "login:epic", "login:amazon", "login:steam",
+        ]
+
+    def test_the_prefix_is_the_one_the_dispatcher_routes(self):
+        """
+        `app._activate` enruta por prefijo (`set:` y `login:`). Si alguien
+        renombra estas claves sin tocar allí, las filas dejan de hacer nada
+        sin que falle nada.
+        """
+        for item in self._cuentas():
+            assert item.key.startswith(("set:", "login:"))
+
+    def test_the_state_of_each_store_is_shown(self):
+        estados = {
+            i.key: i.value
+            for i in self._cuentas(sessions={"gog": True, "epic": False})
+        }
+        assert estados["login:gog"] == "Iniciada"
+        assert estados["login:epic"] == "Sin sesión"
+
+    def test_without_state_they_all_show_as_logged_out(self):
+        assert all(i.value == "Sin sesión" for i in self._cuentas())
+
+    def test_they_are_plain_rows_not_checkboxes(self):
+        """
+        Una casilla iría a `_toggle_setting_store` y no abriría el navegador:
+        `_on_confirm` desvía las de tipo `check` antes de llegar a `_activate`.
+        """
+        assert all(i.kind not in ("check", "cycle") for i in self._cuentas())
+
+    def test_they_carry_the_store_in_the_payload(self):
+        tiendas = [i.payload["store"] for i in self._cuentas()]
+        assert tiendas == ["gog", "epic", "amazon", "steam"]
+
+    def test_the_header_is_there(self):
+        items = menus.build_settings_items({})
+        cabeceras = [i.label for i in items if i.kind == "header"]
+        assert "CUENTAS" in cabeceras
+
+
+class TestSettingsDispatch:
+    """
+    Que elegir una fila de CUENTAS llegue de verdad a `_activate_setting`.
+
+    `_activate` es un despachador puro sobre la clave, así que se le puede
+    llamar sin ventana pasándole un objeto de mentira por `self`. Este es el
+    test que faltaba: los de arriba comprobaban que el menú pintaba las filas
+    bien, y aun así elegirlas no hacía nada porque el despacho no las miraba.
+    """
+
+    class AppFalsa:
+        def __init__(self):
+            self.recibidas = []
+
+        def _activate_setting(self, key):
+            self.recibidas.append(key)
+
+    @staticmethod
+    def _elegir(key):
+        from puntueitor.gui3d.app import App
+
+        app = TestSettingsDispatch.AppFalsa()
+        App._activate(app, menu=None, key=key)
+        return app.recibidas
+
+    def test_choosing_a_store_reaches_the_login(self):
+        assert self._elegir("login:gog") == ["login:gog"]
+
+    def test_the_text_fields_still_work(self):
+        assert self._elegir("set:steam_api_key") == ["set:steam_api_key"]
+
+    def test_every_account_row_is_routed(self):
+        for store, _ in menus.SETTINGS_ACCOUNTS:
+            assert self._elegir(f"login:{store}") == [f"login:{store}"]
