@@ -87,6 +87,7 @@ def refresh_library(
     try:
         enrichers.append(SteamScoreEnricher(
             overwrite=False, igdb_cacher=repo.igdb_cacher,
+            extras_cacher=repo.extras_cacher,
         ))
     except Exception as error:  # noqa: BLE001
         logger.warning(f"no se pudo preparar las notas de Steam: {error}")

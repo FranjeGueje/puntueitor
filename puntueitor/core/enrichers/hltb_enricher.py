@@ -29,6 +29,13 @@ class HLTBEnricher(GameEnricher):
     y lo anota en `extras.hltb_checked` para no repetir la búsqueda en cada
     arranque. Antes escribía 0, que los scorers interpretaban como una duración
     real de cero horas y colocaba esos juegos en lo más alto del ranking.
+
+    Y cuando SÍ lo encuentra, lo guarda. Parece obvio y no lo era: durante
+    mucho tiempo solo se persistían los fallos, así que los aciertos se
+    consultaban una y otra vez en cada recarga —los mismos juegos, con el
+    mismo resultado— y el dato se perdía al cerrar. El guardado que hay en
+    `refresh_library` no llega a tiempo: los enrichers corren en un pool
+    aparte y terminan después de que el juego haya pasado por ahí.
     """
 
     def __init__(
@@ -47,6 +54,16 @@ class HLTBEnricher(GameEnricher):
     def _mark_checked(self, game: Game) -> None:
         if self.extras_cacher is not None:
             self.extras_cacher.mark_hltb_checked(game.igdb_id)
+
+    def _save(self, game: Game, duration: float) -> None:
+        """
+        Guarda la duración averiguada para no volver a preguntarla nunca.
+
+        `save_extras` hace UPSERT con COALESCE, así que pasar solo la duración
+        no toca las notas de Steam que hubiera en esa misma fila.
+        """
+        if self.extras_cacher is not None:
+            self.extras_cacher.save_extras(game.igdb_id, duration_hours=duration)
 
     def enrich(self, game: Game) -> Game:
         if not self.overwrite:
@@ -90,4 +107,5 @@ class HLTBEnricher(GameEnricher):
             return game
 
         logger.info(f"Enriched {game.title} with {duration}h from HLTB")
+        self._save(game, duration)
         return replace(game, duration_hours=duration)

@@ -108,8 +108,13 @@ class TestEpic:
 
         assert list(provider.fetch(refresh=True)) == []
 
-    def test_dlcs_are_left_out(self):
-        """Una expansión no es un título aparte que puntuar."""
+    def test_dlcs_and_applications_come_through(self):
+        """
+        Paridad con la v2, que leía la caché de Heroic y sí los traía (497
+        entradas, 41 marcadas como DLC). Filtrarlos aquí los hacía
+        desaparecer sin dejar rastro: ni carrusel ni Desconocidos. Quien
+        decide si algo es identificable es el resolver.
+        """
         assets = [{"appName": "DLC", "namespace": "ns", "catalogItemId": "cid"}]
         ficha = {"cid": {
             "title": "Expansión",
@@ -118,7 +123,9 @@ class TestEpic:
         }}
         provider = EpicProvider(session=SesionDoble(), http=HttpDoble(assets, ficha))
 
-        assert list(provider.fetch(refresh=True)) == []
+        juegos = provider.fetch(refresh=True)
+
+        assert [j["title"] for j in juegos] == ["Expansión"]
 
     def test_a_game_whose_catalog_entry_fails_does_not_sink_the_rest(self):
         """Son cientos de peticiones; perder una no puede tirar el refresco."""
@@ -199,3 +206,114 @@ class TestSteamProvider:
     def test_the_appid_is_the_identifier(self):
         assert SteamProvider.store_id({"appid": 400, "name": "Portal"}) == "400"
         assert SteamProvider.store_title({"appid": 400, "name": "Portal"}) == "Portal"
+
+
+class CacherDoble:
+    """Un `StoreLibraryCacher` de mentira con lo de la vez anterior."""
+
+    def __init__(self, guardados=None):
+        self._guardados = guardados
+        self.escrituras = []
+
+    def get_games(self):
+        return self._guardados
+
+    def save_games(self, juegos, id_of, title_of):
+        self.escrituras.append(list(juegos))
+
+
+class TestEpicNoRepitePreguntas:
+    """
+    Epic obliga a una petición por juego para saber su título, y eso eran
+    ~450 peticiones en cada recarga. Pero título, enlace y `catalog_item_id`
+    no cambian: son la ficha pública del juego. Reutilizar lo ya guardado
+    deja la recarga en una petición más los juegos nuevos.
+    """
+
+    ASSET = {"appName": "Batfish", "namespace": "ns", "catalogItemId": "cid"}
+    CACHEADA = {
+        "app_name": "Batfish", "title": "Telltale Batman",
+        "store_url": "https://x/batman", "namespace": "ns",
+        "catalog_item_id": "cid",
+    }
+
+    def test_a_known_game_is_not_asked_for_again(self):
+        http = HttpDoble([self.ASSET])       # solo contesta a los assets
+        provider = EpicProvider(
+            session=SesionDoble(), http=http,
+            cacher=CacherDoble([self.CACHEADA]),
+        )
+
+        juegos = provider.fetch(refresh=True)
+
+        assert juegos == [self.CACHEADA]
+        assert len(http.peticiones) == 1, "no debía consultar el catálogo"
+
+    def test_a_new_game_is_asked_for(self):
+        nuevo = {"appName": "Otro", "namespace": "ns", "catalogItemId": "c2"}
+        ficha = {"c2": {"title": "Otro juego", "productSlug": "otro"}}
+        http = HttpDoble([self.ASSET, nuevo], ficha)
+        provider = EpicProvider(
+            session=SesionDoble(), http=http,
+            cacher=CacherDoble([self.CACHEADA]),
+        )
+
+        titulos = [j["title"] for j in provider.fetch(refresh=True)]
+
+        assert sorted(titulos) == ["Otro juego", "Telltale Batman"]
+        assert len(http.peticiones) == 2, "solo el catálogo del nuevo"
+
+    def test_a_changed_catalog_id_is_asked_for_again(self):
+        """Si Epic le cambia la ficha al juego, la caché ya no vale."""
+        cambiado = {"appName": "Batfish", "namespace": "ns", "catalogItemId": "OTRO"}
+        ficha = {"OTRO": {"title": "Telltale Batman Remasterizado"}}
+        http = HttpDoble([cambiado], ficha)
+        provider = EpicProvider(
+            session=SesionDoble(), http=http,
+            cacher=CacherDoble([self.CACHEADA]),
+        )
+
+        juegos = provider.fetch(refresh=True)
+
+        assert juegos[0]["title"] == "Telltale Batman Remasterizado"
+
+    def test_a_failed_lookup_falls_back_to_what_was_known(self):
+        """
+        Sin esto, una ficha que falla borra el juego de la biblioteca Y de la
+        caché, porque `save_games` reemplaza la tienda entera.
+        """
+        cambiado = {"appName": "Batfish", "namespace": "ns", "catalogItemId": "OTRO"}
+
+        class HttpQueFallaElCatalogo(HttpDoble):
+            def get(self, url, **kwargs):
+                if "catalog" in url:
+                    raise OSError("boom")
+                return super().get(url, **kwargs)
+
+        provider = EpicProvider(
+            session=SesionDoble(), http=HttpQueFallaElCatalogo([cambiado]),
+            cacher=CacherDoble([self.CACHEADA]),
+        )
+
+        assert provider.fetch(refresh=True) == [self.CACHEADA]
+
+    def test_the_failures_are_reported(self, caplog):
+        import logging
+
+        nuevo = {"appName": "Nuevo", "namespace": "ns", "catalogItemId": "c9"}
+
+        class HttpQueFallaElCatalogo(HttpDoble):
+            def get(self, url, **kwargs):
+                if "catalog" in url:
+                    raise OSError("boom")
+                return super().get(url, **kwargs)
+
+        provider = EpicProvider(
+            session=SesionDoble(), http=HttpQueFallaElCatalogo([nuevo]),
+            cacher=CacherDoble([]),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            provider.fetch(refresh=True)
+
+        assert any("no se pudieron consultar" in r.message for r in caplog.records)

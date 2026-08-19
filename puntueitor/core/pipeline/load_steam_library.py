@@ -170,13 +170,30 @@ def load_library(
 
     total_emitidos = 0
 
+    # Las cuatro tiendas piden A LA VEZ. Son independientes entre sí y la red
+    # es casi todo el tiempo de una recarga: yendo en serie, el tiempo muerto
+    # era la SUMA (31 s medidos) y así es el MÁXIMO. El orden en que se
+    # EMITEN los juegos no cambia —se sigue recorriendo `providers` en
+    # orden—, solo se adelanta el trabajo de red de las que vienen detrás.
+    #
+    # Escriben en la caché de tiendas desde cuatro hilos, y eso está cubierto:
+    # `BaseCacher` abre una conexión por hilo, en modo WAL y con
+    # `busy_timeout`.
+    pedidos = ThreadPoolExecutor(max_workers=max(len(providers), 1))
+    pendientes = {
+        store: pedidos.submit(
+            provider.fetch, refresh=refresh or force_store_refresh,
+        )
+        for store, provider in providers.items()
+    }
+
     try:
         for store, provider in providers.items():
             label = provider.LABEL
             try:
                 # `fetch` no lanza: ya cae solo a la copia guardada y lo
                 # explica en el log. El try es por si falla el resolver.
-                raw_items = provider.fetch(refresh=refresh or force_store_refresh)
+                raw_items = pendientes[store].result()
                 if not raw_items:
                     continue
                 resolver = RESOLVERS[store](igdb=engine, cache_file=CACHE_RESOLVERS)
@@ -198,6 +215,12 @@ def load_library(
                 "dicen por qué (credenciales, conexión o tiendas sin datos)"
             )
 
-        # No esperamos a los enrichers: siguen escribiendo por el callback.
+        # Los pedidos de tienda SÍ se esperan: si la carga se corta a medias
+        # (el usuario cierra, o revienta un resolver), dejar hilos escribiendo
+        # en la caché de tiendas mientras se cierra el proceso es cómo se
+        # corrompe una base de datos.
+        pedidos.shutdown(wait=True)
+
+        # Los enrichers no: siguen escribiendo por el callback.
         if executor:
             executor.shutdown(wait=False)

@@ -298,3 +298,115 @@ class TestSteamScoreEnricher:
             assert result is not g
             assert g.steamdb_score is None
             assert result.steamdb_score == 80.0
+
+
+# ── Persistencia: lo averiguado NO se puede perder ──────────────
+
+class CacherEspia:
+    """Un `ExtrasCacher` de mentira que apunta lo que le mandan guardar."""
+
+    def __init__(self, comprobados=()):
+        self.guardados = []
+        self.marcados = []
+        self._comprobados = set(comprobados)
+
+    def save_extras(self, igdb_id, **campos):
+        self.guardados.append((igdb_id, campos))
+
+    def mark_hltb_checked(self, igdb_id):
+        self.marcados.append(igdb_id)
+
+    def is_hltb_checked(self, igdb_id):
+        return igdb_id in self._comprobados
+
+
+class TestSeGuardaLoAveriguado:
+    """
+    El fallo que estos tests cubren: los enrichers solo persistían los
+    FALLOS. Un acierto se devolvía en memoria y ahí se quedaba, así que los
+    mismos juegos se volvían a consultar en cada recarga —con el mismo
+    resultado— y el dato se perdía al cerrar. El guardado de
+    `refresh_library` no llega a tiempo: los enrichers van en un pool aparte
+    y terminan cuando el juego ya ha pasado por ahí.
+    """
+
+    def test_hltb_saves_the_duration_it_found(self):
+        cacher = CacherEspia()
+        enricher = HLTBEnricher(
+            client=MockHLTBClient(SAMPLE_HLTB_ENTRY), extras_cacher=cacher,
+        )
+
+        enricher.enrich(Game(igdb_id=7, title="Test Game"))
+
+        assert cacher.guardados == [(7, {"duration_hours": 15.0})]
+
+    def test_hltb_does_not_ask_again_once_it_is_known(self):
+        """La condición de la que depende todo el ahorro."""
+        cliente = MockHLTBClient(SAMPLE_HLTB_ENTRY)
+        preguntas = []
+        cliente.search = lambda t: preguntas.append(t)
+
+        HLTBEnricher(client=cliente).enrich(
+            Game(igdb_id=7, title="Test Game", duration_hours=15.0),
+        )
+
+        assert preguntas == []
+
+    def test_a_network_failure_is_not_remembered(self):
+        """
+        Un fallo transitorio no puede marcarse como comprobado ni guardarse:
+        si no, un rato sin internet dejaría esos juegos sin duración para
+        siempre.
+        """
+        class ClienteQueFalla(HLTBClient):
+            def search(self, title):
+                raise ConnectionError("sin red")
+
+        cacher = CacherEspia()
+        HLTBEnricher(client=ClienteQueFalla(), extras_cacher=cacher).enrich(
+            Game(igdb_id=7, title="Test Game"),
+        )
+
+        assert cacher.guardados == []
+        assert cacher.marcados == []
+
+    def test_not_found_is_remembered_as_checked(self):
+        """Lo que ya funcionaba: un fallo legítimo sí se recuerda."""
+        cacher = CacherEspia()
+        HLTBEnricher(client=MockHLTBClient(None), extras_cacher=cacher).enrich(
+            Game(igdb_id=7, title="Test Game"),
+        )
+
+        assert cacher.marcados == [7]
+        assert cacher.guardados == []
+
+    def test_it_works_without_a_cacher(self):
+        """El cacher es opcional y no puede ser obligatorio para enriquecer."""
+        resultado = HLTBEnricher(client=MockHLTBClient(SAMPLE_HLTB_ENTRY)).enrich(
+            Game(igdb_id=7, title="Test Game"),
+        )
+
+        assert resultado.duration_hours == 15.0
+
+    def test_steam_scores_are_saved_too(self):
+        """Mismo fallo, y no se veía porque no deja rastro en el log."""
+        cacher = CacherEspia()
+        enricher = SteamScoreEnricher(extras_cacher=cacher)
+        enricher._fetch_score = lambda steam_id: (77.7, 90, 900, 100)
+
+        enricher.enrich(Game(igdb_id=7, title="X", stores={Stores.STEAM: "400"}))
+
+        assert len(cacher.guardados) == 1
+        igdb_id, campos = cacher.guardados[0]
+        assert igdb_id == 7
+        assert campos["steamdb_score"] == 77.7
+        assert campos["review_pos"] == 900
+
+    def test_steam_saves_nothing_when_the_request_fails(self):
+        cacher = CacherEspia()
+        enricher = SteamScoreEnricher(extras_cacher=cacher)
+        enricher._fetch_score = lambda steam_id: None
+
+        enricher.enrich(Game(igdb_id=7, title="X", stores={Stores.STEAM: "400"}))
+
+        assert cacher.guardados == []

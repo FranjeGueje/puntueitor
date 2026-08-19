@@ -25,9 +25,11 @@ NAMESPACE_UNREAL = "ue"
 
 #: Cuántas fichas de catálogo se piden a la vez. Epic obliga a una petición
 #: por juego (el catálogo va por `namespace`, y casi cada juego tiene el
-#: suyo), así que sin paralelismo una biblioteca grande tarda minutos. Ocho
-#: es lo bastante rápido sin que Epic empiece a devolver 429.
-HILOS = 8
+#: suyo). Medido con 451 juegos: 21,8 s con 8 hilos, 11,1 s con 16 y 5,6 s
+#: con 32. Se elige 16 —la mitad del tiempo— y no 32, para no apretar una API
+#: que no es nuestra; el grueso del ahorro viene de no volver a pedir lo ya
+#: sabido (ver `_fichas`), no de abrir más conexiones.
+HILOS = 16
 
 TIMEOUT = 20
 
@@ -71,12 +73,72 @@ class EpicProvider(LibraryProvider):
         if not interesantes:
             return []
 
-        with ThreadPoolExecutor(max_workers=HILOS) as pool:
-            fichas = list(pool.map(
-                lambda asset: self._ficha(asset, headers), interesantes,
-            ))
+        return self._fichas(interesantes, headers)
 
-        return [juego for juego in fichas if juego is not None]
+    def _fichas(self, assets: list[dict], headers: dict) -> list[dict]:
+        """
+        La ficha de cada asset, reutilizando lo que ya se sabía.
+
+        Aquí está el grueso del ahorro. La lista de assets no trae títulos,
+        así que hay que pedir el catálogo juego a juego —cientos de
+        peticiones—, pero **el título, el enlace y el `catalog_item_id` de un
+        juego no cambian**: son su ficha pública en la tienda. Como
+        `StoreLibraryCacher` guarda el diccionario crudo entero, la ficha de
+        la vez anterior ya está en disco.
+
+        Así que solo se pide el catálogo de los assets que no estén en la
+        caché o cuyo `catalog_item_id` haya cambiado. Una recarga normal pasa
+        de ~450 peticiones a las de los juegos nuevos, y nada más.
+        """
+        conocidas = self._cacheadas()
+        nuevos, reutilizadas = [], []
+        for asset in assets:
+            cacheada = conocidas.get(asset.get("appName"))
+            if cacheada and cacheada.get("catalog_item_id") == asset.get("catalogItemId"):
+                reutilizadas.append(cacheada)
+            else:
+                nuevos.append(asset)
+
+        if reutilizadas:
+            logger.info(
+                f"Epic: {len(reutilizadas)} fichas ya conocidas, "
+                f"{len(nuevos)} por consultar"
+            )
+
+        fichas, fallos = [], 0
+        if nuevos:
+            with ThreadPoolExecutor(max_workers=HILOS) as pool:
+                for asset, ficha in zip(nuevos, pool.map(
+                    lambda a: self._ficha(a, headers), nuevos,
+                )):
+                    if ficha is not None:
+                        fichas.append(ficha)
+                        continue
+                    # La ficha no vino. Si la teníamos de antes, se usa esa:
+                    # sin esto el juego desaparecería de la biblioteca Y de la
+                    # caché, porque `save_games` reemplaza la tienda entera.
+                    fallos += 1
+                    anterior = conocidas.get(asset.get("appName"))
+                    if anterior is not None:
+                        fichas.append(anterior)
+
+        if fallos:
+            logger.warning(
+                f"Epic: {fallos} fichas no se pudieron consultar. Las que ya "
+                "se conocían se han conservado; el resto faltará hasta el "
+                "próximo refresco"
+            )
+
+        return reutilizadas + fichas
+
+    def _cacheadas(self) -> dict[str, dict]:
+        """Lo guardado de la vez anterior, indexado por `app_name`."""
+        guardadas = self._cacher.get_games() or ()
+        return {
+            juego["app_name"]: juego
+            for juego in guardadas
+            if isinstance(juego, dict) and juego.get("app_name")
+        }
 
     # ──────────────────────────────
     # Catálogo
@@ -84,7 +146,14 @@ class EpicProvider(LibraryProvider):
 
     def _ficha(self, asset: dict, headers: dict) -> dict | None:
         """
-        El asset con su nombre y su enlace de tienda, o None si no es un juego.
+        El asset con su nombre y su enlace de tienda.
+
+        **No se filtra nada por tipo.** Hubo un filtro que descartaba DLC y
+        aplicaciones, y era una regresión: la v2, que leía la caché de Heroic,
+        sí los traía —497 entradas, 41 marcadas como DLC—. Descartándolos aquí
+        no llegaban ni al carrusel ni a Desconocidos: desaparecían sin más.
+        Quien decide si un juego es identificable es el resolver, y lo que no
+        reconozca va a Desconocidos, que es justo para lo que está.
 
         Un fallo aquí se traga a propósito: son cientos de peticiones y que
         una se pierda no puede tirar el refresco entero. Ese juego se queda
@@ -112,7 +181,7 @@ class EpicProvider(LibraryProvider):
             return None
 
         item = (datos or {}).get(item_id)
-        if not isinstance(item, dict) or not self._es_juego(item):
+        if not isinstance(item, dict):
             return None
 
         return {
@@ -122,27 +191,6 @@ class EpicProvider(LibraryProvider):
             "namespace": namespace,
             "catalog_item_id": item_id,
         }
-
-    @staticmethod
-    def _es_juego(item: dict) -> bool:
-        """
-        Fuera todo lo que no sea un juego base.
-
-        `mainGameItem` solo lo traen los DLC —apunta al juego del que
-        cuelgan—, y sin este filtro cada expansión entraría como si fuera un
-        título aparte que puntuar.
-        """
-        if item.get("mainGameItem"):
-            return False
-
-        categorias = {
-            str(c.get("path", "")).lower()
-            for c in item.get("categories") or []
-            if isinstance(c, dict)
-        }
-        if "applications" in categorias and "games" not in categorias:
-            return False
-        return "addons" not in categorias
 
     @staticmethod
     def _store_url(item: dict) -> str:

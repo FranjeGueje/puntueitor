@@ -103,6 +103,25 @@ con su carpeta.
   a ningún juego tuyo en `library.sqlite`, que es la única base de datos que
   no se puede regenerar.
 
+- **Las duraciones de HowLongToBeat ya no se pierden.** Al acertar, el
+  enriquecedor devolvía el dato pero no lo guardaba —solo se persistían los
+  fallos—, así que los mismos juegos se consultaban en cada recarga, con el
+  mismo resultado, y se perdían al cerrar. Igual con las notas de Steam, que
+  además no dejaban rastro en el log. El guardado que había en
+  `refresh_library` no llegaba a tiempo: los enriquecedores corren en un pool
+  aparte y terminan después.
+- **Recargar es mucho más rápido**: de 31,3 s de red a ~2 s en una recarga
+  normal. Medido con una biblioteca de 1.336 juegos en cuatro tiendas.
+  - Epic no vuelve a preguntar por juegos que ya conoce: su título y su
+    enlace no cambian, y ya estaban guardados. De 22,6 s a 1,9 s.
+  - Las cuatro tiendas piden a la vez en lugar de una detrás de otra, así que
+    el tiempo muerto pasa de ser la suma a ser el máximo.
+  - Las páginas de GOG también van a la vez.
+- **Vuelven los DLC y las aplicaciones de Epic**, como en la 2.x: 495
+  entradas en lugar de 451. Se descartaban antes de llegar al identificador,
+  así que no aparecían ni en la biblioteca ni en Desconocidos. Lo que IGDB no
+  reconozca irá a Desconocidos, que para eso está.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`

@@ -21,9 +21,14 @@ class SteamScoreEnricher(GameEnricher):
         self,
         overwrite: bool = False,
         igdb_cacher: IGDBCacher | None = None,
+        extras_cacher=None,
     ):
         self.overwrite = overwrite
         self.igdb_cacher = igdb_cacher
+        # Sin esto las notas se volvían a pedir a Steam en cada recarga: el
+        # `replace` de abajo solo cambia el juego en memoria, y el guardado de
+        # `refresh_library` ya ha pasado cuando los enrichers terminan.
+        self.extras_cacher = extras_cacher
 
     def enrich(self, game: Game) -> Game:
         if (
@@ -44,6 +49,11 @@ class SteamScoreEnricher(GameEnricher):
             return game
 
         steamdb, review, pos, neg = scores
+        if self.extras_cacher is not None:
+            self.extras_cacher.save_extras(
+                game.igdb_id, steam_review=review, steamdb_score=steamdb,
+                review_pos=pos, review_neg=neg,
+            )
         return replace(
             game,
             steamdb_score=steamdb,
