@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 EPIC_STORE_URL_PREFIX = "https://www.epicgames.com/store/product/"
 
 
-class EpicHeroicResolver(BaseResolver):
-    """Resuelve juegos de Epic (via Heroic) contra IGDB, primero por slug."""
+class EpicResolver(BaseResolver):
+    """Resuelve juegos de Epic contra IGDB, primero por el slug de su tienda."""
 
     STORE = Stores.EPIC
 

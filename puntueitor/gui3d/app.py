@@ -1966,16 +1966,18 @@ class App(ShowBase):
         self._settings.update({
             field: getattr(config, field) for field, _ in menus.SETTINGS_STORES
         })
-        self._settings["heroic_path"] = config.heroic_path
+        self._sessions = self._read_sessions()
 
-        self.settings_menu.set_items(menus.build_settings_items(self._settings))
+        self.settings_menu.set_items(
+            menus.build_settings_items(self._settings, self._sessions)
+        )
         self._push_menu(self.settings_menu)
 
     def _refresh_settings_menu(self) -> None:
         """Repinta los valores sin rehacer el menú, para no perder el foco."""
         nuevos = {
             item.key: item
-            for item in menus.build_settings_items(self._settings)
+            for item in menus.build_settings_items(self._settings, self._sessions)
         }
         for item in self.settings_menu.items:
             nuevo = nuevos.get(item.key)
@@ -1983,21 +1985,61 @@ class App(ShowBase):
                 item.value = nuevo.value
         self.settings_menu.refresh_values()
 
+    @staticmethod
+    def _read_sessions() -> dict:
+        """En qué tiendas hay sesión, para pintarlo al lado de cada una."""
+        from puntueitor.core.services import accounts
+
+        return accounts.sessions_summary()
+
     def _activate_setting(self, key: str) -> None:
         if key == "set:save":
             self._save_settings()
             return
 
+        if key.startswith("login:"):
+            self._start_login(key.removeprefix("login:"))
+            return
+
         field = key.removeprefix("set:")
         label = next(
             (etiqueta for campo, etiqueta, _ in menus.SETTINGS_TEXTS if campo == field),
-            "Carpeta de Heroic o Relic",
+            field,
         )
         self._open_text_prompt(
             title=label,
             initial=str(self._settings.get(field) or ""),
             on_accept=lambda text: self._set_setting(field, text),
         )
+
+    def _start_login(self, store: str) -> None:
+        """
+        Abre el navegador y deja el teclado esperando lo que hay que pegar.
+
+        Encadenado a propósito: si el aviso y el campo fueran dos pasos, el
+        usuario volvería del navegador con el portapapeles cargado a un menú
+        que ya no está esperando nada.
+        """
+        from puntueitor.core.services import accounts
+
+        resultado = accounts.open_login(store)
+        self.notifier.show(resultado.mensaje)
+        if not resultado.ok:
+            return
+
+        self._open_text_prompt(
+            title=f"Pega aquí lo que te ha dado {store.upper()}",
+            initial="",
+            on_accept=lambda texto: self._finish_login(store, texto),
+        )
+
+    def _finish_login(self, store: str, texto: str) -> None:
+        from puntueitor.core.services import accounts
+
+        resultado = accounts.finish_login(store, texto)
+        self.notifier.show(resultado.mensaje)
+        self._sessions = self._read_sessions()
+        self._refresh_settings_menu()
 
     def _set_setting(self, field: str, text: str) -> None:
         if field == "steam_user_id":

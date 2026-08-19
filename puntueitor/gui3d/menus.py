@@ -332,6 +332,16 @@ SETTINGS_STORES = (
     ("amazon_is_active", "Amazon"),
 )
 
+#: Tiendas que se configuran iniciando sesión, en el orden en que se pintan.
+#: Steam va la última porque es la única que además necesita credenciales a
+#: mano, y así no parece que entrar sea todo lo que hay que hacer.
+SETTINGS_ACCOUNTS = (
+    ("gog", "GOG"),
+    ("epic", "Epic"),
+    ("amazon", "Amazon"),
+    ("steam", "Steam"),
+)
+
 #: Campos de texto: clave de config, etiqueta y si va tapado en la lista.
 SETTINGS_TEXTS = (
     ("igdb_client_id", "Client ID", False),
@@ -347,7 +357,7 @@ def _shown(value: str, secret: bool) -> str:
     return SECRET_MASK if secret else value
 
 
-def build_settings_items(values: dict) -> list[MenuItem]:
+def build_settings_items(values: dict, sessions: dict | None = None) -> list[MenuItem]:
     """
     El menú de configuración, con los mismos campos que la pantalla de la
     TUI (`gui/screens/configuration.py`) y en el mismo orden.
@@ -355,6 +365,10 @@ def build_settings_items(values: dict) -> list[MenuItem]:
     `values` son los valores EN EDICIÓN, no los guardados: como en el resto
     de formularios, se trabaja sobre una copia y solo se escribe al dar a
     "Guardar" (ver `app.App._open_settings_menu`).
+
+    `sessions` va aparte y NO se edita: iniciar sesión tiene efecto en el
+    momento —el token ya está guardado— y no puede deshacerse saliendo sin
+    guardar, así que mezclarlo con lo demás mentiría sobre lo que hace "B".
     """
     items = [MenuItem("sec_igdb", "IGDB", kind="header")]
     items += [
@@ -386,14 +400,17 @@ def build_settings_items(values: dict) -> list[MenuItem]:
         for field, label in SETTINGS_STORES
     ]
 
-    items.append(MenuItem("sec_heroic", "CARPETA DE HEROIC O RELIC", kind="header"))
-    items.append(MenuItem(
-        "set:heroic_path", "Carpeta",
-        # Vacío significa "búscala tú", no "sin poner"; se dice así en vez de
-        # con un N/A, que aquí se leería como un error.
-        value=values.get("heroic_path") or "auto",
-        payload={"field": "heroic_path", "secret": False},
-    ))
+    items.append(MenuItem("sec_accounts", "CUENTAS", kind="header"))
+    items += [
+        MenuItem(
+            f"login:{store}", label,
+            # El estado va donde en los demás va el valor: de un vistazo se
+            # ve cuál es la tienda que no trae juegos porque no has entrado.
+            value="Iniciada" if (sessions or {}).get(store) else "Sin sesión",
+            payload={"store": store},
+        )
+        for store, label in SETTINGS_ACCOUNTS
+    ]
 
     items.append(MenuItem("sec_end", "", kind="header"))
     items.append(MenuItem("set:save", "Guardar"))

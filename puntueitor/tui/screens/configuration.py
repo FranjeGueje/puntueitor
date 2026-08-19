@@ -20,6 +20,11 @@ class ConfigurationScreen(Screen):
                     yield Label("Client Secret")
                     yield Input(password=True, id="igdb-client-secret")
 
+                    yield Label(
+                        "GOG, Epic y Amazon se configuran en Cuentas (tecla A)",
+                        classes="section-title",
+                    )
+
                     yield Label("Configuración Steam", classes="section-title")
                     yield Label("Steam User ID (Numérico)")
                     yield Input(id="steam-user-id", type="number")
@@ -31,10 +36,6 @@ class ConfigurationScreen(Screen):
                     yield Checkbox("GOG", id="store-gog")
                     yield Checkbox("Epic", id="store-epic")
                     yield Checkbox("Amazon", id="store-amazon")
-
-                    yield Label("Carpeta de Heroic (opcional)", classes="section-title")
-                    yield Label("Deja vacío para auto-detectar")
-                    yield Input(id="heroic-path", placeholder="~/.config/heroic")
 
                     with Horizontal(id="config-buttons"):
                         yield Button("Guardar", variant="success", id="btn-save")
@@ -54,8 +55,6 @@ class ConfigurationScreen(Screen):
         self.query_one("#store-gog", Checkbox).value = config.gog_is_active
         self.query_one("#store-epic", Checkbox).value = config.epic_is_active
         self.query_one("#store-amazon", Checkbox).value = config.amazon_is_active
-
-        self.query_one("#heroic-path", Input).value = config.heroic_path or ""
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-save":
@@ -81,8 +80,6 @@ class ConfigurationScreen(Screen):
         config.gog_is_active = self.query_one("#store-gog", Checkbox).value
         config.epic_is_active = self.query_one("#store-epic", Checkbox).value
         config.amazon_is_active = self.query_one("#store-amazon", Checkbox).value
-
-        config.heroic_path = self.query_one("#heroic-path", Input).value
 
         manager.save()
         self.app.notify("Configuración guardada correctamente.", severity="information")

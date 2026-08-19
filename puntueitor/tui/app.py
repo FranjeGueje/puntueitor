@@ -11,6 +11,7 @@ from textual import work
 
 from puntueitor.tui.widgets.game_list import GameList
 from puntueitor.tui.widgets.game_detail import GameDetail
+from puntueitor.tui.screens.accounts import AccountsScreen
 from puntueitor.tui.screens.configuration import ConfigurationScreen
 from puntueitor.tui.screens.quit_confirmation import QuitConfirmation
 from puntueitor.tui.screens.sorting import SortingScreen
@@ -51,6 +52,7 @@ class PuntueitorApp(App):
     BINDINGS = [
         ("p", "select_scoring", "Puntueitor"),
         ("c", "configure", "Configurar"),
+        ("a", "accounts", "Cuentas"),
         ("o", "toggle_hidden", "Ocultos"),
         ("s", "sort_library", "Ordenar"),
         ("f", "filter_library", "Filtrar"),
@@ -358,6 +360,9 @@ class PuntueitorApp(App):
                 self.query_one(GameList).populate_games(self.current_library)
 
         self.push_screen(ConfigurationScreen(), repoblar)
+
+    def action_accounts(self) -> None:
+        self.push_screen(AccountsScreen())
 
     def action_toggle_hidden(self) -> None:
         game_list = self.query_one(GameList)

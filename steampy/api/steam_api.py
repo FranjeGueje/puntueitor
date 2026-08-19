@@ -4,7 +4,6 @@ import requests
 import time
 import threading
 
-from puntueitor.core.cachers.steam_user_cacher import SteamUserCacher
 from puntueitor.core.diagnostics import describe_error
 
 logger = logging.getLogger(__name__)
@@ -125,20 +124,18 @@ class SteamApi:
         steamid: int,
         include_appinfo: bool = True,
         include_played_free_games: bool = True,
-        use_cache: bool = True,
-        save_cache: bool = True,
     ) -> list[dict] | None:
         """
-        Juegos de un usuario.
-        Cachea los datos en cache/{steamid}.sqlite con esquema relacional.
+        Juegos en propiedad de un usuario.
+
+        Sin caché: de guardarla se encarga `SteamProvider`, en la misma base
+        que las otras tres tiendas. Aquí solo se habla con Steam.
+
+        Devuelve None si la petición falló —el porqué ya está en el log— y
+        lista vacía si Steam contestó pero sin juegos. Son dos casos
+        distintos: el primero se arregla solo cuando vuelva la red, y el
+        segundo casi siempre es un perfil en privado.
         """
-        user_cacher = SteamUserCacher(steamid)
-
-        if use_cache:
-            cached = user_cacher.get_all_games()
-            if cached:
-                return cached
-
         url = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
         params = {
             "json": 1,
@@ -164,10 +161,6 @@ class SteamApi:
                 "privado, o que el Steam ID no sea correcto. "
                 "Revísalo en Opciones → Configuración"
             )
-            return entry
-
-        logger.info(f"Steam: {len(entry)} juegos en la biblioteca de {steamid}")
-        if save_cache:
-            user_cacher.save_games(entry)
+            return []
 
         return entry

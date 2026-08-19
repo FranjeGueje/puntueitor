@@ -571,6 +571,8 @@ puntueitor/
 │   ├── selector/   # Game selection logic
 │   ├── cachers/    # SQLite, todos sobre BaseCacher
 │   ├── enrichers/  # HLTB + Steam score
+│   ├── providers/  # Store APIs → raw games (+ offline cache)
+│   ├── auth/       # Store OAuth sessions and token storage
 │   ├── resolvers/  # Steam, Epic, GOG, IGDB resolvers
 │   ├── mappers/    # Raw → Game transformation
 │   ├── pipeline/   # Orchestration pipelines
@@ -598,11 +600,12 @@ not smuggle a `±inf` into the sort key.
 
 ## Architecture Flow
 
-1. **Resolvers** fetch raw data from external APIs (Steam, Epic, GOG, HLTB)
-2. **Mappers** transform raw data → canonical `Game` model
-3. **Filters**, **Scoring**, **Enrichers** process the library
-4. **Selectors** choose the best game from candidates
-5. **Repository** persists the library to disk
+1. **Providers** fetch each store's library from its own API and cache it
+2. **Resolvers** identify each raw game against IGDB
+3. **Mappers** transform raw data → canonical `Game` model
+4. **Filters**, **Scoring**, **Enrichers** process the library
+5. **Selectors** choose the best game from candidates
+6. **Repository** persists the library to disk
 
 Key concepts documented in Spanish in `arquitectura.md`.
 
@@ -991,6 +994,46 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Store providers: the cache is the safety net, not an optimisation
+
+Three of the four store APIs (GOG, Epic, Amazon) are undocumented — they are
+the ones gogdl, Legendary and Nile use, and they can change without notice.
+`LibraryProvider.fetch()` therefore **never returns empty when it has cached
+data**: no network, expired session, or a store answering with zero games all
+fall back to the last good library and say so in the log. Only a refresh that
+comes back with games rewrites the cache.
+
+That last case is the non-obvious one. A store replying "you own nothing" is
+almost always a fault on their side, not a sold account, so `save_games()`
+keeps the previous copy when handed an empty list. Without it, one bad answer
+would wipe a library and the next startup would look like the user's fault.
+
+`fetch()` also **never raises**. `load_library` walks the four stores in one
+loop, and one store blowing up would take the ones behind it with it.
+
+A network failure while *renewing* a token is not an expired session
+(`OAuthSession.access_token`). If it were treated as one, a few minutes
+offline would force the user to log in again on all three stores.
+
+Providers emit the store's **raw dict**, with the keys the matching resolver
+already reads (`app_name`/`appid`, `title`, `store_url` on Epic). Do not
+"normalise" them into a common shape: the resolvers are what interpret them,
+and they would all break at once for nothing.
+
+## OAuth: why everything is copy-paste, including Steam
+
+GOG, Epic and Amazon pin their `redirect_uri` to a domain of their own — we
+use their official clients' credentials and cannot register `localhost`. The
+browser never comes back to us, so short of embedding a whole browser, pasting
+is the only way. Steam's OpenID *would* accept a local callback, and it still
+pastes: one gesture to learn and one path to maintain beats saving a single
+paste on one store out of four.
+
+`auth/paste.py` takes the whole URL, the JSON Epic displays, or a bare code.
+If the text is a URL or JSON that does *not* contain the code, it returns ""
+rather than passing the URL along as if it were one — that only earns a 400
+and makes the user think they picked the wrong account.
+
 ## Las tiendas marcadas deciden DOS cosas
 
 El ajuste "TIENDAS A CARGAR" (Opciones → Configuración) gobierna:
@@ -1270,6 +1313,10 @@ Guardar la copia es solo intención, no hay nada que pintar. Además
 `set_score_source` corta en seco si la nota no ha cambiado, así que guardar sin
 haber tocado esa opción no cuesta el recorrido.
 
+`tools/entorno-prueba.sh <dir>` monta un entorno aislado y arranca la app en
+él (`--3d`, `--shell`, `--copiar-config`, o `-- comando`). Úsalo para
+cualquier prueba manual en vez de lanzar la app a pelo.
+
 Al probar gui3d, **aislar con `HOME`, no enumerando variables `XDG_*`**. Ya
 pasó: un lote de pruebas sandboxeó `XDG_DATA_HOME`/`CONFIG`/`CACHE` pero se
 dejó `XDG_STATE_HOME`, y como `gui3d.json` vive en `state_dir()` acabó escrito
@@ -1278,9 +1325,14 @@ en el directorio real del usuario. `HOME` cubre las cuatro de una vez.
 ## Settings menu (Opciones → Configuración)
 
 Same fields and order as `tui/screens/configuration.py`: IGDB id/secret, Steam
-user id/API key, the four store checkboxes, and the Heroic folder (labelled
-"Carpeta de Heroic o Relic"; empty shows as `auto`, not `N/A`, because blank
-means auto-detect rather than unset).
+user id/API key, the four store checkboxes, and the CUENTAS section.
+
+The accounts rows are **not** edited on the copy like everything else here.
+Logging in takes effect the moment the token comes back, so backing out with B
+cannot undo it — they read their state from `accounts.sessions_summary()` and
+`build_settings_items` takes it as a separate `sessions` argument for exactly
+that reason. Mixing it into `values` would have told the user "B cancels this",
+which would have been a lie.
 
 `igdb_client_secret` and `steam_api_key` are **masked in the list** (`••••••••`)
 but shown in clear **while editing**: you can't fix a one-character typo in a

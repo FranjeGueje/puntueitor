@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from puntueitor.core.models import Stores
-from puntueitor.core.resolvers.amazon_resolver import AmazonHeroicResolver
-from puntueitor.core.resolvers.epic_resolver import EpicHeroicResolver
-from puntueitor.core.resolvers.gog_resolver import GOGHeroicResolver
+from puntueitor.core.resolvers.amazon_resolver import AmazonResolver
+from puntueitor.core.resolvers.epic_resolver import EpicResolver
+from puntueitor.core.resolvers.gog_resolver import GOGResolver
 from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
 
 IGDB_GAME = {"id": 99, "name": "Test Game", "genres": []}
@@ -67,7 +67,7 @@ class TestResolverTemplate:
         )
 
     def test_missing_store_id_is_skipped(self, igdb):
-        resolver = _resolver(GOGHeroicResolver, igdb)
+        resolver = _resolver(GOGResolver, igdb)
 
         assert resolver.resolve({"title": "Sin id"}) == []
         resolver.unknown_cacher.save_unknown.assert_not_called()
@@ -82,7 +82,7 @@ class TestResolverTemplate:
     def test_short_title_is_not_blacklisted(self, igdb):
         # Un título inservible no debe marcar el juego como desconocido:
         # el problema es el dato de entrada, no que IGDB no lo tenga.
-        resolver = _resolver(GOGHeroicResolver, igdb)
+        resolver = _resolver(GOGResolver, igdb)
 
         assert resolver.resolve({"app_name": "x1", "title": "a"}) == []
         resolver.unknown_cacher.save_unknown.assert_not_called()
@@ -98,7 +98,7 @@ class TestResolverTemplate:
 class TestEpicResolver:
     def test_prefers_slug_lookup(self, igdb):
         igdb.search_by_slug.return_value = [IGDB_GAME]
-        resolver = _resolver(EpicHeroicResolver, igdb)
+        resolver = _resolver(EpicResolver, igdb)
 
         games = resolver.resolve({
             "app_name": "abc",
@@ -117,7 +117,7 @@ class TestEpicResolver:
             {"id": 1, "name": "zzzz"},
             {"id": 2, "name": "wwww"},
         ]
-        resolver = _resolver(EpicHeroicResolver, igdb)
+        resolver = _resolver(EpicResolver, igdb)
 
         games = resolver.resolve({"app_name": "abc", "title": "Test Game"})
 
@@ -131,7 +131,7 @@ class TestAmazonResolver:
             {"id": 2, "name": "Test", "first_release_date": 1_600_000_000},
         ]
         igdb.get_game.return_value = {"id": 2, "name": "Test", "genres": []}
-        resolver = _resolver(AmazonHeroicResolver, igdb)
+        resolver = _resolver(AmazonResolver, igdb)
 
         games = resolver.resolve({
             "app_name": "amz1",
@@ -144,7 +144,7 @@ class TestAmazonResolver:
     def test_candidates_without_date_fall_back_to_first(self, igdb):
         igdb.search_by_title.return_value = [{"id": 7, "name": "Test"}]
         igdb.get_game.return_value = {"id": 7, "name": "Test", "genres": []}
-        resolver = _resolver(AmazonHeroicResolver, igdb)
+        resolver = _resolver(AmazonResolver, igdb)
 
         games = resolver.resolve({"app_name": "amz1", "title": "Test"})
 

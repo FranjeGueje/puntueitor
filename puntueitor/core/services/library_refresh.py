@@ -6,7 +6,7 @@ contrato: nada de Textual ni de Panda3D, los imports pesados dentro de la
 función, y los errores se cuentan por el camino en vez de tumbar la operación.
 
 Aquí vive la parte de la recarga de la TUI (`tui/app.py:do_reload`) que no era
-suya: montar el servicio de IGDB, el lector de Heroic y los enrichers, llamar
+suya: montar el servicio de IGDB, los proveedores de tienda y los enrichers, llamar
 al pipeline y guardar lo que va saliendo. Lo que cada interfaz hace con eso —
 barra de estado, filas, cajas del carrusel— se queda en cada interfaz.
 
@@ -53,7 +53,7 @@ def refresh_library(
     """
     Recorre las tiendas y devuelve cuántos juegos se cargaron.
 
-    BLOQUEA de lo lindo: consulta la API de Steam, lee Heroic del disco y
+    BLOQUEA de lo lindo: consulta la API de cada tienda y
     resuelve contra IGDB juego a juego. Va en un hilo en las dos interfaces.
 
     Los tres callbacks se llaman **desde hilos que no son el de la interfaz**:
@@ -70,16 +70,11 @@ def refresh_library(
     from puntueitor.core.config import ConfigManager
     from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
     from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-    from puntueitor.core.heroics import HeroicsLoader
     from puntueitor.core.igdb.service import IGDBService
     from puntueitor.core.pipeline.load_steam_library import load_library
     from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
 
     config = ConfigManager().get
-
-    heroic_loader = None
-    if config.gog_is_active or config.epic_is_active or config.amazon_is_active:
-        heroic_loader = HeroicsLoader()
 
     enrichers = []
     try:
@@ -100,7 +95,6 @@ def refresh_library(
 
     games = load_library(
         engine=IGDBService(),
-        heroic_loader=heroic_loader,
         refresh=refresh,
         force_store_refresh=force_store_refresh,
         progress_callback=on_progress,

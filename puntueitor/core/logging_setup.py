@@ -75,8 +75,8 @@ def setup_logging(frontend: str, level: int = logging.INFO, console: bool = Fals
 def _log_session_header(frontend: str) -> None:
     """
     Cuatro líneas al arrancar con lo que explica la mayoría de los "no me
-    salen los juegos": qué tiendas están activas, qué credenciales faltan y de
-    dónde se van a leer las bibliotecas de Heroic.
+    salen los juegos": qué tiendas están activas, qué credenciales faltan y en
+    cuáles hay sesión abierta.
 
     Se escribe SIEMPRE, no solo cuando algo falla: cuando el usuario cuenta un
     problema, esto ya está en su log sin tener que pedirle que lo reproduzca.
@@ -119,19 +119,42 @@ def _log_session_header(frontend: str) -> None:
     else:
         logger.info("Credenciales: todas configuradas")
 
-    if config.gog_is_active or config.epic_is_active or config.amazon_is_active:
-        _log_heroic_path(config)
+    _log_sesiones(config)
 
 
-def _log_heroic_path(config) -> None:
-    """De dónde va a leer Heroic, o por qué no va a leer nada."""
-    from puntueitor.core.heroics import HeroicsLoader
+def _log_sesiones(config) -> None:
+    """
+    En qué tiendas hay sesión abierta y en cuáles no.
 
-    ruta = HeroicsLoader().find_heroic_path(config.heroic_path or None)
-    if ruta is None:
+    Es la línea que sustituye a la ruta de Heroic, y responde a la misma
+    pregunta: por qué una tienda activa no trae ningún juego. Solo se mira si
+    HAY token, no si sigue valiendo — comprobarlo exigiría hablar con las
+    tres tiendas antes de pintar nada, y arrancar tendría que esperar a la
+    red.
+    """
+    from puntueitor.core.auth.token_store import TokenStore
+    from puntueitor.core.models import Stores
+
+    activas = {
+        Stores.GOG: config.gog_is_active,
+        Stores.EPIC: config.epic_is_active,
+        Stores.AMAZON: config.amazon_is_active,
+    }
+    sin_sesion = []
+    for store, activa in activas.items():
+        if not activa:
+            continue
+        try:
+            if not TokenStore(str(store)).has_session():
+                sin_sesion.append(str(store).upper())
+        except Exception as error:  # noqa: BLE001 - una línea de log, no vale fallar
+            logger.debug(f"no se pudo mirar la sesión de {store}: {error}")
+
+    if sin_sesion:
         logger.warning(
-            "no se encuentra la carpeta de Heroic: GOG, Epic y Amazon no "
-            "darán ningún juego (Opciones → Configuración)"
+            f"sin sesión iniciada en: {', '.join(sin_sesion)}. Esas tiendas "
+            "solo darán lo que quedara guardado de la última vez "
+            "(Opciones → Cuentas)"
         )
-    else:
-        logger.info(f"Heroic: {ruta}")
+    elif any(activas.values()):
+        logger.info("Sesiones: todas iniciadas")

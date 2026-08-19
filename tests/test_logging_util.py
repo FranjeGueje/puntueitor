@@ -13,54 +13,34 @@ import pytest
 import requests
 
 from puntueitor.core import paths
-from puntueitor.core.heroics import HeroicsLoader
 from puntueitor.core.logging_setup import MAX_BYTES, setup_logging
 
 
-class TestHeroicNoEncontrado:
-    def test_a_configured_path_that_does_not_exist_is_reported(self, tmp_path, caplog):
-        """
-        Antes se caía a la autodetección EN SILENCIO: el usuario veía en
-        Configuración una ruta suya y unos juegos que salían de otro sitio, o
-        de ninguno, sin nada que lo explicara.
-        """
-        inventada = tmp_path / "no-existe"
+class TestSinSesion:
+    """
+    Una tienda activa sin sesión iniciada da cero juegos, y eso tiene que
+    verse en el arranque. Es el hueco que dejó la ruta de Heroic: antes el
+    silencio era "no encuentro la carpeta", ahora sería "no has entrado".
+    """
+
+    def test_the_startup_says_which_stores_have_no_session(self, caplog):
+        from puntueitor.core.logging_setup import _log_sesiones
 
         with caplog.at_level(logging.WARNING):
-            HeroicsLoader().find_heroic_path(str(inventada))
+            _log_sesiones(ConfigDoble(gog_is_active=True, epic_is_active=True))
 
-        assert any(
-            str(inventada) in r.message and "no existe" in r.message
-            for r in caplog.records
-        )
+        mensaje = " ".join(r.message for r in caplog.records)
+        assert "GOG" in mensaje and "EPIC" in mensaje
+        assert "Opciones" in mensaje
 
-    def test_when_nothing_is_found_it_says_where_it_looked(self, tmp_path, caplog):
+    def test_a_store_that_is_off_is_not_reported(self, caplog):
+        from puntueitor.core.logging_setup import _log_sesiones
+
         with caplog.at_level(logging.WARNING):
-            resultado = HeroicsLoader().find_heroic_path(None)
+            _log_sesiones(ConfigDoble(gog_is_active=True))
 
-        assert resultado is None
-        assert any("no se encuentra la carpeta de Heroic" in r.message
-                   for r in caplog.records)
-
-    def test_a_missing_library_file_explains_what_to_do(self, tmp_path, caplog):
-        """Epic activo y cero juegos casi siempre es esto."""
-        (tmp_path / "store_cache").mkdir()
-
-        with caplog.at_level(logging.INFO):
-            juegos = HeroicsLoader().get_epic_games(tmp_path)
-
-        assert juegos == []
-        assert any("legendary_library.json" in r.message for r in caplog.records)
-
-    def test_a_corrupt_library_file_is_reported(self, tmp_path, caplog):
-        store_cache = tmp_path / "store_cache"
-        store_cache.mkdir()
-        (store_cache / "gog_library.json").write_text("{esto no es json")
-
-        with caplog.at_level(logging.ERROR):
-            assert HeroicsLoader().get_gog_games(tmp_path) == []
-
-        assert any("corrupto" in r.message for r in caplog.records)
+        mensaje = " ".join(r.message for r in caplog.records)
+        assert "GOG" in mensaje and "AMAZON" not in mensaje
 
 
 class TestSteam:
@@ -101,7 +81,7 @@ class TestSteam:
         monkeypatch.setattr(api, "_request_json", lambda url, params: {"response": {}})
 
         with caplog.at_level(logging.WARNING):
-            api.owned_games("clave", 123, use_cache=False)
+            api.owned_games("clave", 123)
 
         mensaje = " ".join(r.message for r in caplog.records)
         assert "privado" in mensaje and "Steam ID" in mensaje
@@ -144,12 +124,11 @@ class ConfigDoble:
 
     def __init__(self, **kwargs):
         self.steam_is_active = kwargs.get("steam_is_active", True)
-        self.gog_is_active = False
-        self.epic_is_active = False
-        self.amazon_is_active = False
+        self.gog_is_active = kwargs.get("gog_is_active", False)
+        self.epic_is_active = kwargs.get("epic_is_active", False)
+        self.amazon_is_active = kwargs.get("amazon_is_active", False)
         self.steam_api_key = kwargs.get("steam_api_key", "")
         self.steam_user_id = kwargs.get("steam_user_id", 0)
-        self.heroic_path = ""
 
 
 class TestIGDB:

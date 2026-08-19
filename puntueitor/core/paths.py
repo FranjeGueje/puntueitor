@@ -121,6 +121,26 @@ def igdb_token_file() -> Path:
     return cache_dir() / "igdb_token.json"
 
 
+def store_libraries_db() -> Path:
+    """
+    La última biblioteca que devolvió cada tienda por su API.
+
+    En `CACHE_DIR` porque es exactamente eso: se rehace sola con un refresco.
+    Lo que no se puede perder —tus notas, tus marcas— vive en otro sitio.
+    """
+    return cache_dir() / "store_libraries.sqlite"
+
+
+def store_token_file(store: str) -> Path:
+    """
+    El token de sesión de una tienda (`gog`, `epic`, `amazon`).
+
+    Junto al de IGDB y por el mismo motivo: si se pierde, lo único que pasa
+    es que hay que volver a iniciar sesión.
+    """
+    return cache_dir() / f"{store}_token.json"
+
+
 def log_file() -> Path:
     return state_dir() / "puntueitor.log"
 

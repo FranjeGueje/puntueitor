@@ -88,7 +88,8 @@
 | Característica | Detalle |
 |---|---|
 | **Dos interfaces** | TUI de terminal (Textual) y carrusel 3D (Panda3D), sobre la misma biblioteca |
-| **Multi-tienda** | Steam, GOG, Epic Games y Amazon (via Heroic Games Launcher) |
+| **Multi-tienda** | Steam, GOG, Epic Games y Amazon, cada una por su propia API |
+| **Sin conexión** | La última biblioteca de cada tienda queda guardada: si no hay red, tus juegos siguen ahí |
 | **Enriquecimiento IGDB** | Carátula, género, puntuación de crítica, storyline, fecha de lanzamiento |
 | **Duración** | HowLongToBeat — búsqueda automática por similitud de título |
 | **Valoración Steam** | Puntuación SteamDB bayesiana + recuento de reseñas positivas/negativas |
@@ -197,10 +198,9 @@ mismo fichero:
 | `igdb_client_id` | `string` | Client ID de Twitch/IGDB (https://dev.twitch.tv/console) |
 | `igdb_client_secret` | `string` | Client Secret de Twitch/IGDB |
 | `steam_is_active` | `bool` | Cargar juegos de Steam |
-| `gog_is_active` | `bool` | Cargar juegos de GOG (via Heroic) |
-| `epic_is_active` | `bool` | Cargar juegos de Epic (via Heroic) |
-| `amazon_is_active` | `bool` | Cargar juegos de Amazon (via Heroic) |
-| `heroic_path` | `string` | Ruta a la carpeta de Heroic o Relic (vacío = auto-detectar) |
+| `gog_is_active` | `bool` | Cargar juegos de GOG |
+| `epic_is_active` | `bool` | Cargar juegos de Epic |
+| `amazon_is_active` | `bool` | Cargar juegos de Amazon |
 | `scoring_*` | `float/list` | Pesos de puntuación y géneros preferidos |
 
 > Las cuatro banderas `*_is_active` deciden dos cosas: **de qué tiendas se
@@ -213,6 +213,39 @@ mismo fichero:
 
 ---
 
+### 🔑 Cuentas
+
+Cada tienda se consulta con tu propia sesión, así que hay que iniciarla una
+vez. Se hace desde **Cuentas** —`a` en la TUI, Select → Configuración →
+CUENTAS en el carrusel— y el gesto es el mismo en las cuatro:
+
+1. Elige la tienda y pulsa **Abrir navegador**.
+2. Inicia sesión con tu cuenta de siempre.
+3. Cuando termines, **copia la dirección de la barra** de la página a la que
+   te lleva y pégala en Puntueitor. En Epic vale también el texto que enseña
+   esa página.
+4. Refresca la biblioteca (`r`).
+
+No hace falta buscar nada dentro de la dirección: se pega entera. Si no hay
+navegador que abrir —por SSH, o en el modo juego del Deck—, la dirección
+queda en el log para que la abras donde puedas.
+
+**Steam necesita además una API key**, que Valve solo entrega a mano: sácala
+de [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) y
+pégala en Configuración. Entrar por Cuentas te ahorra teclear el Steam ID,
+que es lo que más se equivoca. Y recuerda que tu perfil y los detalles de
+juego tienen que estar en **público** para que Steam los sirva.
+
+> Los tokens se guardan en `~/.cache/puntueitor/` y se renuevan solos. Si se
+> pierden, lo único que pasa es que hay que volver a entrar.
+
+> **Sin conexión:** la última biblioteca de cada tienda queda guardada. Si no
+> hay red, la sesión ha caducado o la tienda no contesta, Puntueitor sirve
+> los juegos de la última vez y lo dice en el log, en vez de dejarte la
+> biblioteca vacía. Un refresco vuelve a preguntar.
+
+---
+
 ## ⌨️ Controles
 
 ### Interfaz de terminal
@@ -221,6 +254,7 @@ mismo fichero:
 |---|---|---|
 | `p` | **Puntueitor** | Abre selector de sistema de puntuación |
 | `c` | **Configurar** | Diálogo de configuración de API keys y tiendas |
+| `a` | **Cuentas** | Iniciar o cerrar sesión en Steam, GOG, Epic y Amazon |
 | `o` | **Ocultos** | Alterna visibilidad de juegos marcados como ocultos |
 | `s` | **Ordenar** | Diálogo de ordenación (nombre, puntuación, duración…) |
 | `f` | **Filtrar** | Diálogo de filtros (nombre, duración, flags…) |
@@ -352,13 +386,14 @@ que lea lo recuperado.
 
 ### Flujo de datos
 
-1. **Resolvers** obtienen datos crudos de Steam API, Heroic (GOG/Epic/Amazon), IGDB y HLTB
-2. **Mappers** transforman los datos crudos en objetos `Game` canónicos
-3. **Filters** aplican criterios (nombre, duración, flags…) sobre la biblioteca
-4. **Scoring** calcula puntuaciones multi-criterio personalizadas
-5. **Selectors** desambiguan entre candidatos duplicados de distintas tiendas
-6. **Enrichers** añaden metadatos (duración HLTB, puntuación SteamDB)
-7. **Pipeline** orquesta todo el flujo de carga, filtrado y enrichment
+1. **Providers** traen la biblioteca cruda de cada tienda por su API, y la guardan para poder trabajar sin conexión
+2. **Resolvers** identifican cada juego crudo contra IGDB
+3. **Mappers** transforman los datos crudos en objetos `Game` canónicos
+4. **Filters** aplican criterios (nombre, duración, flags…) sobre la biblioteca
+5. **Scoring** calcula puntuaciones multi-criterio personalizadas
+6. **Selectors** desambiguan entre candidatos duplicados de distintas tiendas
+7. **Enrichers** añaden metadatos (duración HLTB, puntuación SteamDB)
+8. **Pipeline** orquesta todo el flujo de carga, filtrado y enrichment
 
 Para el diseño del sistema y el porqué de sus decisiones, ver
 [`arquitectura.md`](arquitectura.md). Para notas de trabajo y trampas
@@ -373,12 +408,15 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-440 tests (unitarios + integración) que cubren:
+505 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
 - Selectores, Mappers, Enrichers
 - Resolvers (plantilla común y las 4 tiendas)
+- Proveedores de tienda: paginación, filtrado, caída a la copia guardada
+  cuando no hay red y sesión caducada
+- Sesiones: renovación de tokens y qué se acepta al pegar la vuelta del login
 - Pipeline (scoring_ops, filter_library, enrichment)
 - Servicios, Cachers (5 tipos), Config, Repository
 - Acciones compartidas por las dos interfaces: enriquecer y desconocer un
@@ -396,6 +434,28 @@ está puesto.
 
 Las pruebas de interfaz van aparte: necesitan una ventana (aunque sea fuera de
 pantalla) y datos reales, así que no entran en `pytest`.
+
+### Probar la aplicación sin tocar tus datos
+
+Para probar a mano —iniciar sesión de verdad en una tienda, recargar la
+biblioteca, ver qué escribe— sin arriesgar tu instalación:
+
+```bash
+tools/entorno-prueba.sh ~/pruebas-puntueitor                    # la TUI
+tools/entorno-prueba.sh ~/pruebas-puntueitor --3d               # el carrusel
+tools/entorno-prueba.sh ~/pruebas-puntueitor --copiar-config    # con tus credenciales
+tools/entorno-prueba.sh ~/pruebas-puntueitor --shell            # una shell dentro
+tools/entorno-prueba.sh ~/pruebas-puntueitor -- python -c '...' # lo que quieras
+```
+
+Todo lo que escriba la aplicación se queda dentro de ese directorio, y el
+script se niega a arrancar si comprueba que alguna ruta se le ha escapado
+al home de verdad.
+
+> Fija `HOME` además de las cuatro `XDG_*`, y hacen falta las dos cosas:
+> `migrate_legacy_paths()` usa `Path.home()` para el **origen** de las rutas
+> antiguas, así que aislar solo con las `XDG_*` no protegería —movería tus
+> ficheros reales al entorno de pruebas.
 
 ---
 
@@ -434,9 +494,13 @@ su licencia junto al fichero:
   dibuja los botones de mando y las teclas de la barra de ayuda.
 
 **Datos** — [IGDB](https://www.igdb.com) (fichas y carátulas),
-[HowLongToBeat](https://howlongtobeat.com) (duración), Steam (biblioteca y
-reseñas) y [Heroic](https://heroicgameslauncher.com) (GOG, Epic y Amazon).
-Puntueitor no está asociado con ninguno de ellos.
+[HowLongToBeat](https://howlongtobeat.com) (duración) y las APIs de Steam,
+GOG, Epic Games y Amazon (bibliotecas y reseñas). Las de GOG, Epic y Amazon
+no están documentadas por sus dueños: son las que usan
+[gogdl](https://github.com/Heroic-Games-Launcher/heroic-gogdl),
+[Legendary](https://github.com/derrod/legendary) y
+[Nile](https://github.com/imLinguin/nile). Puntueitor no está asociado con
+ninguno de ellos.
 
 **Hecho con** [Panda3D](https://www.panda3d.org) y
 [Textual](https://textual.textualize.io).

@@ -2,6 +2,68 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
+## [No publicado]
+
+Puntueitor deja de leer los ficheros de otros programas. GOG, Epic y Amazon
+ya no salen de la caché en disco de Heroic, sino de **las APIs de sus
+tiendas**, con sesión propia; y de Steam ya solo se usa su Web API. Ya no
+hace falta tener Heroic instalado, ni abrirlo para que refresque, ni acertar
+con su carpeta.
+
+### ⚠️ Al actualizar
+
+- **Hay que iniciar sesión** en GOG, Epic y Amazon: Cuentas (`a` en la TUI,
+  Select → Configuración → CUENTAS en el carrusel). Se abre el navegador y se
+  pega de vuelta la dirección; el mismo gesto en las cuatro tiendas.
+- El ajuste `heroic_path` desaparece. Si sigue en tu `config.json` se ignora
+  y se dice en el log; no hace falta tocar nada.
+- Nada de la biblioteca se pierde: tus marcas, notas y desconocidos siguen
+  donde estaban. La primera carga tras iniciar sesión vuelve a preguntar a
+  cada tienda.
+
+### Añadido
+
+- **Bibliotecas por API, tienda a tienda.** Steam por
+  `IPlayerService/GetOwnedGames`; GOG por la API del cliente Galaxy; Epic por
+  las del Epic Games Launcher; Amazon por su servicio de *entitlements*. Las
+  tres últimas son las mismas que usan gogdl, Legendary y Nile, o sea las que
+  ya había debajo de Heroic — solo que ahora la sesión es nuestra.
+- **Funciona sin conexión.** La última biblioteca de cada tienda queda
+  guardada. Si no hay red, si la sesión ha caducado o si la tienda contesta
+  cero juegos, se sirven los juegos de la última vez y se explica en el log,
+  en vez de dejar la biblioteca vacía sin decir por qué. Solo un refresco con
+  respuesta buena la reescribe.
+- **Pantalla de Cuentas** en las dos interfaces: estado de cada tienda,
+  abrir el navegador, pegar y cerrar sesión. Acepta la dirección entera, el
+  texto que enseña Epic o el código a secas, para no obligar a nadie a buscar
+  un parámetro dentro de una URL de cuatrocientos caracteres.
+- **Steam sin teclear el Steam ID**: se entra por OpenID y se pega la
+  dirección de vuelta, como en las demás. La API key sigue siendo manual —
+  Valve no la da de ninguna otra forma.
+- Los tokens se guardan en `~/.cache/puntueitor/`, solo legibles por ti, y se
+  renuevan solos.
+
+### Cambiado
+
+- `core/providers/` es la capa nueva: cada tienda sabe pedirse a sí misma y
+  el pipeline solo recorre proveedores. Antes la obtención de datos vivía
+  dentro de `load_library` y sabía de ficheros y de HTTP a la vez.
+- Un corte de internet renovando una sesión ya no se confunde con una sesión
+  caducada: antes, un rato sin red habría obligado a volver a entrar en las
+  tres tiendas.
+
+### Eliminado
+
+- `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`
+  y `nile_library.json`.
+- `steampy/core/`: el lector de los `.vdf` de Steam (`libraryfolders`,
+  `loginusers`, `config`, `shortcuts`). Era código muerto —nadie lo
+  importaba— y además dependía de un paquete que ni siquiera estaba en
+  `requirements.txt`, así que no habría podido ejecutarse.
+- El ajuste `heroic_path` y su campo en las dos pantallas de configuración.
+
+---
+
 ## [2.0.0] - 2026-08-15
 
 Puntueitor deja de ser una aplicación de terminal con una interfaz y pasa a

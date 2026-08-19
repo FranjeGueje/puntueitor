@@ -7,9 +7,9 @@ from puntueitor.core.models import Stores
 logger = logging.getLogger(__name__)
 
 
-class AmazonHeroicResolver(BaseResolver):
+class AmazonResolver(BaseResolver):
     """
-    Resuelve juegos de Amazon (via Heroic/nile) contra IGDB.
+    Resuelve juegos de Amazon contra IGDB.
 
     Amazon no expone un id que IGDB conozca, así que busca por título y
     desempata con la fecha de lanzamiento más cercana a extra.releaseDate.

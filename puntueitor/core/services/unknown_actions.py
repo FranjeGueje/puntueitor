@@ -278,14 +278,14 @@ def _store_resolve(repo: LibraryRepository, unknown: Unknown) -> list[Game]:
         resolver = SteamIGDBResolver(igdb, cache_path)
         raw = {"appid": int(unknown.id), "name": unknown.title}
     elif unknown.store == "epic":
-        from puntueitor.core.resolvers.epic_resolver import EpicHeroicResolver
+        from puntueitor.core.resolvers.epic_resolver import EpicResolver
 
-        resolver = EpicHeroicResolver(igdb, cache_path)
+        resolver = EpicResolver(igdb, cache_path)
         raw = {"app_name": unknown.id, "title": unknown.title}
     else:
-        from puntueitor.core.resolvers.gog_resolver import GOGHeroicResolver
+        from puntueitor.core.resolvers.gog_resolver import GOGResolver
 
-        resolver = GOGHeroicResolver(igdb, cache_path)
+        resolver = GOGResolver(igdb, cache_path)
         raw = {"app_name": unknown.id, "title": unknown.title}
 
     return list(resolver.resolve(raw, refresh=True))

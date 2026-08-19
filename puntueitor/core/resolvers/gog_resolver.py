@@ -6,8 +6,8 @@ from puntueitor.core.models import Stores
 logger = logging.getLogger(__name__)
 
 
-class GOGHeroicResolver(BaseResolver):
-    """Resuelve juegos de GOG (via Heroic) contra IGDB."""
+class GOGResolver(BaseResolver):
+    """Resuelve juegos de GOG contra IGDB por su id de producto."""
 
     STORE = Stores.GOG
     GOG_SOURCE_ID = 5

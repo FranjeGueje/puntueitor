@@ -2,22 +2,20 @@ import logging
 from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from pathlib import Path
 
 from puntueitor.core.diagnostics import describe_error
 from puntueitor.core.igdb.service import IGDBService
-from puntueitor.core.models import Game
+from puntueitor.core.models import Game, Stores
 from puntueitor.core.models.selection_context import SelectionContext
 from puntueitor.core.protocols import GameEnricher
 from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
-from puntueitor.core.resolvers.gog_resolver import GOGHeroicResolver
-from puntueitor.core.resolvers.epic_resolver import EpicHeroicResolver
-from puntueitor.core.resolvers.amazon_resolver import AmazonHeroicResolver
+from puntueitor.core.resolvers.gog_resolver import GOGResolver
+from puntueitor.core.resolvers.epic_resolver import EpicResolver
+from puntueitor.core.resolvers.amazon_resolver import AmazonResolver
 from puntueitor.core.selector.steam_selector import SteamSelector
-from steampy.api.steam_api import SteamApi
 from puntueitor.core.config import ConfigManager
 from puntueitor.core import paths
-from puntueitor.core.heroics import HeroicsLoader
+from puntueitor.core.providers import LibraryProvider, build_providers
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +67,7 @@ def _run_enrichment(
 
 def load_library(
     engine: IGDBService,
-    heroic_loader: HeroicsLoader | None = None,
-    api_key: str | None = None,
-    user: int | None = None,
+    providers: dict[Stores, LibraryProvider] | None = None,
     refresh: bool = False,
     force_store_refresh: bool = False,
     progress_callback: Callable[[int, int, str], None] | None = None,
@@ -87,19 +83,10 @@ def load_library(
     resultados siguen llegando por `enrichment_callback`.
     """
     config = ConfigManager().get
-    # Build stores list from new config fields
-    stores = []
-    if config.steam_is_active:
-        stores.append("steam")
-    if config.gog_is_active:
-        stores.append("gog")
-    if config.epic_is_active:
-        stores.append("epic")
-    if config.amazon_is_active:
-        stores.append("amazon")
-
-    api_key = api_key or config.steam_api_key
-    user = user or config.steam_user_id
+    # Un proveedor por tienda activa. Que la tienda esté en el diccionario ya
+    # significa que el usuario la quiere; no hace falta una segunda lista.
+    if providers is None:
+        providers = build_providers(config)
 
     CACHE_RESOLVERS = paths.main_db()
     steam_selector = SteamSelector()
@@ -167,68 +154,15 @@ def load_library(
         else:
             logger.info(resumen)
 
-    def steam_items() -> Sequence[dict]:
-        # Steam activa pero sin con qué preguntar. Antes esto devolvía la
-        # tupla vacía sin decir nada, y el usuario se quedaba sin sus juegos
-        # de Steam y sin ninguna pista de por qué.
-        if not api_key:
-            logger.warning(
-                "Steam está activa pero no hay API key: no se cargará ningún "
-                "juego de Steam (Opciones → Configuración)"
-            )
-            return ()
-        if not user:
-            logger.warning(
-                "Steam está activa pero no hay Steam ID: no se cargará ningún "
-                "juego de Steam (Opciones → Configuración)"
-            )
-            return ()
-        return SteamApi().owned_games(
-            api_key, user, use_cache=not (refresh or force_store_refresh)
-        ) or ()
+    #: El resolver que sabe leer los crudos de cada tienda.
+    RESOLVERS = {
+        Stores.STEAM: SteamIGDBResolver,
+        Stores.GOG: GOGResolver,
+        Stores.EPIC: EpicResolver,
+        Stores.AMAZON: AmazonResolver,
+    }
 
-    # La ruta de Heroic se busca una sola vez y la comparten GOG/Epic/Amazon.
-    heroic_path: Path | None = None
-    heroic_path_resolved = False
-
-    def heroic_items(store: str) -> Sequence[dict]:
-        nonlocal heroic_path, heroic_path_resolved
-        if not heroic_loader:
-            logger.warning(
-                f"{store.upper()} está activa pero la carga se ha montado sin "
-                "lector de Heroic: no se cargará ninguno de sus juegos"
-            )
-            return ()
-
-        if not heroic_path_resolved:
-            heroic_path = heroic_loader.find_heroic_path(config.heroic_path or None)
-            heroic_path_resolved = True
-
-        if not heroic_path:
-            # El porqué ya lo ha registrado `find_heroic_path`, con las rutas
-            # en las que ha buscado.
-            logger.warning(
-                f"{store.upper()} está activa pero no hay carpeta de Heroic: "
-                "no se cargará ninguno de sus juegos"
-            )
-            return ()
-
-        getter = {
-            "gog": heroic_loader.get_gog_games,
-            "epic": heroic_loader.get_epic_games,
-            "amazon": heroic_loader.get_amazon_games,
-        }[store]
-        return getter(heroic_path) or ()
-
-    # (clave de config, etiqueta, clase de resolver, obtención de los crudos)
-    sources = (
-        ("steam", "Steam", SteamIGDBResolver, steam_items),
-        ("gog", "GOG", GOGHeroicResolver, lambda: heroic_items("gog")),
-        ("epic", "Epic", EpicHeroicResolver, lambda: heroic_items("epic")),
-        ("amazon", "Amazon", AmazonHeroicResolver, lambda: heroic_items("amazon")),
-    )
-
-    if not stores:
+    if not providers:
         logger.warning(
             "no hay ninguna tienda activa: no hay nada que cargar "
             "(Opciones → Configuración)"
@@ -237,15 +171,15 @@ def load_library(
     total_emitidos = 0
 
     try:
-        for key, label, resolver_cls, get_items in sources:
-            if key not in stores:
-                logger.debug(f"{label} desactivada; se salta")
-                continue
+        for store, provider in providers.items():
+            label = provider.LABEL
             try:
-                raw_items = get_items()
+                # `fetch` no lanza: ya cae solo a la copia guardada y lo
+                # explica en el log. El try es por si falla el resolver.
+                raw_items = provider.fetch(refresh=refresh or force_store_refresh)
                 if not raw_items:
                     continue
-                resolver = resolver_cls(igdb=engine, cache_file=CACHE_RESOLVERS)
+                resolver = RESOLVERS[store](igdb=engine, cache_file=CACHE_RESOLVERS)
             except Exception as e:
                 logger.warning(f"no se pudo leer {label}: {describe_error(e, label)}")
                 continue

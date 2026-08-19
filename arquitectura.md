@@ -72,7 +72,7 @@ inicialización marca el cacher como no disponible.
 
 ```mermaid
 graph TD
-    A[Tiendas<br>Steam API · Heroic: GOG, Epic, Amazon] --> B[Resolvers<br>identidad externa → IGDB]
+    A[Providers<br>API de Steam, GOG, Epic y Amazon + caché] --> B[Resolvers<br>identidad externa → IGDB]
     B --> C[IGDB Service<br>consulta + caché]
     C --> D[Mappers<br>JSON de IGDB → modelo de dominio]
     D --> E[Selector<br>desambigua candidatos]
@@ -86,6 +86,50 @@ graph TD
 callbacks de progreso para que la interfaz vaya mostrando resultados en vez
 de esperar al final. Con bibliotecas de más de mil juegos la diferencia no
 es cosmética.
+
+---
+
+## 🏬 Providers: de dónde salen los juegos
+
+Cada tienda tiene un `LibraryProvider` en `core/providers/`, y los cuatro
+hacen lo mismo: piden la biblioteca a la API de la tienda, la guardan en
+`StoreLibraryCacher` y la sirven de ahí cuando no se puede llamar. El
+pipeline solo recorre proveedores; no sabe si detrás hay HTTP o una copia en
+disco.
+
+| Tienda | API | Sesión |
+|---|---|---|
+| **Steam** | `IPlayerService/GetOwnedGames`, la oficial | API key + SteamID |
+| **GOG** | `embed.gog.com`, la del cliente Galaxy | OAuth2 |
+| **Epic** | `launcher` + `catalog`, las del Epic Games Launcher | OAuth2 |
+| **Amazon** | *entitlements* de Amazon Games | LWA con PKCE + registro de dispositivo |
+
+Tres de las cuatro no están documentadas por su tienda: son las que usan
+gogdl, Legendary y Nile, o sea las mismas que había debajo de Heroic cuando
+Puntueitor leía sus ficheros. La diferencia es que ahora la sesión es
+nuestra y no hace falta que Heroic exista.
+
+**La caché no es una optimización, es la red de seguridad.** Como tres de
+las cuatro APIs pueden cambiar sin avisar, `LibraryProvider.fetch()` nunca
+devuelve vacío teniendo datos guardados: si no hay conexión, si la sesión
+caducó o si la tienda contesta cero juegos, se sirve la última biblioteca
+buena y se dice en el log. Un refresco explícito es lo único que la
+reescribe, y solo si la respuesta trae juegos.
+
+### Sesiones
+
+`core/auth/` guarda el token de cada tienda en `CACHE_DIR`, igual que el de
+IGDB, y lo renueva solo. Iniciar sesión es siempre el mismo gesto —abrir el
+navegador y pegar de vuelta la dirección—, incluso en Steam, que
+técnicamente podría recoger su OpenID en un servidor local: GOG, Epic y
+Amazon tienen su `redirect_uri` fijada hacia un dominio suyo y no hay
+`localhost` al que volver, así que o se empotra un navegador entero en la
+aplicación o se pega. Hacer Steam distinto solo añadiría un flujo más que
+mantener y otro que aprender.
+
+`auth/paste.py` acepta la URL entera, el JSON que enseña Epic o el código
+pelado, para que nadie tenga que buscar un parámetro dentro de una URL de
+cuatrocientos caracteres.
 
 ---
 
@@ -169,7 +213,7 @@ distinto y no es evidente por qué:
 | Tienda | Estrategia | Por qué |
 |---|---|---|
 | **Steam** | `external_game_source = 1` + appid | IGDB indexa los appid de Steam directamente |
-| **GOG** | `external_game_source = 5` + id de Heroic | Igual que Steam, con su propia fuente |
+| **GOG** | `external_game_source = 5` + id de producto | Igual que Steam, con su propia fuente |
 | **Epic** | Extrae el *slug* de la URL y busca por él | Epic no tiene correlación de id estable en IGDB |
 | **Amazon** | Búsqueda por título + compara fecha de lanzamiento | No hay id ni slug; la fecha es lo que separa secuelas y remakes del original |
 
@@ -197,10 +241,15 @@ búsqueda en cada arranque.
 
 ### Añadir una tienda
 1. Amplía el enum `Stores` en `core/models/game.py`.
-2. Crea un resolver que herede de `BaseResolver` en `core/resolvers/`, con
+2. Crea un `LibraryProvider` en `core/providers/` que sepa pedirle su
+   biblioteca a la tienda. Solo tiene que aportar `is_ready()`,
+   `_fetch_remote()` y `store_id()`; la caché y la degradación son de la
+   base. Si necesita sesión, su `OAuthSession` va en `core/auth/`.
+3. Crea un resolver que herede de `BaseResolver` en `core/resolvers/`, con
    `resolve(raw, refresh) -> Sequence[Game]`. Mira primero si IGDB indexa
    esa tienda en `external_games`; si no, tocará slug o título + fecha.
-3. Engánchalo en `core/pipeline/load_steam_library.py`.
+4. Regístralos en `core/providers/__init__.py` (`build_providers`) y en la
+   tabla `RESOLVERS` de `core/pipeline/load_steam_library.py`.
 
 ### Añadir una fórmula de puntuación
 1. Implementa `GameScorer` en `core/scoring/atomic/` (o en `core/scoring/`

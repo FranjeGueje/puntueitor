@@ -54,7 +54,6 @@ class Config:
     gog_is_active: bool = False
     epic_is_active: bool = False
     amazon_is_active: bool = False
-    heroic_path: str = ""
 
 
 @dataclass
