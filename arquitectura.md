@@ -72,7 +72,7 @@ inicialización marca el cacher como no disponible.
 
 ```mermaid
 graph TD
-    A[Providers<br>API de Steam, GOG, Epic y Amazon + caché] --> B[Resolvers<br>identidad externa → IGDB]
+    A[Providers<br>una API por tienda, del registro + caché] --> B[Resolvers<br>identidad externa → IGDB]
     B --> C[IGDB Service<br>consulta + caché]
     C --> D[Mappers<br>JSON de IGDB → modelo de dominio]
     D --> E[Selector<br>desambigua candidatos]
@@ -82,7 +82,7 @@ graph TD
     H --> I[gui/ TUI · gui3d/ carrusel 3D]
 ```
 
-`load_steam_library.py` orquesta todo eso sobre un `ThreadPoolExecutor`, con
+`load_library.py` orquesta todo eso sobre un `ThreadPoolExecutor`, con
 callbacks de progreso para que la interfaz vaya mostrando resultados en vez
 de esperar al final. Con bibliotecas de más de mil juegos la diferencia no
 es cosmética.
@@ -240,16 +240,28 @@ búsqueda en cada arranque.
 ## 🚀 Cómo extender
 
 ### Añadir una tienda
-1. Amplía el enum `Stores` en `core/models/game.py`.
-2. Crea un `LibraryProvider` en `core/providers/` que sepa pedirle su
-   biblioteca a la tienda. Solo tiene que aportar `is_ready()`,
-   `_fetch_remote()` y `store_id()`; la caché y la degradación son de la
-   base. Si necesita sesión, su `OAuthSession` va en `core/auth/`.
-3. Crea un resolver que herede de `BaseResolver` en `core/resolvers/`, con
-   `resolve(raw, refresh) -> Sequence[Game]`. Mira primero si IGDB indexa
-   esa tienda en `external_games`; si no, tocará slug o título + fecha.
-4. Regístralos en `core/providers/__init__.py` (`build_providers`) y en la
-   tabla `RESOLVERS` de `core/pipeline/load_steam_library.py`.
+
+Es **escribir su módulo en `core/stores/`** y dos líneas más. El registro
+(`core/stores/__init__.py`) es la única lista de qué tiendas hay: los menús de
+las dos interfaces, los colores del carrusel, el log, el pipeline y las
+sesiones salen de ahí.
+
+1. Crea sus piezas: un `LibraryProvider` en `core/providers/` (solo aporta
+   `is_ready()`, `_fetch_remote()` y `store_id()`; la caché y la degradación
+   son de la base), un resolver que herede de `BaseResolver` en
+   `core/resolvers/`, y —si tiene sesión— su `OAuthSession` en `core/auth/`.
+2. Crea `core/stores/<tienda>.py` con su `StoreSpec`: etiqueta, color,
+   bandera de configuración, sus tres piezas y qué se le pide pegar al
+   usuario. Si no tiene sesión que iniciar, `session=None` (es el caso de
+   Steam) y el resto del programa deja de ofrecerle un botón de conectar.
+3. Añádela a `REGISTRY` en `core/stores/__init__.py`. **El orden importa**:
+   es el de los menús y el de prioridad de color.
+
+Lo único que se queda fuera del módulo son dos líneas que no pueden estar
+ahí: el miembro del enum `Stores` (la clave con la que se guardan sus juegos
+en la base) y el campo `<tienda>_is_active` en `Config` (lo que se escribe en
+`config.json`). `tests/test_stores_registry.py` comprueba que no se olvidan,
+en los dos sentidos.
 
 ### Añadir una fórmula de puntuación
 1. Implementa `GameScorer` en `core/scoring/atomic/` (o en `core/scoring/`
@@ -260,7 +272,7 @@ búsqueda en cada arranque.
 ### Añadir un enriquecedor
 1. Implementa `GameEnricher` en `core/enrichers/`.
 2. `enrich(game) -> Game`, apoyándote en `dataclasses.replace`.
-3. Añádelo a la lista de enrichers de `load_steam_library.py`.
+3. Añádelo a la lista de enrichers de `load_library.py`.
 4. Si guarda datos nuevos, van a la tabla `extras`, no a `games`: `games`
    es caché de IGDB y se puede borrar entera.
 

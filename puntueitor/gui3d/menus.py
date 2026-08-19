@@ -11,6 +11,7 @@ usa la TUI (`gui/screens/scoring.py`, `sorting.py`, `filtering.py`) para que
 las dos interfaces hablen el mismo idioma cuando se conecten a la lógica de
 verdad.
 """
+from puntueitor.core import stores
 from puntueitor.core.models import Game
 from puntueitor.gui3d import scoring_info
 from puntueitor.gui3d.menu import WARNING_COLOR, MenuItem
@@ -334,21 +335,16 @@ SETTINGS_TITLE = "Tiendas"
 SECRET_MASK = "••••••••"
 
 #: Las cuatro tiendas, con el campo de `Config` que las activa.
-SETTINGS_STORES = (
-    ("steam_is_active", "Steam"),
-    ("gog_is_active", "GOG"),
-    ("epic_is_active", "Epic"),
-    ("amazon_is_active", "Amazon"),
+SETTINGS_STORES = tuple(
+    (spec.config_flag, spec.label) for spec in stores.all_stores()
 )
 
 #: Tiendas que se configuran iniciando sesión, en el orden en que se pintan.
-#: Steam NO está, y no es un olvido: no tiene OAuth para terceros, así que
-#: no hay sesión que iniciar. Se configura con su API key y su ID, que salen
-#: como campos de texto normales en el mismo menú.
-SETTINGS_ACCOUNTS = (
-    ("gog", "GOG"),
-    ("epic", "Epic"),
-    ("amazon", "Amazon"),
+#: Steam NO está, y no es un olvido: no tiene OAuth para terceros, así que no
+#: hay sesión que iniciar. Eso lo declara su propio módulo del registro
+#: (`session=None`), no esta lista.
+SETTINGS_ACCOUNTS = tuple(
+    (spec.key, spec.label) for spec in stores.with_session()
 )
 
 #: Campos de texto: clave de config, etiqueta y si va tapado en la lista.

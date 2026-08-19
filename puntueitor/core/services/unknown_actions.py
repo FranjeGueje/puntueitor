@@ -30,10 +30,16 @@ logger = logging.getLogger(__name__)
 #: muchas reediciones, y caben en un menú del carrusel sin desplazarlo.
 SEARCH_LIMIT = 15
 
-#: Las tiendas que se pueden volver a resolver por su cuenta. Amazon no tiene
-#: resolver propio (sus juegos se identifican solo por título), así que ahí la
-#: única vía es buscar a mano.
-RESOLVABLE_STORES = ("steam", "epic", "gog")
+def _resolvable_stores() -> tuple[str, ...]:
+    """
+    Las tiendas que se pueden volver a resolver por su id.
+
+    Lo declara cada tienda en su módulo del registro, no una lista de aquí:
+    era una tabla paralela más de las que había que acordarse de mantener.
+    """
+    from puntueitor.core import stores
+
+    return stores.resolvable_by_id()
 
 
 @dataclass(frozen=True)
@@ -233,7 +239,7 @@ def resolve_by_store(repo: LibraryRepository, unknown: Unknown) -> AdoptResult:
 
     BLOQUEA: red. Nunca lanza.
     """
-    if unknown.store not in RESOLVABLE_STORES:
+    if unknown.store not in _resolvable_stores():
         # Ni se toca la tabla: no hay nada que intentar.
         logger.info(f"{unknown.store}: sin resolver propio para {unknown.title!r}")
         return AdoptResult(unknown=unknown, unsupported=True)

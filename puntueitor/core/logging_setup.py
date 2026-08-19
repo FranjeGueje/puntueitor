@@ -96,12 +96,9 @@ def _log_session_header(frontend: str) -> None:
         logger.warning(f"no se pudo leer la configuración: {error}")
         return
 
-    activas = [
-        nombre for nombre, activa in (
-            ("Steam", config.steam_is_active), ("GOG", config.gog_is_active),
-            ("Epic", config.epic_is_active), ("Amazon", config.amazon_is_active),
-        ) if activa
-    ]
+    from puntueitor.core import stores
+
+    activas = [spec.label for spec in stores.active(config)]
     logger.info(f"Tiendas activas: {', '.join(activas) if activas else 'NINGUNA'}")
     if not activas:
         logger.warning(
@@ -132,23 +129,19 @@ def _log_sesiones(config) -> None:
     tres tiendas antes de pintar nada, y arrancar tendría que esperar a la
     red.
     """
+    from puntueitor.core import stores
     from puntueitor.core.auth.token_store import TokenStore
-    from puntueitor.core.models import Stores
 
-    activas = {
-        Stores.GOG: config.gog_is_active,
-        Stores.EPIC: config.epic_is_active,
-        Stores.AMAZON: config.amazon_is_active,
-    }
+    activas = [
+        spec for spec in stores.active(config) if spec.has_session
+    ]
     sin_sesion = []
-    for store, activa in activas.items():
-        if not activa:
-            continue
+    for spec in activas:
         try:
-            if not TokenStore(str(store)).has_session():
-                sin_sesion.append(str(store).upper())
+            if not TokenStore(spec.key).has_session():
+                sin_sesion.append(spec.label)
         except Exception as error:  # noqa: BLE001 - una línea de log, no vale fallar
-            logger.debug(f"no se pudo mirar la sesión de {store}: {error}")
+            logger.debug(f"no se pudo mirar la sesión de {spec.key}: {error}")
 
     if sin_sesion:
         logger.warning(
@@ -156,5 +149,5 @@ def _log_sesiones(config) -> None:
             "solo darán lo que quedara guardado de la última vez "
             "(Opciones → Cuentas)"
         )
-    elif any(activas.values()):
+    elif activas:
         logger.info("Sesiones: todas iniciadas")

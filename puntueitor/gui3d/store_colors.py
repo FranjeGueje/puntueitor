@@ -11,16 +11,18 @@ lugar.
 """
 from collections.abc import Iterable
 
+from puntueitor.core import stores
 from puntueitor.core.models import Stores
 
-# Orden de preferencia cuando un juego está en varias tiendas a la vez.
-STORE_PRIORITY = (Stores.STEAM, Stores.GOG, Stores.EPIC, Stores.AMAZON)
+# Los dos salen del registro de tiendas (`core/stores/`): el color lo declara
+# cada tienda en su módulo, y la prioridad es el orden del registro, que es
+# también el orden en que se pintan en los menús. Así una tienda nueva trae su
+# color puesto en vez de salir del color por defecto hasta que alguien se
+# acuerde de esta tabla.
+STORE_PRIORITY = tuple(spec.store for spec in stores.all_stores())
 
 STORE_COLORS: dict[Stores, tuple[float, float, float]] = {
-    Stores.STEAM: (0.16, 0.22, 0.34),
-    Stores.GOG: (0.48, 0.24, 0.58),
-    Stores.EPIC: (0.22, 0.22, 0.24),
-    Stores.AMAZON: (0.82, 0.53, 0.13),
+    spec.store: spec.color for spec in stores.all_stores()
 }
 
 # Para juegos sin ninguna tienda reconocida ("Otros").

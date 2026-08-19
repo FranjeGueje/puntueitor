@@ -54,7 +54,7 @@ def falso_pipeline(monkeypatch):
     # En su módulo de origen: `refresh_library` lo importa dentro de la
     # función, así que cuando corre el test todavía no hay ningún nombre al
     # que apuntar en `library_refresh`.
-    import puntueitor.core.pipeline.load_steam_library as pipeline_mod
+    import puntueitor.core.pipeline.load_library as pipeline_mod
     monkeypatch.setattr(pipeline_mod, "load_library", fake)
     fake.llamadas = llamadas
     fake.emite = emite

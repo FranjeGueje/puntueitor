@@ -71,7 +71,7 @@ def refresh_library(
     from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
     from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
     from puntueitor.core.igdb.service import IGDBService
-    from puntueitor.core.pipeline.load_steam_library import load_library
+    from puntueitor.core.pipeline.load_library import load_library
     from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
 
     config = ConfigManager().get

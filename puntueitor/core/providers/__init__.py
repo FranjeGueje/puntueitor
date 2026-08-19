@@ -17,29 +17,16 @@ def build_providers(config) -> dict:
     """
     Un proveedor por cada tienda ACTIVA en la configuración.
 
-    Se construyen aquí y no en el pipeline para que añadir una tienda sea
-    tocar este paquete y nada más. Construir un proveedor no habla con la
-    red ni abre sesión: eso pasa en `fetch()`, y solo si hace falta.
+    Sale del registro de tiendas (`core/stores/`), así que añadir una no se
+    toca aquí. Construir un proveedor no habla con la red ni abre sesión: eso
+    pasa en `fetch()`, y solo si hace falta.
     """
-    from puntueitor.core.models import Stores
+    from puntueitor.core import stores
 
-    providers = {}
-
-    if config.steam_is_active:
-        providers[Stores.STEAM] = SteamProvider(
-            api_key=config.steam_api_key, user_id=config.steam_user_id,
-        )
-
-    tiendas = {
-        Stores.GOG: (config.gog_is_active, GOGProvider),
-        Stores.EPIC: (config.epic_is_active, EpicProvider),
-        Stores.AMAZON: (config.amazon_is_active, AmazonProvider),
+    return {
+        spec.store: spec.provider(config)
+        for spec in stores.active(config)
     }
-    for store, (activa, clase) in tiendas.items():
-        if activa:
-            providers[store] = clase()
-
-    return providers
 
 
 __all__ = [

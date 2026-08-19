@@ -994,6 +994,32 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## The store registry is the only list of stores
+
+`core/stores/` holds one `StoreSpec` per store — label, colour, config flag,
+provider, resolver, session, paste hint — and everything else reads it: both
+UIs' menus, the carousel colours, the log, the pipeline's resolver table, the
+session service.
+
+It exists because that same fact used to live in **eleven files**, hand-synced,
+and it broke twice: the CUENTAS rows rendered fine but the dispatcher did not
+route them, and `sessions_summary()` walked the whole enum and dragged Steam
+into a list it had no business being in.
+
+**Do not write another list of stores.** Two tests enforce it
+(`tests/test_stores_registry.py`): one greps the source for lines naming two or
+more stores outside `core/stores/`, the other for `for store in Stores`. If you
+need "all the stores", ask `stores.all_stores()` — it also carries the right
+order, which drives both menu order and colour priority.
+
+Per-store facts belong in the spec, not in a constant elsewhere. `session=None`
+is how Steam says it has no OAuth; `resolvable_by_id=False` is how Amazon says
+its games can only be found by title. Both used to be separate tuples.
+
+Adding a store still costs two lines outside its module — the `Stores` member
+and the `Config` flag — because the enum is the database key and the config is
+typed. The registry tests catch both omissions, in both directions.
+
 ## Store providers: the cache is the safety net, not an optimisation
 
 Three of the four store APIs (GOG, Epic, Amazon) are undocumented — they are
@@ -1086,7 +1112,7 @@ and makes the user think they picked the wrong account.
 
 El ajuste "TIENDAS A CARGAR" (Opciones → Tiendas) gobierna:
 
-1. **De qué tiendas se escanea** — `pipeline.load_steam_library.load_library`
+1. **De qué tiendas se escanea** — `pipeline.load_library.load_library`
    construye su lista de tiendas desde la config y salta las desmarcadas. Ya
    funcionaba.
 2. **Qué juegos se enseñan** — esto faltaba: los juegos de una tienda

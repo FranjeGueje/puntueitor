@@ -30,7 +30,7 @@ class TestSinSesion:
             _log_sesiones(ConfigDoble(gog_is_active=True, epic_is_active=True))
 
         mensaje = " ".join(r.message for r in caplog.records)
-        assert "GOG" in mensaje and "EPIC" in mensaje
+        assert "GOG" in mensaje and "Epic" in mensaje
         assert "Opciones" in mensaje
 
     def test_a_store_that_is_off_is_not_reported(self, caplog):
@@ -40,7 +40,7 @@ class TestSinSesion:
             _log_sesiones(ConfigDoble(gog_is_active=True))
 
         mensaje = " ".join(r.message for r in caplog.records)
-        assert "GOG" in mensaje and "AMAZON" not in mensaje
+        assert "GOG" in mensaje and "Amazon" not in mensaje
 
 
 class TestSteam:
@@ -49,7 +49,7 @@ class TestSteam:
         Steam activa y sin clave devolvía la tupla vacía sin decir nada: el
         usuario se quedaba sin sus juegos de Steam y sin ninguna pista.
         """
-        from puntueitor.core.pipeline import load_steam_library as pipeline
+        from puntueitor.core.pipeline import load_library as pipeline
 
         config = ConfigDoble(steam_api_key="", steam_user_id=123)
         monkeypatch.setattr(pipeline.ConfigManager, "get", property(lambda self: config))
@@ -60,7 +60,7 @@ class TestSteam:
         assert any("no hay API key" in r.message for r in caplog.records)
 
     def test_without_steam_id_it_says_so(self, caplog, monkeypatch):
-        from puntueitor.core.pipeline import load_steam_library as pipeline
+        from puntueitor.core.pipeline import load_library as pipeline
 
         config = ConfigDoble(steam_api_key="clave", steam_user_id=0)
         monkeypatch.setattr(pipeline.ConfigManager, "get", property(lambda self: config))

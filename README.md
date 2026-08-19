@@ -432,12 +432,14 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-583 tests (unitarios + integración) que cubren:
+602 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
 - Selectores, Mappers, Enrichers
 - Resolvers (plantilla común y las 4 tiendas)
+- El registro de tiendas: que ninguna quede a medio declarar, y que nadie
+  vuelva a escribir una lista de tiendas a mano
 - Proveedores de tienda: paginación, reutilización de lo ya consultado, y
   caída a la copia guardada cuando no hay red o la sesión ha caducado
 - Sesiones: renovación de tokens y qué se acepta al pegar la vuelta del login

@@ -21,17 +21,10 @@ from textual.containers import Center, Horizontal, Middle, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
+from puntueitor.core import stores
 from puntueitor.core.config import ConfigManager
 from puntueitor.core.services import accounts
 
-#: Qué se le dice al usuario que va a tener que pegar en cada tienda.
-_QUE_PEGAR = {
-    "gog": "Pega la dirección de la página en blanco a la que llegas",
-    "epic": "Pega el texto que sale en la página (o su dirección)",
-    "amazon": "Pega la dirección a la que te lleva Amazon al entrar",
-}
-
-_ETIQUETAS = {"gog": "GOG", "epic": "Epic", "amazon": "Amazon"}
 
 
 class AccountsScreen(Screen):
@@ -63,18 +56,20 @@ class AccountsScreen(Screen):
                         "de entrar, copia la dirección de la barra y pégala.",
                         classes="section-title",
                     )
-                    for store in accounts.CON_SESION:
-                        yield from self._fila(str(store))
+                    for spec in stores.with_session():
+                        yield from self._fila(spec)
 
                     with Horizontal(id="accounts-buttons"):
                         yield Button("Guardar", variant="success", id="btn-save")
                         yield Button("Volver", id="btn-close")
         yield Footer()
 
-    def _fila(self, store: str) -> ComposeResult:
-        yield Label(_ETIQUETAS[store], classes="section-title")
+    def _fila(self, spec) -> ComposeResult:
+        """La fila de una tienda, sacada de lo que declara en el registro."""
+        store = spec.key
+        yield Label(spec.label, classes="section-title")
         yield Label(self._estado(store), id=f"estado-{store}")
-        yield Input(id=f"pegado-{store}", placeholder=_QUE_PEGAR[store])
+        yield Input(id=f"pegado-{store}", placeholder=spec.paste_hint)
         with Horizontal():
             yield Button("Abrir navegador", id=f"abrir-{store}")
             yield Button("Guardar lo pegado", variant="success", id=f"pegar-{store}")

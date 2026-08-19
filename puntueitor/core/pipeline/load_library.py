@@ -8,13 +8,10 @@ from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.models import Game, Stores
 from puntueitor.core.models.selection_context import SelectionContext
 from puntueitor.core.protocols import GameEnricher
-from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
-from puntueitor.core.resolvers.gog_resolver import GOGResolver
-from puntueitor.core.resolvers.epic_resolver import EpicResolver
-from puntueitor.core.resolvers.amazon_resolver import AmazonResolver
 from puntueitor.core.selector.steam_selector import SteamSelector
 from puntueitor.core.config import ConfigManager
 from puntueitor.core import paths
+from puntueitor.core import stores
 from puntueitor.core.providers import LibraryProvider, build_providers
 
 logger = logging.getLogger(__name__)
@@ -154,12 +151,9 @@ def load_library(
         else:
             logger.info(resumen)
 
-    #: El resolver que sabe leer los crudos de cada tienda.
+    #: El resolver que sabe leer los crudos de cada tienda, del registro.
     RESOLVERS = {
-        Stores.STEAM: SteamIGDBResolver,
-        Stores.GOG: GOGResolver,
-        Stores.EPIC: EpicResolver,
-        Stores.AMAZON: AmazonResolver,
+        spec.store: spec.resolver() for spec in stores.all_stores()
     }
 
     if not providers:

@@ -11,6 +11,7 @@ from textual.containers import Center, Horizontal, Middle, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, Footer, Header, Label
 
+from puntueitor.core import stores
 from puntueitor.core.config import ConfigManager
 
 
@@ -23,10 +24,10 @@ class ConfigurationScreen(Screen):
             with Center():
                 with Vertical(id="config-dialog"):
                     yield Label("Tiendas a cargar", classes="section-title")
-                    yield Checkbox("Steam", id="store-steam", value=True)
-                    yield Checkbox("GOG", id="store-gog")
-                    yield Checkbox("Epic", id="store-epic")
-                    yield Checkbox("Amazon", id="store-amazon")
+                    # Del registro (`core/stores/`): una tienda nueva aparece
+                    # aquí sola, con su id derivado de su clave.
+                    for spec in stores.all_stores():
+                        yield Checkbox(spec.label, id=f"store-{spec.key}")
 
                     yield Label(
                         "Las credenciales y las sesiones están en Cuentas (a)",
@@ -42,10 +43,10 @@ class ConfigurationScreen(Screen):
         self.title = "Tiendas"
         config = ConfigManager().get
 
-        self.query_one("#store-steam", Checkbox).value = config.steam_is_active
-        self.query_one("#store-gog", Checkbox).value = config.gog_is_active
-        self.query_one("#store-epic", Checkbox).value = config.epic_is_active
-        self.query_one("#store-amazon", Checkbox).value = config.amazon_is_active
+        for spec in stores.all_stores():
+            self.query_one(f"#store-{spec.key}", Checkbox).value = getattr(
+                config, spec.config_flag, False,
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-save":
@@ -57,10 +58,11 @@ class ConfigurationScreen(Screen):
         manager = ConfigManager()
         config = manager.get
 
-        config.steam_is_active = self.query_one("#store-steam", Checkbox).value
-        config.gog_is_active = self.query_one("#store-gog", Checkbox).value
-        config.epic_is_active = self.query_one("#store-epic", Checkbox).value
-        config.amazon_is_active = self.query_one("#store-amazon", Checkbox).value
+        for spec in stores.all_stores():
+            setattr(
+                config, spec.config_flag,
+                self.query_one(f"#store-{spec.key}", Checkbox).value,
+            )
 
         manager.save()
         self.app.notify("Tiendas guardadas correctamente.", severity="information")

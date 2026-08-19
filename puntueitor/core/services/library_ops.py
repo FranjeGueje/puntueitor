@@ -37,13 +37,7 @@ def add_games(library: Library, games: Iterable[Game]) -> Library:
     return Library.from_iterable((*library.games, *added))
 
 
-#: Qué campo de la configuración activa cada tienda.
-_STORE_FLAGS = {
-    Stores.STEAM: "steam_is_active",
-    Stores.GOG: "gog_is_active",
-    Stores.EPIC: "epic_is_active",
-    Stores.AMAZON: "amazon_is_active",
-}
+
 
 
 def active_stores(config=None) -> set[Stores]:
@@ -51,16 +45,15 @@ def active_stores(config=None) -> set[Stores]:
     Las tiendas marcadas en la configuración ("TIENDAS A CARGAR").
 
     Deciden dos cosas distintas y las dos importan: de qué tiendas se escanea
-    (`pipeline.load_steam_library.load_library`) y qué juegos se enseñan.
+    (`pipeline.load_library.load_library`) y qué juegos se enseñan.
     """
     if config is None:
         from puntueitor.core.config import ConfigManager
 
         config = ConfigManager().get
-    return {
-        store for store, field in _STORE_FLAGS.items()
-        if getattr(config, field, False)
-    }
+    from puntueitor.core import stores
+
+    return {spec.store for spec in stores.active(config)}
 
 
 def is_in_active_stores(game: Game, active: set[Stores]) -> bool:

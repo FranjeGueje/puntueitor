@@ -26,9 +26,18 @@ from puntueitor.core.models import Stores
 
 logger = logging.getLogger(__name__)
 
-#: Las únicas tiendas que tienen sesión que iniciar (ver arriba por qué
-#: Steam no está).
-CON_SESION = (Stores.GOG, Stores.EPIC, Stores.AMAZON)
+def con_sesion():
+    """
+    Las tiendas que tienen sesión que iniciar (ver arriba por qué Steam no).
+
+    Sale del registro, y cada tienda lo declara en su propio módulo con
+    `session=None` o no. Antes era una lista aparte que había que acordarse
+    de mantener, y recorrer el enum entero en vez de esta lista fue
+    exactamente lo que coló a Steam donde no tocaba.
+    """
+    from puntueitor.core import stores
+
+    return tuple(spec.store for spec in stores.with_session())
 
 
 @dataclass(frozen=True)
@@ -46,18 +55,13 @@ class LoginResult:
 
 
 def _sesion(store: str):
-    """La clase de sesión de una tienda. Importa dentro: arrastra `requests`."""
-    store = str(store)
-    if store == Stores.GOG:
-        from puntueitor.core.auth.gog import GOGSession
-        return GOGSession()
-    if store == Stores.EPIC:
-        from puntueitor.core.auth.epic import EpicSession
-        return EpicSession()
-    if store == Stores.AMAZON:
-        from puntueitor.core.auth.amazon import AmazonSession
-        return AmazonSession()
-    raise ValueError(f"{store} no usa sesión")
+    """La sesión de una tienda, del registro."""
+    from puntueitor.core import stores
+
+    spec = stores.find(store)
+    if spec is None or not spec.has_session:
+        raise ValueError(f"{store} no usa sesión")
+    return spec.session()
 
 
 def login_url(store: str) -> str:
@@ -162,4 +166,4 @@ def sessions_summary() -> dict[str, bool]:
     Se recorre `CON_SESION` y no `Stores`: recorriendo el enum entero se
     colaba Steam, que no tiene sesión ninguna que enseñar.
     """
-    return {str(store): has_session(store) for store in CON_SESION}
+    return {str(store): has_session(store) for store in con_sesion()}

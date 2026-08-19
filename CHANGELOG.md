@@ -113,6 +113,18 @@ con su carpeta.
   credenciales que ya no están ahí. Son justo los que se leen cuando algo no
   funciona, así que ahora cada uno manda al menú que toca.
 
+- **Un registro de tiendas** (`core/stores/`): cada tienda declara en su
+  módulo todo lo suyo —etiqueta, color, bandera de configuración, proveedor,
+  resolver, sesión y qué se le pide pegar al usuario— y el resto del programa
+  lo lee de ahí. Antes ese mismo dato vivía en once ficheros sincronizados a
+  mano, y eso ya había fallado dos veces.
+
+  Añadir una tienda pasa a ser escribir su módulo, más dos líneas que no
+  pueden vivir en él: su miembro del enum `Stores` (la clave con la que se
+  guardan sus juegos) y su campo en `Config`. Hay tests que comprueban que no
+  se olvidan, en los dos sentidos, y otros dos que impiden que vuelva a
+  aparecer una lista de tiendas escrita a mano.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`
