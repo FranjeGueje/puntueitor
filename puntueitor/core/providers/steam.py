@@ -38,9 +38,9 @@ class SteamProvider(LibraryProvider):
         return True, ""
 
     def _fetch_remote(self) -> Sequence[dict]:
-        # Dentro: `steampy` arrastra `requests` y este módulo lo importa
+        # Dentro: el cliente arrastra `requests` y este módulo lo importa
         # gente que solo quiere saber qué tiendas hay.
-        from steampy.api.steam_api import SteamApi
+        from puntueitor.core.raw.steam import SteamApi
 
         games = SteamApi().owned_games(self.api_key, self.user_id)
         if games is None:

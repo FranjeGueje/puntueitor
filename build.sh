@@ -29,9 +29,7 @@ pyinstaller \
     --collect-all textual \
     --hidden-import igdbpy \
     --hidden-import howlongtobeatpy \
-    --hidden-import igdbpy \
     --hidden-import requests \
-    --hidden-import steampy \
     --hidden-import threading \
     --hidden-import concurrent.futures \
     --hidden-import logging \

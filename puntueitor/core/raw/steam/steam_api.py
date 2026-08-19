@@ -16,7 +16,7 @@ class SteamApi:
     def __init__(
         self,
         timeout: int = 5,
-        user_agent: str = "steampy/0.1",
+        user_agent: str = "puntueitor/1.0",
         rate_limit: int = 5,      # peticiones
         rate_period: float = 1.0, # segundos
     ):

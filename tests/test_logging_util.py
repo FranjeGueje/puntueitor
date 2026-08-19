@@ -81,7 +81,7 @@ class TestSteam:
         aplica. Es lo que lee quien se queda sin juegos, así que el orden
         importa.
         """
-        from steampy.api.steam_api import SteamApi
+        from puntueitor.core.raw.steam import SteamApi
 
         api = SteamApi()
         monkeypatch.setattr(api, "_request_json", lambda url, params: {"response": {}})
@@ -95,7 +95,7 @@ class TestSteam:
 
     def test_a_failed_request_is_logged(self, caplog, monkeypatch):
         """`_request_json` se tragaba TODA excepción y devolvía None."""
-        from steampy.api.steam_api import SteamApi
+        from puntueitor.core.raw.steam import SteamApi
 
         api = SteamApi()
 
@@ -111,7 +111,7 @@ class TestSteam:
 
     def test_the_api_key_never_reaches_the_log(self, caplog, monkeypatch):
         """La clave viaja en los `params`, y el log se comparte."""
-        from steampy.api.steam_api import SteamApi
+        from puntueitor.core.raw.steam import SteamApi
 
         api = SteamApi()
 

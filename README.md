@@ -282,8 +282,8 @@ ningún permiso, así que la clave haría falta igual. Sácala de
 | `o` | **Ocultos** | Alterna visibilidad de juegos marcados como ocultos |
 | `s` | **Ordenar** | Diálogo de ordenación (nombre, puntuación, duración…) |
 | `f` | **Filtrar** | Diálogo de filtros (nombre, duración, flags…) |
-| `e` | **Enriquecedores** | Ejecuta HLTB + Steam Score en toda la biblioteca |
-| `E` | **Regenerar** | Limpia caché de enriquecedores y vuelve a ejecutar |
+| `e` | **Enriquecedores** | Vuelve a buscar duración y notas de toda la biblioteca |
+| `E` | **Regenerar** | Borra los datos extra y los vuelve a buscar desde cero |
 | `u` | **Desconocidos** | Alterna vista de juegos desconocidos / biblioteca |
 | `r` | **Actualizar** | Recarga tiendas desde API (juegos nuevos) |
 | `R` | **Regenerar TODO** | Borra toda la caché SQLite y recarga desde cero |
@@ -432,7 +432,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-621 tests (unitarios + integración) que cubren:
+627 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -453,6 +453,8 @@ python -m pytest tests/
 - Copias de seguridad: ida y vuelta, zips ajenos, rutas maliciosas dentro del
   zip y restaurar con la base de datos abierta
 - Diagnóstico de errores y que el log nunca escriba una credencial
+- Que no queden imports sin usar, ni tablas de tiendas o textos de scoring
+  escritos a mano fuera de su registro
 - El Editor Rápido: su tabla de gestos y la histéresis del stick derecho
   (ese test reproduce un rebote real de un mando)
 

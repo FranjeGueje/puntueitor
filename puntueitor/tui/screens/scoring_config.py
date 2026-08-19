@@ -3,7 +3,6 @@ from textual.screen import ModalScreen
 from textual.containers import Vertical, Container, ScrollableContainer, Horizontal
 from textual.widgets import Label, Input, Button, Checkbox, Footer
 from textual import on
-from pathlib import Path
 
 from puntueitor.core import paths
 from puntueitor.core.config import load_scoring, save_scoring, DEFAULT_MIXED_WEIGHTS, DEFAULT_WEIGHTED_WEIGHTS, DEFAULT_AVAILABLE_HOURS

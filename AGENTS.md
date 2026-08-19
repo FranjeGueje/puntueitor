@@ -994,6 +994,22 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Neither frontend reimplements a core service
+
+`tui/app.py:_enrich_worker` used to be a hand-copy of
+`library_refresh._enrich_loop`, and the copy had drifted: no per-game
+`try/except`, so one failing game killed the whole run, and enrichers built
+without `overwrite`, so `e` filled gaps while the carousel's same-named action
+refreshed everything.
+
+If an operation is not drawing, it belongs in `core/services/` and **both**
+frontends call it. That rule already existed (`arquitectura.md`); this is what
+happens when it slips.
+
+When wiring a service into a UI thread, note that the services already save
+game by game — `_on_game_enriched` must not save again, or every row is
+written twice.
+
 ## Enrichers are built in one place, and it is not optional
 
 `core/enrichers/factory.py` — `build_enrichers(repo, *, overwrite=False)`.

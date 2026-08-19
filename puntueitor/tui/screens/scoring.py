@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
-from textual.containers import Vertical, Horizontal, Center, Middle, Container
+from textual.containers import Vertical, Horizontal, Container
 from textual.widgets import Label, Static, Footer, ListItem, ListView
 from textual import on
 

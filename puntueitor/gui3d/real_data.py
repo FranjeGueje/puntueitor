@@ -20,7 +20,6 @@ import logging
 from pathlib import Path
 
 from puntueitor.core.repository.library_repository import LibraryRepository
-from puntueitor.gui3d.covers import load_cover_texture
 from puntueitor.gui3d.game_case import make_placeholder_texture
 from puntueitor.gui3d.store_colors import primary_store_color
 

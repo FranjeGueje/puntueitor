@@ -138,6 +138,17 @@ con su carpeta.
   `core/scoring/catalog.py` y las dos enseñan lo mismo — el carrusel gana esa
   recomendación.
 
+- **La tecla `e` de la terminal actualiza también lo que ya se sabía.** Antes
+  solo rellenaba huecos, mientras que la acción del mismo nombre en el
+  carrusel refrescaba todo. Las dos interfaces reimplementaban el mismo
+  recorrido y habían divergido; ahora las dos llaman al servicio del core.
+- **Un juego que falle al enriquecer ya no tumba el lote entero en la
+  terminal.** El carrusel ya lo aislaba; la copia de la TUI no.
+- El cliente de la API de Steam deja de ser un paquete aparte (`steampy/`) y
+  pasa a `core/raw/`, junto al de HowLongToBeat. Estar fuera tenía sentido
+  cuando además traía su propia capa de dominio; borrada esa, lo que quedaba
+  era un cliente HTTP como el otro.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`

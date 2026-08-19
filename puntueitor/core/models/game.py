@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
-from pathlib import Path
 
 from .util import normalize_title
 

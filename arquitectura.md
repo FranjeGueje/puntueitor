@@ -165,9 +165,12 @@ casos.
 que sabe cómo es el JSON de IGDB. Si IGDB cambia una clave, se arregla ahí y
 el resto del core ni se entera.
 
-**`steampy/` está fuera del core** y es un cliente HTTP puro, con rate
-limiting propio (ventana temporal + `threading.Lock`) para no quemar la
-clave de API del usuario.
+**`core/raw/` guarda los clientes de APIs ajenas**, en crudo y sin dominio
+dentro: el de Steam (con rate limiting propio —ventana temporal y
+`threading.Lock`— para no quemar la clave del usuario) y el de HowLongToBeat.
+Estuvo fuera del proyecto, como un paquete `steampy/` hermano, mientras tuvo
+además su propia capa de dominio; cuando esa se fue, lo que quedaba era justo
+lo que este paquete alberga.
 
 ---
 

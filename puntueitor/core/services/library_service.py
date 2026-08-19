@@ -1,18 +1,9 @@
 import logging
-from collections.abc import Callable
 
 from puntueitor.core.models import Game, Library, ScoringContext
-from puntueitor.core.protocols import GameScorer, GameSorter
+from puntueitor.core.protocols import GameScorer
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.filters import NameFilter, DurationFilter, FinishedFilter, FavoriteFilter, BacklogFilter, HiddenFilter
-from puntueitor.core.scoring import MixedScore
-from puntueitor.core.scoring.atomic import (
-    GenreScorer,
-    CriticScoreScorer,
-    UserScoreScorer,
-    DurationScoreScorer,
-)
-from puntueitor.core.scoring.weighted_score import WeightedScore
 from puntueitor.core.pipeline.scoring_ops import score_library
 from puntueitor.core.config import load_scoring
 
@@ -87,11 +78,12 @@ class LibraryService:
             )
         elif criteria == "mixed":
             config = load_scoring()
-            strategy = MixedScore(
-                weight_critics=config.scoring_mixed_critics,
-                weight_users=config.scoring_mixed_users,
-                weight_duration=config.scoring_mixed_duration,
-            )
+            # Del catálogo, igual que al puntuar: construirlo aquí a mano
+            # es cómo `sort("mixed")` llegó a ignorar los pesos guardados y
+            # dar un orden distinto al de `score("mixed")` (ver 1.1.0).
+            from puntueitor.core.scoring import catalog
+
+            strategy = catalog.get("mixed").build(config)
             ctx = ScoringContext(
                 available_hours=config.scoring_available_hours,
                 preferred_genres=set(config.scoring_preferred_genres) if config.scoring_preferred_genres else None,

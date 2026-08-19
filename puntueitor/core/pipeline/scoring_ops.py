@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 
 from puntueitor.core.protocols import GameScorer
 from puntueitor.core.models import Game, Library, ScoredGame, ScoredLibrary, ScoringContext

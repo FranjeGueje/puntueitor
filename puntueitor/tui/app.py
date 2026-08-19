@@ -5,8 +5,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, LoadingIndicator, Label, ProgressBar
-from textual.containers import Horizontal, Center, Middle, Vertical, Container
+from textual.widgets import Header, Footer, Label, ProgressBar
+from textual.containers import Horizontal
 from textual import work
 
 from puntueitor.tui.widgets.game_list import GameList
@@ -44,7 +44,6 @@ from puntueitor.core.config import ConfigManager
 from puntueitor.core import paths
 from puntueitor.core.diagnostics import describe_error
 from puntueitor.core.logging_setup import setup_logging
-from puntueitor.core.igdb.service import IGDBService
 from puntueitor.core.services.library_service import LibraryService
 
 class PuntueitorApp(App):
@@ -682,16 +681,9 @@ class PuntueitorApp(App):
             self.notify("Ya hay un proceso de enriquecimiento en curso", severity="warning")
             return
 
-        self.repo.extras_cacher.clear_all()
-        self.notify("Caché de enriquecedores borrada. Recargando biblioteca...")
-
-        library = self.repo.load()
-        self.full_library = library
-        self.current_library = library
-        self.query_one(GameList).populate_games(library)
-        self.query_one(GameList).select_first()
-
-        self._start_enrichment()
+        # El borrado de la caché lo hace `enrich_all`; aquí solo se avisa.
+        self.notify("Regenerando los datos extra de toda la biblioteca...")
+        self._start_enrichment(destructivo=True)
 
     def action_select_scoring(self) -> None:
         def handle_scoring(scoring_type: str | None) -> None:
@@ -709,8 +701,9 @@ class PuntueitorApp(App):
         game_list.select_first()
         self.notify(f"Biblioteca puntuada y ordenada por: {scoring_type}")
 
-    def _start_enrichment(self) -> None:
+    def _start_enrichment(self, destructivo: bool = False) -> None:
         self.is_enriching = True
+        self._enrich_destructivo = destructivo
         self.query_one("#status-message", Label).update("Enriqueciendo biblioteca...")
         self.query_one("#status-bar").add_class("active")
         self.query_one("#status-progress", ProgressBar).progress = 0
@@ -718,40 +711,50 @@ class PuntueitorApp(App):
         t.start()
 
     def _enrich_worker(self):
+        """
+        Enriquece la biblioteca entera, en su hilo.
+
+        El recorrido lo hace el core (`library_refresh`), no esta pantalla.
+        Antes estaba copiado aquí y la copia había divergido: le faltaba el
+        `try/except` por juego, así que uno que fallara se llevaba por delante
+        el lote entero, y usaba los enrichers sin `overwrite`, así que
+        rellenaba huecos pero no actualizaba lo ya conocido —al revés que la
+        acción del mismo nombre en el carrusel—.
+        """
+        from puntueitor.core.services.library_refresh import (
+            enrich_all, update_extras,
+        )
+
+        operacion = enrich_all if self._enrich_destructivo else update_extras
         try:
-            from puntueitor.core.enrichers.factory import (
-                apply_enrichers, build_enrichers,
+            operacion(
+                self.repo,
+                on_game=lambda game: self._call_from_thread_safe(
+                    self._on_game_enriched, game,
+                ),
+                on_progress=lambda actual, total, titulo: (
+                    self._call_from_thread_safe(
+                        self._update_loading_counter, actual, total, titulo,
+                    )
+                ),
+                # La misma bandera que ya usaba para cancelar.
+                should_stop=lambda: not self.is_enriching,
             )
-
-            enrichers = build_enrichers(self.repo)
-
-            games = list(self.full_library.games)
-            total = len(games)
-            self._call_from_thread_safe(self._setup_progress, total)
-
-            for i, game in enumerate(games, 1):
-                if not self.is_enriching:
-                    break
-                self._call_from_thread_safe(self._update_loading_counter, i, total, game.title)
-                if game.duration_hours is not None and game.steam_review is not None and game.steamdb_score is not None:
-                    continue
-                enriched_game = apply_enrichers(game, enrichers)
-
-                if enriched_game.duration_hours is not None or enriched_game.steam_review is not None or enriched_game.steamdb_score is not None:
-                    self.repo.save_game(enriched_game)
-                    self._call_from_thread_safe(self._on_game_enriched, enriched_game)
-
             self._call_from_thread_safe(self._finish_enrich)
         except Exception as e:
             self.is_enriching = False
-            self._call_from_thread_safe(self.notify, f"Error enriqueciendo: {e}", severity="error")
+            self._call_from_thread_safe(
+                self.notify, f"Error enriqueciendo: {e}", severity="error",
+            )
             self._call_from_thread_safe(self._hide_loading)
 
     def _on_game_enriched(self, game: Game) -> None:
-        """Actualiza un juego en la memoria y en la tabla."""
-        # 1. Guardar los extras del juego enriquecido en el repositorio (guardado progresivo)
-        if game.duration_hours is not None or game.steam_review is not None or game.steamdb_score is not None:
-            self.repo.save_game(game)
+        """
+        Actualiza un juego en la memoria y en la tabla.
+
+        NO lo guarda: el servicio del core ya guarda juego a juego, y hacerlo
+        también aquí era escribir dos veces cada fila.
+        """
 
         # 2. Actualizar en full_library
         new_games = [g if g.igdb_id != game.igdb_id else game for g in self.full_library.games]
@@ -775,12 +778,20 @@ class PuntueitorApp(App):
         self.query_one("#status-bar").remove_class("active")
         self.query_one("#status-message", Label).update("Listo")
 
-    def _setup_progress(self, total: int) -> None:
-        self.query_one("#status-progress", ProgressBar).total = total
-
     def _update_loading_counter(self, current: int, total: int, game_name: str) -> None:
+        """
+        La barra de progreso, con su total.
+
+        El total se pone aquí y no en un paso previo porque ya viene en cada
+        aviso: quien recorre la biblioteca es el core, y avisa de "voy por el
+        N de M". Antes había un `_setup_progress` aparte que lo fijaba al
+        empezar, y este método recibía el total sin usarlo.
+        """
+        barra = self.query_one("#status-progress", ProgressBar)
+        if barra.total != total:
+            barra.total = total
         self.query_one("#status-message", Label).update(f"Enriqueciendo: {game_name}")
-        self.query_one("#status-progress", ProgressBar).progress = current
+        barra.progress = current
 
     def apply_sorting(self, criteria: str, reverse: bool = False) -> None:
         self.current_library = self.library_service.sort(
