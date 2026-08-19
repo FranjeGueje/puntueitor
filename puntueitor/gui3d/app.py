@@ -17,6 +17,7 @@ Ejecutar con:
     python -m puntueitor.gui3d.app --fhd
 """
 import argparse
+from functools import partial
 import logging
 import re
 import sys
@@ -163,7 +164,7 @@ from puntueitor.core.models import Stores
 from puntueitor.core.services import unknown_actions
 from puntueitor.core.services.game_actions import forget_game
 from puntueitor.core.services.library_ops import active_stores, is_in_active_stores
-from puntueitor.gui3d import accounts_ui, backup_ui, menus, scoring_ui, state
+from puntueitor.gui3d import accounts_ui, backup_ui, editor_ui, menus, scoring_ui, state
 from puntueitor.gui3d.filters import (
     TRISTATE_LABELS,
     Filters,
@@ -604,7 +605,7 @@ class App(ShowBase):
             on_refresh=self._refresh_library,
             on_jump_start=self._jump_start,
             on_jump=self._jump_group,
-            on_editor=self._toggle_editor_mode,
+            on_editor=partial(editor_ui.toggle_editor_mode, self),
         )
 
         self.task_mgr.add(self._update, "carousel-update")
@@ -972,12 +973,12 @@ class App(ShowBase):
             "q": (self._jump_group, [-1]),
             "w": (self._jump_group, [1]),
             "home": (self._jump_start, []),
-            "e": (self._toggle_editor_mode, []),
+            "e": (partial(editor_ui.toggle_editor_mode, self), []),
         }
         # Las cuatro del Editor Rápido, en la misma tabla para que se suelten
         # solas al abrir un cuadro de texto: ahí son letras que se escriben.
         for tecla, direccion in menus.EDITOR_KEYS.items():
-            self._shortcuts[tecla] = (self._editor_gesture, [direccion])
+            self._shortcuts[tecla] = (partial(editor_ui.editor_gesture, self), [direccion])
         self._bind_shortcuts()
 
     def _bind_shortcuts(self) -> None:
@@ -2469,41 +2470,7 @@ class App(ShowBase):
         elif direction > 0:
             self._exit_unknown_mode()
 
-    # ── Editor Rápido ──
-
-    def _toggle_editor_mode(self) -> None:
-        """
-        R3 (o la tecla "e"): entra y sale del Editor Rápido.
-
-        Solo desde el carrusel principal y sin nada abierto encima. En
-        desconocidos no tiene sentido —un desconocido no tiene estados— y con
-        un menú abierto el stick derecho no se está mirando.
-        """
-        if self._typing or self.active_menu is not None:
-            return
-        if self._unknown_mode:
-            self.notifier.show("Editor Rápido: solo en la biblioteca")
-            return
-
-        self._editor_mode = not self._editor_mode
-        # Se olvida la última posición del stick: si se sale y se entra con el
-        # stick echado, el flanco tiene que volver a contarse desde cero.
-        self._editor_stick = (0, 0)
-
-        if self._editor_mode:
-            self.help_text.hide()
-            self.editor_help_text.show()
-            self.notifier.show(menus.EDITOR_ON)
-        else:
-            self.editor_help_text.hide()
-            self.help_text.show()
-            self.notifier.show(menus.EDITOR_OFF)
-            # Lo que se haya ocultado durante la sesión se aplica AHORA, al
-            # salir (ver `_editor_gesture`).
-            if self._hidden_filter_dirty:
-                self._apply_hidden_filter()
-                self._hidden_filter_dirty = False
-        logger.info(f"gui3d: editor rápido {'on' if self._editor_mode else 'off'}")
+    # ── Guardas compartidas (Editor Rápido, menú de juego) ──
 
     def _blocked_in_editor(self, gesture: str = "") -> bool:
         """
@@ -2519,50 +2486,6 @@ class App(ShowBase):
         if gesture:
             self.notifier.show(menus.EDITOR_BLOCKED.format(gesto=gesture))
         return True
-
-    def _update_editor(self) -> None:
-        """
-        Lee el stick derecho una vez por frame, y solo actúa en el FLANCO.
-
-        Sin esto, mantener el stick echado marcaría y desmarcaría el estado
-        sesenta veces por segundo. El teclado no pasa por aquí: sus teclas ya
-        son eventos sueltos.
-        """
-        if not self._editor_mode or self.gamepad is None:
-            return
-        direccion = self.gamepad.right_stick()
-        if direccion == self._editor_stick:
-            return
-        self._editor_stick = direccion
-        if direccion != (0, 0):
-            self._editor_gesture(direccion)
-
-    def _editor_gesture(self, direction: tuple[int, int]) -> None:
-        """Una dirección del editor: conmuta el estado que le toque."""
-        if not self._editor_mode or self._typing or self.active_menu is not None:
-            return
-        field = menus.EDITOR_FLAGS.get(direction)
-        entry = self.carousel.selected
-        if field is None or entry is None or entry.game is None:
-            return
-
-        game = entry.game
-        nuevo = not bool(getattr(game, field))
-        setattr(game, field, nuevo)
-        self._persist_flags(game)
-        # Con el mismo formato que el del menú de juego, y diciendo que vino
-        # del editor: aquí se marca de corrido y muy rápido, así que el log
-        # es la única forma de reconstruir qué se tocó si algo sale raro.
-        logger.info(f"gui3d: [editor] {game.title!r}: {field} = {nuevo}")
-        self.carousel.rebuild_labels(entry.key, game, self._labels_visible)
-        self.notifier.show(menus.editor_notice(field, nuevo))
-
-        if field == "hidden":
-            # No se re-filtra al momento, igual que en el menú de juego: la
-            # caja que acabas de marcar desaparecería de debajo y la
-            # selección saltaría a otro juego mientras sigues editando. Se
-            # apunta y se aplica al salir del modo.
-            self._hidden_filter_dirty = True
 
     def _persist_flags(self, game) -> None:
         """
@@ -2999,7 +2922,7 @@ class App(ShowBase):
         self._update_navigation(dt)
         self._update_menu_cycle(dt)
         self._update_mode_switch(dt)
-        self._update_editor()
+        editor_ui.update_editor(self)
         self.active_carousel.update(dt)
 
         for key, path in self.cover_loader.poll():

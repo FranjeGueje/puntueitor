@@ -162,6 +162,9 @@ con su carpeta.
 - Cuentas, Tiendas y los ajustes de Puntueitor3D salen de `gui3d/app.py` a
   `gui3d/accounts_ui.py`.
 
+- El Editor Rápido sale de `gui3d/app.py` a `gui3d/editor_ui.py`. Con este,
+  `app.py` baja de las 3.000 líneas.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`

@@ -1037,6 +1037,22 @@ their old `_method(self)` shape inside the new module until a second pass
 caught it via `hasattr(App, ...)` failing on the ones that DID move but not
 the ones that silently didn't — check the diff, not just "tests pass".
 
+## Splitting a non-contiguous slice: extract per-def, not by line range
+
+Editor Rápido's real boundary was two separate ranges, not one: the marked
+block interleaves `_toggle_editor_mode`, the shared guard `_blocked_in_editor`
+(stays — six unrelated call sites), `_update_editor`/`_editor_gesture`, and
+the shared `_persist_flags` (stays — also used by the game menu). Cut each
+range independently, in descending line order so earlier offsets stay valid.
+
+Methods passed as **callbacks**, not called directly, need care after
+extraction: `on_editor=self._toggle_editor_mode` and
+`self._shortcuts[key] = (self._editor_gesture, [direction])` bind the method
+object itself, evaluated once. Once the target is a module function needing
+`app` as first arg, wrap with `functools.partial(editor_ui.toggle_editor_mode,
+self)` — a bare lambda works too but partial avoids loop-variable capture
+bugs when this sits inside a `for` over multiple keys.
+
 ## Neither frontend reimplements a core service
 
 `tui/app.py:_enrich_worker` used to be a hand-copy of
