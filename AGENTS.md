@@ -1370,6 +1370,30 @@ pasó: un lote de pruebas sandboxeó `XDG_DATA_HOME`/`CONFIG`/`CACHE` pero se
 dejó `XDG_STATE_HOME`, y como `gui3d.json` vive en `state_dir()` acabó escrito
 en el directorio real del usuario. `HOME` cubre las cuatro de una vez.
 
+## Sample data is display-only, and must be purged on first real game
+
+`build_sample_entries()` (six fake games) is shown when `build_real_entries()`
+returns None — empty library, or no game with a cover. **Nothing about it is
+ever persisted**; it is dicts in memory.
+
+The trap: the real/sample decision happens once, in `__init__`
+(`app.py:488`), and a SOFT refresh does not clear the carousel — correctly so,
+since with a real library you do not want a blank screen for the minutes a
+refresh takes. So real games used to pile up on top of the six fakes, which
+survived until restart. `self._sample_mode` records which branch was taken,
+and `_on_game_refreshed` clears the carousel on the first real game.
+
+Two details that are load-bearing:
+
+- The purge runs **before** the `igdb_id` dedup lookup. Sample entries use ids
+  0-5, which IGDB also issues for real; purging afterwards would let a real
+  game with such an id overwrite a dummy instead of getting its own box.
+- It fires on the **first arriving game**, not at job start, so a refresh that
+  yields nothing leaves the samples rather than an empty carousel.
+
+`_persist_flags` also refuses to write in sample mode — those flags would land
+in `library.sqlite`, the one database that cannot be regenerated.
+
 ## Config menus (Opciones → Cuentas / Tiendas)
 
 There are **two** menus over the same config, and Cuentas comes first in

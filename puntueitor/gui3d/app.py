@@ -485,7 +485,14 @@ class App(ShowBase):
         self.accept("window-event", self._on_window_event)
         self.background = Background(self)
 
-        raw_entries, pending_downloads = build_real_entries() or build_sample_entries()
+        reales = build_real_entries()
+        #: Si el carrusel está enseñando los seis juegos de mentira porque no
+        #: hay biblioteca. Mantiene una invariante que vale la pena tener
+        #: clara: cuando está puesto, en el carrusel NO HAY NADA MÁS que
+        #: ejemplos, y por eso `_on_game_refreshed` puede vaciarlo entero sin
+        #: mirar qué había.
+        self._sample_mode = reales is None
+        raw_entries, pending_downloads = reales or build_sample_entries()
 
         # Para guardar los cambios del menú de juego (terminado, oculto...).
         # Es el mismo repositorio que usa `build_real_entries` para leer, y
@@ -2776,6 +2783,23 @@ class App(ShowBase):
         si ya tiene caja. Si la tiene, se aprovecha para repintar sus
         etiquetas: puede venir con la duración o la nota recién averiguadas.
         """
+        if self._sample_mode:
+            # Llega el primero de verdad: fuera los de mentira. Aquí y no al
+            # empezar la recarga, porque si la recarga no trae nada —sin
+            # credenciales, sin red— es mejor quedarse con los ejemplos que
+            # con una pantalla vacía; y aquí ya hay algo real con lo que
+            # sustituirlos.
+            #
+            # Y ANTES de buscar duplicados, no después: los ejemplos usan
+            # `igdb_id` 0-5, que IGDB también usa de verdad, así que un juego
+            # real con uno de esos ids se tomaría por una entrada de ejemplo y
+            # se le pisarían los datos en vez de darle su caja.
+            self._sample_mode = False
+            self._clear_carousel()
+            logger.info(
+                "gui3d: fuera los juegos de ejemplo, llega la biblioteca de verdad"
+            )
+
         existente = next(
             (entry for entry in self.entries if entry.key == game.igdb_id), None,
         )
@@ -3073,7 +3097,17 @@ class App(ShowBase):
         (duración, notas de Steam) y los estados del usuario viven en OTRA
         base de datos a propósito — la de extras es caché regenerable y esta
         no, para que borrar la caché no te borre los terminados.
+
+        Y por eso mismo los juegos de ejemplo no escriben: sus `igdb_id` son
+        0-5, así que dejarían filas que no corresponden a ningún juego tuyo
+        en la ÚNICA base que no se puede regenerar. No estorbarían al pintar
+        —`load()` solo aplica estados a ids que estén en `resolvers`— pero se
+        quedarían ahí para siempre.
         """
+        if self._sample_mode:
+            self.notifier.show("Son juegos de ejemplo: no se guarda nada")
+            return
+
         self.library_repository.library_cacher.set_status(
             game.igdb_id,
             finished=game.finished,

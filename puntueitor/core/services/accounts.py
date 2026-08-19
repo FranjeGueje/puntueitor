@@ -87,8 +87,11 @@ def open_login(store: str) -> LoginResult:
         abierto = False
 
     if abierto:
-        return LoginResult(True, "Se ha abierto el navegador. Cuando termines de "
-                                 "entrar, pega aquí la dirección de la página.")
+        # Corto a propósito: lo que hay que pegar y dónde ya lo dice el campo
+        # que sale justo después —el título del cuadro en el carrusel, el
+        # marcador de posición en la terminal—, así que repetirlo aquí solo
+        # llenaba de texto un aviso que se lee de pasada.
+        return LoginResult(True, "Inicia sesión en el navegador abierto")
 
     # Sin navegador —por SSH, o en el modo juego del Deck— no se puede hacer
     # nada por el usuario, pero tampoco hay que dejarle tirado: la dirección

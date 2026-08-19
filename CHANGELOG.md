@@ -92,6 +92,17 @@ con su carpeta.
   tres de las cuatro tiendas no funcionarían. Sale de ahí *Heroic*, que ya no
   se lee.
 
+- **Los juegos de ejemplo se van al llegar la biblioteca de verdad.** El
+  carrusel enseña seis juegos de mentira cuando no hay nada que enseñar, pero
+  al recargar los reales se añadían ENCIMA y quedaban los seis mezclados
+  hasta reiniciar. Ahora desaparecen en cuanto entra el primero de verdad —en
+  ese momento y no al empezar la recarga, para que una recarga que no traiga
+  nada te deje los ejemplos en lugar de una pantalla vacía.
+- Marcar un juego de ejemplo como terminado, oculto, favorito o pendiente ya
+  no escribe nada. Antes dejaba una fila con un `igdb_id` que no corresponde
+  a ningún juego tuyo en `library.sqlite`, que es la única base de datos que
+  no se puede regenerar.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`
