@@ -12,14 +12,17 @@ con su carpeta.
 
 ### ⚠️ Al actualizar
 
-- **Hay que iniciar sesión** en GOG, Epic y Amazon: Cuentas (`a` en la TUI,
-  Select → Configuración → CUENTAS en el carrusel). Se abre el navegador y se
-  pega de vuelta la dirección; el mismo gesto en las cuatro tiendas.
+- **Hay que iniciar sesión** en GOG, Epic y Amazon: Opciones → **Cuentas**
+  (`a` en la TUI). Se abre el navegador, inicias sesión y pegas de vuelta la
+  dirección. Steam no: sigue con su API key y su Steam ID, como siempre.
 - El ajuste `heroic_path` desaparece. Si sigue en tu `config.json` se ignora
   y se dice en el log; no hace falta tocar nada.
 - Nada de la biblioteca se pierde: tus marcas, notas y desconocidos siguen
   donde estaban. La primera carga tras iniciar sesión vuelve a preguntar a
   cada tienda.
+- **La biblioteca de Epic crecerá**: vuelven los DLC y las aplicaciones (de
+  451 entradas a 495 en una biblioteca real). Los que IGDB no reconozca irán
+  a Desconocidos, así que esa lista también crece.
 
 ### Añadido
 
@@ -33,19 +36,14 @@ con su carpeta.
   cero juegos, se sirven los juegos de la última vez y se explica en el log,
   en vez de dejar la biblioteca vacía sin decir por qué. Solo un refresco con
   respuesta buena la reescribe.
-- **Pantalla de Cuentas** en las dos interfaces: estado de cada tienda,
-  abrir el navegador, pegar y cerrar sesión. Acepta la dirección entera, el
+- **Menú de Cuentas** en las dos interfaces, el primero de Opciones: las
+  credenciales de IGDB y Steam, y el estado de las sesiones de GOG, Epic y
+  Amazon con sus botones de entrar y salir. Acepta la dirección entera, el
   texto que enseña Epic o el código a secas, para no obligar a nadie a buscar
   un parámetro dentro de una URL de cuatrocientos caracteres.
-- **Steam sin teclear el Steam ID**: se entra por OpenID y se pega la
-  dirección de vuelta, como en las demás. La API key sigue siendo manual —
-  Valve no la da de ninguna otra forma.
-- Los tokens se guardan en `~/.cache/puntueitor/`, solo legibles por ti, y se
-  renuevan solos.
-
 - **Pegar en el carrusel 3D**, con `Ctrl+V` o el botón **X** del mando. Sin
-  esto, el login de las tiendas obligaba a teclear a mano una dirección de
-  cuatrocientos caracteres, con un mando y desde el sofá.
+  esto, el login obligaba a teclear a mano esa dirección, con un mando y
+  desde el sofá.
 
   Panda3D no expone el portapapeles, así que se pregunta al sistema en
   orden: `wl-paste`, `xclip`, `xsel` y, si no hay ninguno, **Klipper por
@@ -54,73 +52,66 @@ con su carpeta.
   `tk` del sistema y la segunda, en Linux, se apoya en esas mismas
   herramientas. Donde no hay ninguna vía —el modo juego del Deck— se dice,
   en vez de fallar en silencio.
-
-### Cambiado
-
-- **"Configuración" pasa a llamarse "Tiendas"**: desde que las credenciales
-  se fueron a Cuentas, ahí dentro solo están las casillas de qué tiendas
-  cargar, y el nombre viejo ya no describía lo que hay. De paso se repartieron
-  los avisos que mandaban a "Opciones → Configuración": los de credenciales
-  van a Cuentas y los de tiendas activas, a Tiendas. Varios llevaban desde el
-  cambio anterior mandando al sitio equivocado, y son justo los que se leen
-  cuando algo no funciona.
-- **Menú "Cuentas" propio**, el primero de Opciones, con todo lo de
-  identificarse junto: credenciales de IGDB, credenciales de Steam y sesiones
-  de GOG, Epic y Amazon. "Configuración" se queda con lo que de verdad es
-  configuración: qué tiendas se cargan. Antes estaba repartido entre las dos
-  sin más criterio que el orden en que se fue añadiendo.
-- **Steam ya no tiene "conectar cuenta".** Se configura con su API key y su
-  Steam ID, a mano. El login por OpenID que tenía no ahorraba ningún paso
-  —Steam no da acceso a la biblioteca a terceros, así que la clave hacía
-  falta igual—: solo ahorraba teclear diecisiete cifras, a cambio de un flujo
-  entero y de aparentar que Steam se configura como las demás.
-- El aviso de "Steam no devolvió ningún juego" ya no manda a mirar primero la
-  privacidad del perfil. Con la clave y el ID de la misma cuenta, la
-  documentación de Steamworks dice que la privacidad no se aplica, así que lo
-  probable es otra cosa: que la clave sea de otra cuenta o el ID no sea el
-  que se cree.
-- `core/providers/` es la capa nueva: cada tienda sabe pedirse a sí misma y
-  el pipeline solo recorre proveedores. Antes la obtención de datos vivía
-  dentro de `load_library` y sabía de ficheros y de HTTP a la vez.
-- Un corte de internet renovando una sesión ya no se confunde con una sesión
-  caducada: antes, un rato sin red habría obligado a volver a entrar en las
-  tres tiendas.
-
+- Los tokens se guardan en `~/.cache/puntueitor/`, solo legibles por ti, y se
+  renuevan solos.
 - Los créditos del carrusel nombran a **legendary, gogdl y nile**, que son
   quienes averiguaron y publicaron las APIs de Epic, GOG y Amazon. No usamos
   su código y su licencia no obliga a nada; se les nombra porque sin ellos
   tres de las cuatro tiendas no funcionarían. Sale de ahí *Heroic*, que ya no
   se lee.
+- `tools/entorno-prueba.sh`: arranca la aplicación contra un directorio
+  aparte para poder probar sin tocar tus datos.
 
-- **Los juegos de ejemplo se van al llegar la biblioteca de verdad.** El
-  carrusel enseña seis juegos de mentira cuando no hay nada que enseñar, pero
-  al recargar los reales se añadían ENCIMA y quedaban los seis mezclados
-  hasta reiniciar. Ahora desaparecen en cuanto entra el primero de verdad —en
-  ese momento y no al empezar la recarga, para que una recarga que no traiga
-  nada te deje los ejemplos en lugar de una pantalla vacía.
-- Marcar un juego de ejemplo como terminado, oculto, favorito o pendiente ya
-  no escribe nada. Antes dejaba una fila con un `igdb_id` que no corresponde
-  a ningún juego tuyo en `library.sqlite`, que es la única base de datos que
-  no se puede regenerar.
+### Cambiado
 
-- **Las duraciones de HowLongToBeat ya no se pierden.** Al acertar, el
-  enriquecedor devolvía el dato pero no lo guardaba —solo se persistían los
-  fallos—, así que los mismos juegos se consultaban en cada recarga, con el
-  mismo resultado, y se perdían al cerrar. Igual con las notas de Steam, que
-  además no dejaban rastro en el log. El guardado que había en
-  `refresh_library` no llegaba a tiempo: los enriquecedores corren en un pool
-  aparte y terminan después.
-- **Recargar es mucho más rápido**: de 31,3 s de red a ~2 s en una recarga
-  normal. Medido con una biblioteca de 1.336 juegos en cuatro tiendas.
-  - Epic no vuelve a preguntar por juegos que ya conoce: su título y su
-    enlace no cambian, y ya estaban guardados. De 22,6 s a 1,9 s.
+- **La configuración se parte en dos menús.** Lo que era "Configuración" pasa
+  a ser **Cuentas** (con qué te identificas) y **Tiendas** (cuáles se
+  cargan). Antes estaba todo junto sin más criterio que el orden en que se
+  fue añadiendo, y son dos cosas que se tocan en momentos distintos.
+- **Recargar es mucho más rápido.** Medido sobre una biblioteca real de 1.336
+  juegos en cuatro tiendas: de 31,3 s de red a unos 4 s, que es lo que tarda
+  la más lenta ahora que van en paralelo.
+  - Epic no vuelve a preguntar por juegos que ya conoce —su título y su
+    enlace no cambian, y ya estaban guardados—: de 22,6 s a 1,9 s. La primera
+    vez, sin nada guardado, 11,6 s.
   - Las cuatro tiendas piden a la vez en lugar de una detrás de otra, así que
     el tiempo muerto pasa de ser la suma a ser el máximo.
   - Las páginas de GOG también van a la vez.
 - **Vuelven los DLC y las aplicaciones de Epic**, como en la 2.x: 495
   entradas en lugar de 451. Se descartaban antes de llegar al identificador,
-  así que no aparecían ni en la biblioteca ni en Desconocidos. Lo que IGDB no
-  reconozca irá a Desconocidos, que para eso está.
+  así que no aparecían ni en la biblioteca ni en Desconocidos.
+- `core/providers/` es la capa nueva: cada tienda sabe pedirse a sí misma y
+  el pipeline solo recorre proveedores. Antes la obtención de datos vivía
+  dentro de `load_library` y sabía de ficheros y de HTTP a la vez.
+- El aviso de "Steam no devolvió ningún juego" ya no manda a mirar primero la
+  privacidad del perfil. Con la clave y el ID de la misma cuenta, la
+  documentación de Steamworks dice que la privacidad no se aplica, así que lo
+  probable es otra cosa: que la clave sea de otra cuenta o el ID no sea el
+  que se cree.
+
+### Corregido
+
+- **Las duraciones de HowLongToBeat se perdían.** Al acertar, el enriquecedor
+  devolvía el dato pero no lo guardaba —solo se persistían los fallos—, así
+  que los mismos juegos se consultaban en cada recarga, con el mismo
+  resultado, y se perdían al cerrar. Igual con las notas de Steam, que además
+  no dejaban rastro en el log.
+- **Los juegos de ejemplo no se iban.** El carrusel enseña seis juegos de
+  mentira cuando no hay nada que enseñar, pero al recargar los reales se
+  añadían encima y quedaban los seis mezclados hasta reiniciar. Ahora
+  desaparecen en cuanto entra el primero de verdad —en ese momento y no al
+  empezar la recarga, para que una recarga que no traiga nada te deje los
+  ejemplos en lugar de una pantalla vacía.
+- Marcar un juego de ejemplo como terminado, oculto, favorito o pendiente
+  dejaba una fila con un `igdb_id` que no corresponde a ningún juego tuyo en
+  `library.sqlite`, que es la única base de datos que no se puede regenerar.
+  Ahora no escribe nada y lo dice.
+- Un corte de internet renovando una sesión ya no se confunde con una sesión
+  caducada: antes, un rato sin red habría obligado a volver a entrar en las
+  tres tiendas.
+- Varios avisos mandaban a "Opciones → Configuración" para arreglar
+  credenciales que ya no están ahí. Son justo los que se leen cuando algo no
+  funciona, así que ahora cada uno manda al menú que toca.
 
 ### Eliminado
 
@@ -130,7 +121,7 @@ con su carpeta.
   `loginusers`, `config`, `shortcuts`). Era código muerto —nadie lo
   importaba— y además dependía de un paquete que ni siquiera estaba en
   `requirements.txt`, así que no habría podido ejecutarse.
-- El ajuste `heroic_path` y su campo en las dos pantallas de configuración.
+- El ajuste `heroic_path` y su campo en las dos interfaces.
 
 ---
 

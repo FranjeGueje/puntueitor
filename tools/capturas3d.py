@@ -224,6 +224,20 @@ def main() -> None:
     _disparar(app, destino, "gui3d-regenerar.png")
     app._close_all_menus()
 
+    # Cuentas: credenciales y sesiones de tienda. Se abre por su método de
+    # verdad y no empujando el menú, porque es quien lo rellena con los
+    # valores en edición y el estado de cada sesión.
+    app._open_accounts_menu()
+    _pasar_frames(app, FRAMES_ENTRE_CAPTURAS)
+    _disparar(app, destino, "gui3d-cuentas.png")
+    app._close_all_menus()
+
+    # Tiendas: qué se carga. Es el otro medio de la antigua "Configuración".
+    app._open_settings_menu()
+    _pasar_frames(app, FRAMES_ENTRE_CAPTURAS)
+    _disparar(app, destino, "gui3d-tiendas.png")
+    app._close_all_menus()
+
     app._push_menu(app.credits_menu)
     _pasar_frames(app, FRAMES_ENTRE_CAPTURAS)
     _disparar(app, destino, "gui3d-creditos.png")

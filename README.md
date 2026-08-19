@@ -36,10 +36,6 @@
   <img src="docs/screenshots/scoring.png" alt="Puntuación" width="600">
 </p>
 
-<p align="center">
-  <i>Configuración de tiendas y credenciales</i><br>
-  <img src="docs/screenshots/config.png" alt="Configuración" width="600">
-</p>
 
 ### 🎠 Carrusel 3D
 
@@ -61,6 +57,16 @@
 <p align="center">
   <i>Editor Rápido: marcar estados con el stick derecho, sin abrir menús</i><br>
   <img src="docs/screenshots/gui3d-editor.png" alt="Editor Rápido" width="800">
+</p>
+
+<p align="center">
+  <i>Cuentas: credenciales de IGDB y Steam, y las sesiones de cada tienda</i><br>
+  <img src="docs/screenshots/gui3d-cuentas.png" alt="Cuentas" width="800">
+</p>
+
+<p align="center">
+  <i>Tiendas: cuáles se cargan</i><br>
+  <img src="docs/screenshots/gui3d-tiendas.png" alt="Tiendas" width="800">
 </p>
 
 <p align="center">
@@ -106,7 +112,7 @@
 | **Tiendas a la carta** | Desmarcar una tienda deja de escanearla **y** de enseñar sus juegos |
 | **Copias de seguridad** | Toda tu instalación en un zip, y de vuelta, desde las dos interfaces |
 | **Diagnóstico claro** | El log distingue "sin internet" de "tu clave no vale" y resume cada carga |
-| **Caché unificada** | Una sola base de datos SQLite en `~/.local/share/puntueitor/` |
+| **Datos separados por lo que cuesta perderlos** | Tus marcas en una base, la biblioteca en otra, y lo re-descargable en `~/.cache` |
 | **Binario único** | PyInstaller — sin dependencias del sistema: 25 MB la TUI, 66 MB el carrusel |
 
 ---
@@ -118,8 +124,8 @@
 Descarga la última versión desde [Releases](https://github.com/FranjeGueje/puntueitor/releases):
 
 ```bash
-chmod +x puntueitor-2.0.0-x86_64-linux
-./puntueitor-2.0.0-x86_64-linux
+chmod +x puntueitor-3.0.0-x86_64-linux
+./puntueitor-3.0.0-x86_64-linux
 ```
 
 ### Desde fuente
@@ -173,9 +179,11 @@ mientras.
 
 ## ⚙️ Configuración
 
-Al arrancar por primera vez, abre el diálogo de configuración —`c` en la TUI,
-Select → Tiendas en el carrusel— o edita a mano
-`~/.config/puntueitor/config.json`. Las dos interfaces leen y escriben el
+La configuración vive en dos sitios, según lo que sea: **Cuentas** (`a` en la
+TUI, Select → Cuentas en el carrusel) guarda con qué te identificas —claves de
+IGDB y de Steam, sesiones de las tiendas— y **Tiendas** (`c`, Select →
+Tiendas), qué tiendas se cargan. También se puede editar a mano
+`~/.config/puntueitor/config.json`; las dos interfaces leen y escriben el
 mismo fichero:
 
 > Puntueitor sigue la especificación XDG Base Directory. Si vienes de una
@@ -185,7 +193,7 @@ mismo fichero:
 > |---|---|
 > | `~/.config/puntueitor/` | `config.json` (credenciales y tiendas) y `scoring.json` (pesos de los sistemas de puntuación) |
 > | `~/.local/share/puntueitor/` | biblioteca y marcas de usuario (`puntueitor.db`, `library.sqlite`) |
-> | `~/.cache/puntueitor/` | carátulas y datos re-descargables |
+> | `~/.cache/puntueitor/` | carátulas, tokens de sesión y la última biblioteca de cada tienda (`store_libraries.sqlite`) |
 > | `~/.local/state/puntueitor/` | log y estado de cada interfaz (`tui.json`, `gui3d.json`) |
 >
 > La biblioteca ya no vive en `~/.cache`: ahí un limpiador de disco podía
@@ -306,7 +314,7 @@ ningún permiso, así que la clave haría falta igual. Sácala de
 | `E` | `R3` | Entrar y salir del **Editor Rápido** |
 | `Enter` | `A` | Menú del juego: estados, enriquecer, desconocer |
 | `Esc` | `B` | Volver |
-| `Esc` | `Select` | Opciones (configuración, ajustes del carrusel, avanzado, créditos, salir) |
+| `Esc` | `Select` | Opciones (cuentas, tiendas, ajustes del carrusel, avanzado, créditos, salir) |
 | `Tab` | `Start` | Puntueitor: sistemas de puntuación |
 | `X` | `X` | Filtrar y ordenar |
 | `Espacio` | `Y` | Mostrar u ocultar las etiquetas de las cajas |
@@ -424,14 +432,14 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-571 tests (unitarios + integración) que cubren:
+583 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
 - Selectores, Mappers, Enrichers
 - Resolvers (plantilla común y las 4 tiendas)
-- Proveedores de tienda: paginación, filtrado, caída a la copia guardada
-  cuando no hay red y sesión caducada
+- Proveedores de tienda: paginación, reutilización de lo ya consultado, y
+  caída a la copia guardada cuando no hay red o la sesión ha caducado
 - Sesiones: renovación de tokens y qué se acepta al pegar la vuelta del login
 - Pegar en el carrusel: en qué orden se le pregunta al sistema por el
   portapapeles, y que el botón X acabe pegando de verdad
@@ -482,8 +490,8 @@ al home de verdad.
 Un binario único auto-contenido por interfaz:
 
 ```bash
-./build.sh      # → dist/puntueitor-2.0.0-x86_64-linux    (TUI)
-./build3d.sh    # → dist/puntueitor3d-2.0.0-x86_64-linux  (interfaz 3D)
+./build.sh      # → dist/puntueitor-3.0.0-x86_64-linux    (TUI)
+./build3d.sh    # → dist/puntueitor3d-3.0.0-x86_64-linux  (interfaz 3D)
 ```
 
 El nombre incluye versión, arquitectura y sistema automáticamente; la
