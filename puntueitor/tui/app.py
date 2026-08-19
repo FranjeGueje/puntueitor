@@ -719,16 +719,11 @@ class PuntueitorApp(App):
 
     def _enrich_worker(self):
         try:
-            from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
-            from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-            from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-
-            hltb_resolver = HLTBResolver()
-            hltb = HLTBEnricher(
-                client=hltb_resolver,
-                extras_cacher=self.repo.extras_cacher,
+            from puntueitor.core.enrichers.factory import (
+                apply_enrichers, build_enrichers,
             )
-            steam = SteamScoreEnricher(igdb_cacher=self.repo.igdb_cacher)
+
+            enrichers = build_enrichers(self.repo)
 
             games = list(self.full_library.games)
             total = len(games)
@@ -740,7 +735,7 @@ class PuntueitorApp(App):
                 self._call_from_thread_safe(self._update_loading_counter, i, total, game.title)
                 if game.duration_hours is not None and game.steam_review is not None and game.steamdb_score is not None:
                     continue
-                enriched_game = steam.enrich(hltb.enrich(game))
+                enriched_game = apply_enrichers(game, enrichers)
 
                 if enriched_game.duration_hours is not None or enriched_game.steam_review is not None or enriched_game.steamdb_score is not None:
                     self.repo.save_game(enriched_game)

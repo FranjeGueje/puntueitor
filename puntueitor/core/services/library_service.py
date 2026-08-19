@@ -124,28 +124,16 @@ class LibraryService:
         sorted_games = [sg.game for sg in scored_lib.scored_games]
         return Library.from_iterable(sorted_games), scores_map
 
-    def _get_scorer(self, scoring_type: str, config) -> GameScorer | None:
-        if scoring_type == "mixed":
-            return MixedScore(
-                weight_critics=config.scoring_mixed_critics,
-                weight_users=config.scoring_mixed_users,
-                weight_duration=config.scoring_mixed_duration,
-            )
-        elif scoring_type == "weighted":
-            return WeightedScore(
-                [
-                    (CriticScoreScorer(), config.scoring_weighted_critics),
-                    (UserScoreScorer(), config.scoring_weighted_users),
-                    (DurationScoreScorer(), config.scoring_weighted_duration),
-                ]
-            )
-        elif scoring_type == "time":
-            return self._get_available_time_scorer()
-        elif scoring_type == "genre":
-            return GenreScorer()
-        return None
+    @staticmethod
+    def _get_scorer(scoring_type: str, config) -> GameScorer | None:
+        """
+        El scorer de `scoring_type`, o None si no existe.
 
-    def _get_available_time_scorer(self) -> GameScorer:
-        from puntueitor.core.scoring.available_time import AvailableTimeScorer
+        Era una escalera de `if/elif` que había que ampliar cada vez que se
+        añadía un sistema; ahora cada uno declara en `core/scoring/catalog.py`
+        cómo se construye, junto a su nombre y su descripción.
+        """
+        from puntueitor.core.scoring import catalog
 
-        return AvailableTimeScorer()
+        sistema = catalog.get(scoring_type)
+        return sistema.build(config) if sistema else None

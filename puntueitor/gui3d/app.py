@@ -2175,7 +2175,7 @@ class App(ShowBase):
         if scorer is None:
             return
         self.scoring_title_text.setText(scorer.title)
-        self.scoring_desc_text.setText(scorer.description)
+        self.scoring_desc_text.setText(scoring_info.description_for(scorer.key))
 
     def _show_scoring_description(self, visible: bool) -> None:
         if visible:

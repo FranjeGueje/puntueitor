@@ -994,6 +994,48 @@ fijo y no va sobre nada.
 - Salir con B no pasa por `_activate`, así que `_pop_menu` limpia
   `_confirm_action` cuando el menú cerrado es `confirm_menu`.
 
+## Enrichers are built in one place, and it is not optional
+
+`core/enrichers/factory.py` — `build_enrichers(repo, *, overwrite=False)`.
+
+It exists because they used to be built in **six** places and **five forgot to
+pass `SteamScoreEnricher` its `extras_cacher`**, so Steam ratings were only
+persisted on a library refresh. Enriching a single game, rescuing an unknown,
+or updating extras re-fetched them every single time. The fix that added the
+cacher landed in exactly one of the six — which is the expected outcome when
+the same pair is constructed six times, not carelessness.
+
+**Where an enricher saves is the enricher's business, not the caller's.** The
+factory hands each one every cacher it knows how to use. It also keeps the
+resilience that only `refresh_library` had: one failing to build is logged and
+the rest go on.
+
+`apply_enrichers(game, enrichers)` replaces the `steam.enrich(hltb.enrich(g))`
+idiom that was written in four places.
+
+A guard test (`tests/test_enricher_factory.py`) greps for `HLTBEnricher(` and
+`SteamScoreEnricher(` outside `core/enrichers/`.
+
+## Scoring texts live in core, not in the frontends
+
+`core/scoring/catalog.py` holds each system's key, name, title, description,
+recommendation, config form and how to build its scorer. `_get_scorer` is a
+lookup; `gui3d/scoring_info.py` is a thin façade; the TUI builds its
+`SCORING_INFO` from it.
+
+They used to be written twice, and `gui3d/scoring_info.py` documented the copy
+as a necessary evil — importing the TUI's module would drag Textual into the
+3D app. The diagnosis was right and the fix was in the wrong place: the texts
+are domain, not Textual. **They had already diverged** by the time this was
+done.
+
+`description` and `recommendation` are separate fields, not two versions of
+one text: one explains how the system works, the other closes with what it is
+for. That is what let the carousel gain the line only the TUI used to show.
+
+Two guards: both frontends must render identical text, and no module outside
+`catalog.py` may contain the systems' nicknames.
+
 ## The store registry is the only list of stores
 
 `core/stores/` holds one `StoreSpec` per store — label, colour, config flag,

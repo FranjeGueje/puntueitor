@@ -125,6 +125,19 @@ con su carpeta.
   se olvidan, en los dos sentidos, y otros dos que impiden que vuelva a
   aparecer una lista de tiendas escrita a mano.
 
+- **Las notas de Steam se guardaban en uno de los seis caminos.** El
+  enriquecedor se construía en seis sitios y cinco no le decían dónde
+  guardar, así que solo al recargar la biblioteca quedaban persistidas:
+  enriquecer un juego suelto, rescatar un desconocido o actualizar los extras
+  las volvían a pedir cada vez. Ahora se construyen en un solo sitio
+  (`core/enrichers/factory.py`), que además hace que un enriquecedor que falle
+  al prepararse no deje sin trabajar a los demás.
+- Los textos de los sistemas de puntuación estaban escritos dos veces, una
+  por interfaz, y habían divergido: la terminal tenía frases y una
+  recomendación final que el carrusel no enseñaba. Ahora viven en
+  `core/scoring/catalog.py` y las dos enseñan lo mismo — el carrusel gana esa
+  recomendación.
+
 ### Eliminado
 
 - `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`

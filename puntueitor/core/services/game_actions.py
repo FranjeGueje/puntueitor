@@ -72,17 +72,11 @@ def enrich_game(repo: LibraryRepository, game: Game) -> EnrichResult:
         # Dentro de la función a propósito: estos módulos arrastran las
         # dependencias de red (requests, la librería de HLTB) y no deben
         # cargarse por el mero hecho de importar este fichero.
-        from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-        from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-        from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+        from puntueitor.core.enrichers.factory import apply_enrichers, build_enrichers
 
-        hltb = HLTBEnricher(
-            client=HLTBResolver(),
-            overwrite=True,
-            extras_cacher=repo.extras_cacher,
+        enriched = apply_enrichers(
+            game, build_enrichers(repo, overwrite=True),
         )
-        steam = SteamScoreEnricher(overwrite=True, igdb_cacher=repo.igdb_cacher)
-        enriched = steam.enrich(hltb.enrich(game))
     except Exception as error:  # noqa: BLE001 - se reporta tal cual al llamante
         logger.warning(f"error enriqueciendo {game.title!r}: {error}")
         return EnrichResult(game=game, found=False, error=error)

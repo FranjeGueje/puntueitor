@@ -175,15 +175,9 @@ def _enrich_new_game(repo: LibraryRepository, game: Game) -> Game:
     contesta no convierte la adopción en un fracaso.
     """
     try:
-        from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-        from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-        from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+        from puntueitor.core.enrichers.factory import apply_enrichers, build_enrichers
 
-        hltb = HLTBEnricher(
-            client=HLTBResolver(), extras_cacher=repo.extras_cacher,
-        )
-        steam = SteamScoreEnricher(igdb_cacher=repo.igdb_cacher)
-        enriched = steam.enrich(hltb.enrich(game))
+        enriched = apply_enrichers(game, build_enrichers(repo))
         if enriched.duration_hours is not None or enriched.steamdb_score is not None:
             repo.save_game(enriched)
             return enriched

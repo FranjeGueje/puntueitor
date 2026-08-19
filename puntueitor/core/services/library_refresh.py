@@ -68,29 +68,13 @@ def refresh_library(
     # Dentro: arrastran red y toda la cadena del pipeline, y este módulo lo
     # importa gente que solo quiere las otras funciones del paquete.
     from puntueitor.core.config import ConfigManager
-    from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-    from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
+    from puntueitor.core.enrichers.factory import build_enrichers
     from puntueitor.core.igdb.service import IGDBService
     from puntueitor.core.pipeline.load_library import load_library
-    from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
 
     config = ConfigManager().get
 
-    enrichers = []
-    try:
-        enrichers.append(HLTBEnricher(
-            client=HLTBResolver(), overwrite=False,
-            extras_cacher=repo.extras_cacher,
-        ))
-    except Exception as error:  # noqa: BLE001 - se sigue sin ese enricher
-        logger.warning(f"no se pudo preparar HLTB: {error}")
-    try:
-        enrichers.append(SteamScoreEnricher(
-            overwrite=False, igdb_cacher=repo.igdb_cacher,
-            extras_cacher=repo.extras_cacher,
-        ))
-    except Exception as error:  # noqa: BLE001
-        logger.warning(f"no se pudo preparar las notas de Steam: {error}")
+    enrichers = build_enrichers(repo)
 
     extras_cache = repo.extras_cacher.get_all_extras()
 
@@ -187,15 +171,10 @@ def enrich_all(
     No toca `resolvers` ni los estados del usuario: la biblioteca sigue siendo
     la misma, solo se rehace lo que se puede volver a pedir.
     """
-    from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-    from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-    from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+    from puntueitor.core.enrichers.factory import build_enrichers
 
     repo.extras_cacher.clear_all()
     logger.info("extras borrados, volviendo a enriquecer la biblioteca")
-
-    hltb = HLTBEnricher(client=HLTBResolver(), extras_cacher=repo.extras_cacher)
-    steam = SteamScoreEnricher(igdb_cacher=repo.igdb_cacher)
 
     # Con la tabla recién vaciada, "hay dato" y "es nuevo" son lo mismo.
     def hubo_datos(game: Game, enriched: Game) -> bool:
@@ -204,7 +183,7 @@ def enrich_all(
         )
 
     return _enrich_loop(
-        repo, hltb, steam, worth_saving=hubo_datos,
+        repo, build_enrichers(repo), worth_saving=hubo_datos,
         on_game=on_game, on_progress=on_progress, should_stop=should_stop,
     )
 
@@ -239,16 +218,9 @@ def update_extras(
 
     BLOQUEA y tarda: una petición de red por juego.
     """
-    from puntueitor.core.enrichers.hltb_enricher import HLTBEnricher
-    from puntueitor.core.enrichers.steam_score_enricher import SteamScoreEnricher
-    from puntueitor.core.resolvers.hltb_resolver import HLTBResolver
+    from puntueitor.core.enrichers.factory import build_enrichers
 
     logger.info("actualizando los datos extra de la biblioteca")
-
-    hltb = HLTBEnricher(
-        client=HLTBResolver(), overwrite=True, extras_cacher=repo.extras_cacher,
-    )
-    steam = SteamScoreEnricher(overwrite=True, igdb_cacher=repo.igdb_cacher)
 
     # Aquí los juegos llegan CON sus extras, así que "tiene datos" lo cumple
     # casi cualquiera y no dice nada: lo que se cuenta es que haya cambiado.
@@ -258,15 +230,14 @@ def update_extras(
         return enriched != game
 
     return _enrich_loop(
-        repo, hltb, steam, worth_saving=cambio,
+        repo, build_enrichers(repo, overwrite=True), worth_saving=cambio,
         on_game=on_game, on_progress=on_progress, should_stop=should_stop,
     )
 
 
 def _enrich_loop(
     repo: LibraryRepository,
-    hltb,
-    steam,
+    enrichers,
     *,
     worth_saving: Callable[[Game, Game], bool],
     on_game: Callable[[Game], None] | None,
@@ -282,6 +253,7 @@ def _enrich_loop(
     Se guarda juego a juego, no al final: esto dura minutos y cortarlo a la
     mitad no debe tirar lo ya averiguado.
     """
+    from puntueitor.core.enrichers.factory import apply_enrichers
     games = list(repo.load())
     total = len(games)
     guardados = 0
@@ -294,7 +266,7 @@ def _enrich_loop(
             on_progress(index, total, game.title)
 
         try:
-            enriched = steam.enrich(hltb.enrich(game))
+            enriched = apply_enrichers(game, enrichers)
         except Exception as error:  # noqa: BLE001 - un juego no tumba el lote
             logger.warning(f"no se pudo enriquecer {game.title!r}: {error}")
             continue
