@@ -57,6 +57,21 @@ con su carpeta.
 
 ### Cambiado
 
+- **Menú "Cuentas" propio**, el primero de Opciones, con todo lo de
+  identificarse junto: credenciales de IGDB, credenciales de Steam y sesiones
+  de GOG, Epic y Amazon. "Configuración" se queda con lo que de verdad es
+  configuración: qué tiendas se cargan. Antes estaba repartido entre las dos
+  sin más criterio que el orden en que se fue añadiendo.
+- **Steam ya no tiene "conectar cuenta".** Se configura con su API key y su
+  Steam ID, a mano. El login por OpenID que tenía no ahorraba ningún paso
+  —Steam no da acceso a la biblioteca a terceros, así que la clave hacía
+  falta igual—: solo ahorraba teclear diecisiete cifras, a cambio de un flujo
+  entero y de aparentar que Steam se configura como las demás.
+- El aviso de "Steam no devolvió ningún juego" ya no manda a mirar primero la
+  privacidad del perfil. Con la clave y el ID de la misma cuenta, la
+  documentación de Steamworks dice que la privacidad no se aplica, así que lo
+  probable es otra cosa: que la clave sea de otra cuenta o el ID no sea el
+  que se cree.
 - `core/providers/` es la capa nueva: cada tienda sabe pedirse a sí misma y
   el pipeline solo recorre proveedores. Antes la obtención de datos vivía
   dentro de `load_library` y sabía de ficheros y de HTTP a la vez.

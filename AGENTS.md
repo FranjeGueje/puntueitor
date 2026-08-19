@@ -1064,14 +1064,18 @@ Control characters are stripped **on accept** as well as on paste
 it would sit invisibly inside the URL and the store would reject the code
 with nothing to see.
 
-## OAuth: why everything is copy-paste, including Steam
+## OAuth: why the three logins are copy-paste (and why Steam has none)
 
 GOG, Epic and Amazon pin their `redirect_uri` to a domain of their own — we
 use their official clients' credentials and cannot register `localhost`. The
 browser never comes back to us, so short of embedding a whole browser, pasting
-is the only way. Steam's OpenID *would* accept a local callback, and it still
-pastes: one gesture to learn and one path to maintain beats saving a single
-paste on one store out of four.
+is the only way.
+
+**Steam has no login at all.** It briefly had one (OpenID, to fill in the
+SteamID), and it was removed: Steam grants third parties no library access, so
+the API key stayed mandatory and the "login" only saved typing 17 digits — at
+the cost of a whole flow and of pretending Steam works like the others. It is
+configured with its key and ID, as plain fields in Cuentas.
 
 `auth/paste.py` takes the whole URL, the JSON Epic displays, or a bare code.
 If the text is a URL or JSON that does *not* contain the code, it returns ""
@@ -1368,14 +1372,34 @@ en el directorio real del usuario. `HOME` cubre las cuatro de una vez.
 
 ## Settings menu (Opciones → Configuración)
 
-Same fields and order as `tui/screens/configuration.py`: IGDB id/secret, Steam
-user id/API key, the four store checkboxes, and the CUENTAS section.
+There are **two** menus over the same config, and Cuentas comes first in
+Opciones — nothing loads without credentials, so everything else in that menu
+operates on games that do not exist yet.
+
+- **Cuentas** (`build_accounts_items`): IGDB id/secret, Steam user id/API key,
+  and login rows for GOG/Epic/Amazon.
+- **Configuración** (`build_settings_items`): the four store checkboxes.
+
+Each mirrors the matching TUI screen (`tui/screens/accounts.py`,
+`tui/screens/configuration.py`).
+
+**Steam is a text field, not a login row, and that is deliberate.** Steam has
+no third-party OAuth: its OpenID only says who you are and hands over no
+token, so the API key is needed either way. Showing it like GOG implied that
+going through the browser finished the job. `SETTINGS_ACCOUNTS` and
+`accounts.CON_SESION` both exclude it; `sessions_summary()` iterates
+`CON_SESION` and not `Stores` for the same reason.
+
+Both menus share `self._settings` and `_save_settings` (`_open_config_form`).
+One copy per menu would mean saving in one clobbers what was edited in the
+other. `_refresh_settings_menu` repaints via the remembered `_settings_builder`
+rather than assuming which menu is on screen.
 
 The accounts rows are **not** edited on the copy like everything else here.
 Logging in takes effect the moment the token comes back, so backing out with B
 cannot undo it — they read their state from `accounts.sessions_summary()` and
-`build_settings_items` takes it as a separate `sessions` argument for exactly
-that reason. Mixing it into `values` would have told the user "B cancels this",
+the builders take it as a separate `sessions` argument for exactly that
+reason. Mixing it into `values` would have told the user "B cancels this",
 which would have been a lie.
 
 `igdb_client_secret` and `steam_api_key` are **masked in the list** (`••••••••`)

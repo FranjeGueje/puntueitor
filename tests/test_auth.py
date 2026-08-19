@@ -12,8 +12,7 @@ import pytest
 
 from puntueitor.core.auth.errors import AuthError, NotLoggedIn, SessionExpired
 from puntueitor.core.auth.oauth import OAuthSession
-from puntueitor.core.auth.paste import extract_code, extract_steam_id
-from puntueitor.core.auth.steam import steam_id_from
+from puntueitor.core.auth.paste import extract_code
 from puntueitor.core.auth.token_store import TokenStore
 
 
@@ -189,29 +188,3 @@ class TestLoQueSePega:
     def test_the_order_of_the_names_matters(self):
         pegado = "https://x?code=segundo&authorizationCode=primero"
         assert extract_code(pegado, ("authorizationCode", "code")) == "primero"
-
-
-class TestSteamID:
-    def test_from_the_openid_answer(self):
-        pegado = (
-            "https://steamcommunity.com/?openid.claimed_id="
-            "https%3A%2F%2Fsteamcommunity.com%2Fopenid%2Fid%2F76561198000000000"
-        )
-        assert extract_steam_id(pegado) == "76561198000000000"
-
-    def test_from_a_profile_url(self):
-        pegado = "https://steamcommunity.com/profiles/76561198000000000/"
-        assert steam_id_from(pegado) == "76561198000000000"
-
-    def test_the_bare_number(self):
-        assert steam_id_from("76561198000000000") == "76561198000000000"
-
-    def test_a_vanity_url_is_rejected_with_an_explanation(self, caplog):
-        """
-        El error más común: pegar el perfil de nombre personalizado y
-        quedarse con la biblioteca vacía sin entender por qué.
-        """
-        assert steam_id_from("https://steamcommunity.com/id/mi-nombre") == ""
-
-    def test_a_number_that_is_not_a_steamid64(self):
-        assert steam_id_from("12345") == ""

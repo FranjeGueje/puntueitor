@@ -8,7 +8,6 @@ sustituye.
 import pytest
 
 from puntueitor.core.auth.token_store import TokenStore
-from puntueitor.core.config import ConfigManager
 from puntueitor.core.services import accounts
 
 
@@ -22,7 +21,7 @@ def sin_navegador(monkeypatch):
 
 
 class TestAbrirLogin:
-    @pytest.mark.parametrize("store", ["steam", "gog", "epic", "amazon"])
+    @pytest.mark.parametrize("store", ["gog", "epic", "amazon"])
     def test_every_store_has_a_login_page(self, store, sin_navegador):
         resultado = accounts.open_login(store)
 
@@ -69,33 +68,6 @@ class TestTerminarLogin:
         assert "boom" in resultado.mensaje
 
 
-class TestSteam:
-    def test_the_openid_answer_becomes_the_configured_steam_id(self):
-        pegado = (
-            "https://steamcommunity.com/?openid.claimed_id="
-            "https%3A%2F%2Fsteamcommunity.com%2Fopenid%2Fid%2F76561198000000000"
-        )
-
-        assert accounts.finish_login("steam", pegado).ok
-        assert ConfigManager().get.steam_user_id == 76561198000000000
-
-    def test_a_vanity_url_is_rejected(self):
-        resultado = accounts.finish_login(
-            "steam", "https://steamcommunity.com/id/mi-nombre",
-        )
-
-        assert not resultado.ok
-        assert "17 cifras" in resultado.mensaje
-
-    def test_logging_out_forgets_the_steam_id(self):
-        manager = ConfigManager()
-        manager.get.steam_user_id = 76561198000000000
-        manager.save()
-
-        assert accounts.logout("steam").ok
-        assert ConfigManager().get.steam_user_id == 0
-
-
 class TestEstado:
     def test_a_store_with_a_token_shows_as_logged_in(self):
         TokenStore("gog").save({"access_token": "abc"})
@@ -103,18 +75,16 @@ class TestEstado:
         assert accounts.has_session("gog")
         assert accounts.sessions_summary()["gog"]
 
-    def test_steam_needs_the_key_and_the_id_both(self):
-        manager = ConfigManager()
-        manager.get.steam_api_key = "clave"
-        manager.get.steam_user_id = 0
-        manager.save()
+    def test_steam_is_not_a_store_with_a_session(self):
+        """
+        Steam no tiene OAuth para terceros: su OpenID solo dice quién eres y
+        no entrega token, así que la API key hace falta igual. Tenerlo aquí
+        hacía creer que se configuraba como las demás.
+        """
+        assert "steam" not in accounts.sessions_summary()
 
-        assert not accounts.has_session("steam")
-
-        manager.get.steam_user_id = 76561198000000000
-        manager.save()
-
-        assert accounts.has_session("steam")
+        with pytest.raises(ValueError):
+            accounts.login_url("steam")
 
     def test_logging_out_leaves_it_without_a_session(self):
         TokenStore("gog").save({"access_token": "abc"})

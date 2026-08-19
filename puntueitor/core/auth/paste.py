@@ -85,33 +85,3 @@ def _de_url(texto: str, params: tuple[str, ...]) -> str:
         if valores and valores[0]:
             return valores[0]
     return ""
-
-
-def extract_steam_id(pegado: str) -> str:
-    """
-    El SteamID de 17 cifras que hay en `pegado`.
-
-    Steam vuelve del login por OpenID con
-    `openid.claimed_id=https://steamcommunity.com/openid/id/7656119...`, pero
-    aquí también vale pegar la URL del perfil, o el número a secas: para el
-    usuario es "pega esto" en las cuatro tiendas, y quién lo escribió de qué
-    forma no es asunto suyo.
-    """
-    texto = (pegado or "").strip()
-    if not texto:
-        return ""
-
-    if texto.isdigit():
-        return texto
-
-    if "://" in texto:
-        partes = urlparse(texto)
-        campos = parse_qs(partes.query)
-        candidatos = campos.get("openid.claimed_id") or []
-        candidatos.append(partes.path)
-        for candidato in candidatos:
-            trozo = str(candidato).rstrip("/").rsplit("/", 1)[-1]
-            if trozo.isdigit():
-                return trozo
-
-    return ""

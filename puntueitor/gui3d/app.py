@@ -1270,6 +1270,10 @@ class App(ShowBase):
         self.settings_menu = Menu(
             self.aspect2d, menus.SETTINGS_TITLE, [], hint=_menu_hint(),
         )
+        # Credenciales y sesiones, lo primero que hay que rellenar.
+        self.accounts_menu = Menu(
+            self.aspect2d, menus.ACCOUNTS_TITLE, [], hint=_menu_hint(),
+        )
         # Sus dos ajustes se cambian con izquierda/derecha, así que lleva la
         # pista que lo menciona.
         self.gui3d_menu = Menu(
@@ -1299,7 +1303,8 @@ class App(ShowBase):
         self._menus = (
             self.options_menu, self.quit_menu, self.scoring_menu,
             self.scoring_config_menu, self.filter_menu, self.game_menu,
-            self.settings_menu, self.gui3d_menu, self.confirm_menu,
+            self.settings_menu, self.accounts_menu, self.gui3d_menu,
+            self.confirm_menu,
             self.unknown_menu, self.unknown_results_menu, self.advanced_menu,
             self.credits_menu,
         )
@@ -1593,7 +1598,9 @@ class App(ShowBase):
 
     def _activate(self, menu: Menu, key: str) -> None:
         """Qué hace elegir un elemento de menú."""
-        if key == "config":
+        if key == "accounts":
+            self._open_accounts_menu()
+        elif key == "config":
             self._open_settings_menu()
         elif key == "gui3d":
             self._open_gui3d_menu()
@@ -2004,10 +2011,21 @@ class App(ShowBase):
 
     # ── Configuración de la aplicación ──
 
+    def _open_accounts_menu(self) -> None:
+        """"Cuentas": credenciales de IGDB y Steam, y sesiones de tienda."""
+        self._open_config_form(self.accounts_menu, menus.build_accounts_items)
+
     def _open_settings_menu(self) -> None:
+        """"Configuración": qué tiendas se cargan."""
+        self._open_config_form(self.settings_menu, menus.build_settings_items)
+
+    def _open_config_form(self, menu, builder) -> None:
         """
-        "Configuración" dentro de Opciones: los mismos campos que la
-        pantalla equivalente de la TUI.
+        Abre uno de los dos formularios sobre la configuración.
+
+        Los dos comparten `self._settings` y `_save_settings`: son ventanas
+        distintas a los mismos ajustes, y tener una copia por menú haría que
+        guardar en uno pisara lo editado en el otro.
 
         Se edita sobre una COPIA de los valores guardados y solo se escribe
         al dar a "Guardar", así que salir con B deja la configuración como
@@ -2024,23 +2042,30 @@ class App(ShowBase):
             field: getattr(config, field) for field, _ in menus.SETTINGS_STORES
         })
         self._sessions = self._read_sessions()
+        # Se recuerda con qué se pintó para poder repintarlo igual sin tener
+        # que preguntar cuál de los dos menús está delante.
+        self._settings_builder = builder
 
-        self.settings_menu.set_items(
-            menus.build_settings_items(self._settings, self._sessions)
-        )
-        self._push_menu(self.settings_menu)
+        menu.set_items(builder(self._settings, self._sessions))
+        self._push_menu(menu)
 
     def _refresh_settings_menu(self) -> None:
         """Repinta los valores sin rehacer el menú, para no perder el foco."""
+        builder = getattr(self, "_settings_builder", menus.build_settings_items)
+        menu = (
+            self.accounts_menu
+            if builder is menus.build_accounts_items
+            else self.settings_menu
+        )
         nuevos = {
             item.key: item
-            for item in menus.build_settings_items(self._settings, self._sessions)
+            for item in builder(self._settings, self._sessions)
         }
-        for item in self.settings_menu.items:
+        for item in menu.items:
             nuevo = nuevos.get(item.key)
             if nuevo is not None:
                 item.value = nuevo.value
-        self.settings_menu.refresh_values()
+        menu.refresh_values()
 
     @staticmethod
     def _read_sessions() -> dict:

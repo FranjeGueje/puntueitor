@@ -1,11 +1,17 @@
 """
 Iniciar y cerrar sesión en las tiendas, sin saber nada de interfaces.
 
-El flujo es idéntico en las cuatro y esa uniformidad es deliberada: se abre
-el navegador, el usuario entra, y pega de vuelta lo que le salga en la barra
-de direcciones. Steam podría recoger su respuesta en un servidor local —su
-OpenID sí acepta volver a `localhost`—, pero se le pide lo mismo que a las
-otras tres: un solo gesto que aprender en vez de dos.
+Aquí solo están GOG, Epic y Amazon. **Steam no**, y no por olvido: Steam no
+tiene OAuth para terceros. Su OpenID únicamente dice quién eres, sin entregar
+ningún token, así que la biblioteca sigue necesitando la API key igual —
+"conectar la cuenta de Steam" no ahorraba el paso manual, solo ahorraba
+teclear diecisiete cifras, y a cambio hacía parecer que Steam se configura
+como las demás cuando no es verdad. Se configura con su clave y su ID, en
+`config.json`, y ya está.
+
+El flujo de las tres que sí lo tienen es idéntico y esa uniformidad es
+deliberada: se abre el navegador, el usuario entra, y pega de vuelta lo que
+le salga en la barra de direcciones.
 
 Como el resto de `core/services`, aquí los errores SE DEVUELVEN, no se
 lanzan: esto lo llama la TUI y también el carrusel, muchas veces desde un
@@ -20,8 +26,8 @@ from puntueitor.core.models import Stores
 
 logger = logging.getLogger(__name__)
 
-#: Las tiendas que necesitan iniciar sesión. Steam va aparte: no tiene
-#: sesión, tiene una API key que el usuario copia de su página de Steam.
+#: Las únicas tiendas que tienen sesión que iniciar (ver arriba por qué
+#: Steam no está).
 CON_SESION = (Stores.GOG, Stores.EPIC, Stores.AMAZON)
 
 
@@ -56,9 +62,6 @@ def _sesion(store: str):
 
 def login_url(store: str) -> str:
     """La dirección que hay que abrir para entrar en `store`."""
-    if str(store) == Stores.STEAM:
-        from puntueitor.core.auth.steam import login_url as steam_login_url
-        return steam_login_url()
     return _sesion(store).login_url()
 
 
@@ -103,15 +106,10 @@ def finish_login(store: str, pegado: str) -> LoginResult:
     """
     Termina el inicio de sesión con lo que el usuario ha pegado.
 
-    En Steam esto no guarda ningún token —no lo hay—: guarda el Steam ID en
-    la configuración, que es lo que hasta ahora había que teclear a mano.
     """
     store = str(store)
     if not (pegado or "").strip():
         return LoginResult(False, "No has pegado nada.")
-
-    if store == Stores.STEAM:
-        return _finish_steam(pegado)
 
     try:
         _sesion(store).complete_login(pegado)
@@ -125,34 +123,9 @@ def finish_login(store: str, pegado: str) -> LoginResult:
                              "traerte tus juegos.")
 
 
-def _finish_steam(pegado: str) -> LoginResult:
-    from puntueitor.core.auth.steam import steam_id_from
-    from puntueitor.core.config import ConfigManager
-
-    steam_id = steam_id_from(pegado)
-    if not steam_id:
-        return LoginResult(False, (
-            "Ahí no hay ningún Steam ID de 17 cifras. Pega la dirección "
-            "entera a la que te lleva Steam al terminar de entrar."
-        ))
-
-    manager = ConfigManager()
-    manager.get.steam_user_id = int(steam_id)
-    manager.save()
-    return LoginResult(True, f"Steam ID {steam_id} guardado.")
-
-
 def logout(store: str) -> LoginResult:
     """Cierra la sesión de una tienda."""
     store = str(store)
-    if store == Stores.STEAM:
-        from puntueitor.core.config import ConfigManager
-
-        manager = ConfigManager()
-        manager.get.steam_user_id = 0
-        manager.save()
-        return LoginResult(True, "Steam ID borrado.")
-
     try:
         _sesion(store).logout()
     except Exception as error:  # noqa: BLE001
@@ -170,12 +143,6 @@ def has_session(store: str) -> bool:
     lo llama la interfaz para pintar una lista.
     """
     store = str(store)
-    if store == Stores.STEAM:
-        from puntueitor.core.config import ConfigManager
-
-        config = ConfigManager().get
-        return bool(config.steam_api_key and config.steam_user_id)
-
     try:
         from puntueitor.core.auth.token_store import TokenStore
 
@@ -186,5 +153,10 @@ def has_session(store: str) -> bool:
 
 
 def sessions_summary() -> dict[str, bool]:
-    """El estado de las cuatro tiendas, para pintarlo de una vez."""
-    return {str(store): has_session(store) for store in Stores}
+    """
+    El estado de las tiendas con sesión, para pintarlo de una vez.
+
+    Se recorre `CON_SESION` y no `Stores`: recorriendo el enum entero se
+    colaba Steam, que no tiene sesión ninguna que enseñar.
+    """
+    return {str(store): has_session(store) for store in CON_SESION}

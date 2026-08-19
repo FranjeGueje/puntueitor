@@ -70,10 +70,16 @@ class TestSteam:
 
         assert any("no hay Steam ID" in r.message for r in caplog.records)
 
-    def test_a_private_profile_is_not_confused_with_an_empty_library(self, caplog, monkeypatch):
+    def test_an_empty_answer_is_not_confused_with_an_empty_library(self, caplog, monkeypatch):
         """
-        Steam contesta 200 y un `response` VACÍO con el perfil en privado.
-        Sin esto era idéntico a "no tienes juegos".
+        Steam contesta 200 y un `response` VACÍO cuando no tiene nada que
+        enseñarnos. Sin esto era idéntico a "no tienes juegos".
+
+        El aviso nombra primero la causa PROBABLE —clave y ID de cuentas
+        distintas— y no la privacidad del perfil: con la clave de la propia
+        cuenta, la documentación de Steamworks dice que la privacidad no se
+        aplica. Es lo que lee quien se queda sin juegos, así que el orden
+        importa.
         """
         from steampy.api.steam_api import SteamApi
 
@@ -81,10 +87,11 @@ class TestSteam:
         monkeypatch.setattr(api, "_request_json", lambda url, params: {"response": {}})
 
         with caplog.at_level(logging.WARNING):
-            api.owned_games("clave", 123)
+            assert api.owned_games("clave", 123) == []
 
         mensaje = " ".join(r.message for r in caplog.records)
-        assert "privado" in mensaje and "Steam ID" in mensaje
+        assert "Steam ID" in mensaje and "misma cuenta" in mensaje
+        assert mensaje.index("misma cuenta") < mensaje.index("público")
 
     def test_a_failed_request_is_logged(self, caplog, monkeypatch):
         """`_request_json` se tragaba TODA excepción y devolvía None."""

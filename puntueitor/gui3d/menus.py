@@ -21,6 +21,10 @@ from puntueitor.gui3d.menu import WARNING_COLOR, MenuItem
 
 OPTIONS_TITLE = "Opciones"
 OPTIONS_ITEMS = [
+    # Cuentas va PRIMERO porque es lo primero que hay que hacer: sin
+    # credenciales ni sesiones no se carga ninguna biblioteca, y todo lo
+    # demás del menú opera sobre juegos que aún no existen.
+    MenuItem("accounts", "Cuentas"),
     MenuItem("config", "Configuración"),
     MenuItem("gui3d", "Puntueitor3D"),
     MenuItem("advanced", "Avanzado"),
@@ -333,13 +337,13 @@ SETTINGS_STORES = (
 )
 
 #: Tiendas que se configuran iniciando sesión, en el orden en que se pintan.
-#: Steam va la última porque es la única que además necesita credenciales a
-#: mano, y así no parece que entrar sea todo lo que hay que hacer.
+#: Steam NO está, y no es un olvido: no tiene OAuth para terceros, así que
+#: no hay sesión que iniciar. Se configura con su API key y su ID, que salen
+#: como campos de texto normales en el mismo menú.
 SETTINGS_ACCOUNTS = (
     ("gog", "GOG"),
     ("epic", "Epic"),
     ("amazon", "Amazon"),
-    ("steam", "Steam"),
 )
 
 #: Campos de texto: clave de config, etiqueta y si va tapado en la lista.
@@ -357,50 +361,49 @@ def _shown(value: str, secret: bool) -> str:
     return SECRET_MASK if secret else value
 
 
-def build_settings_items(values: dict, sessions: dict | None = None) -> list[MenuItem]:
-    """
-    El menú de configuración, con los mismos campos que la pantalla de la
-    TUI (`gui/screens/configuration.py`) y en el mismo orden.
+ACCOUNTS_TITLE = "Cuentas"
 
-    `values` son los valores EN EDICIÓN, no los guardados: como en el resto
-    de formularios, se trabaja sobre una copia y solo se escribe al dar a
-    "Guardar" (ver `app.App._open_settings_menu`).
+
+def _campos(values: dict, campos) -> list[MenuItem]:
+    """Las filas de texto de un grupo de credenciales."""
+    return [
+        MenuItem(
+            f"set:{key}", label,
+            value=_shown(str(values.get(key) or ""), secret),
+            payload={"field": key, "secret": secret},
+        )
+        for key, label, secret in campos
+    ]
+
+
+def build_accounts_items(values: dict, sessions: dict | None = None) -> list[MenuItem]:
+    """
+    El menú de Cuentas: con qué te identificas ante cada servicio.
+
+    Junta las tres cosas que antes estaban repartidas entre dos sitios, que
+    son la misma: las credenciales de IGDB, las de Steam y las sesiones de
+    las tiendas que sí tienen login.
+
+    Steam va como CAMPOS DE TEXTO y no como una fila de conectar. No es una
+    excepción caprichosa: Steam no tiene OAuth para terceros, y enseñarlo
+    igual que a GOG haría creer que entrando por el navegador se acaba el
+    trabajo, cuando la API key hay que ponerla a mano de todas formas.
+
+    `values` son los valores EN EDICIÓN, no los guardados: se trabaja sobre
+    una copia y solo se escribe al dar a "Guardar" (ver
+    `app.App._open_accounts_menu`).
 
     `sessions` va aparte y NO se edita: iniciar sesión tiene efecto en el
     momento —el token ya está guardado— y no puede deshacerse saliendo sin
     guardar, así que mezclarlo con lo demás mentiría sobre lo que hace "B".
     """
     items = [MenuItem("sec_igdb", "IGDB", kind="header")]
-    items += [
-        MenuItem(
-            f"set:{key}", label,
-            value=_shown(str(values.get(key) or ""), secret),
-            payload={"field": key, "secret": secret},
-        )
-        for key, label, secret in SETTINGS_TEXTS[:2]
-    ]
+    items += _campos(values, SETTINGS_TEXTS[:2])
 
     items.append(MenuItem("sec_steam", "STEAM", kind="header"))
-    items += [
-        MenuItem(
-            f"set:{key}", label,
-            value=_shown(str(values.get(key) or ""), secret),
-            payload={"field": key, "secret": secret},
-        )
-        for key, label, secret in SETTINGS_TEXTS[2:]
-    ]
+    items += _campos(values, SETTINGS_TEXTS[2:])
 
-    items.append(MenuItem("sec_stores", "TIENDAS A CARGAR", kind="header"))
-    items += [
-        MenuItem(
-            f"set:{field}", label, kind="check",
-            checked=bool(values.get(field)),
-            payload={"field": field},
-        )
-        for field, label in SETTINGS_STORES
-    ]
-
-    items.append(MenuItem("sec_accounts", "CUENTAS", kind="header"))
+    items.append(MenuItem("sec_tiendas", "TIENDAS", kind="header"))
     items += [
         MenuItem(
             f"login:{store}", label,
@@ -410,6 +413,33 @@ def build_settings_items(values: dict, sessions: dict | None = None) -> list[Men
             payload={"store": store},
         )
         for store, label in SETTINGS_ACCOUNTS
+    ]
+
+    items.append(MenuItem("sec_end", "", kind="header"))
+    items.append(MenuItem("set:save", "Guardar"))
+    return items
+
+
+def build_settings_items(values: dict, sessions: dict | None = None) -> list[MenuItem]:
+    """
+    El menú de configuración: qué tiendas se cargan.
+
+    Las credenciales se fueron a Cuentas (`build_accounts_items`). Aquí queda
+    lo que de verdad es configuración —qué se carga— separado de con qué te
+    identificas, que es otra cosa y se toca en otro momento.
+
+    `sessions` se acepta y se ignora, para que los dos constructores tengan
+    la misma forma y `app.App` pueda repintar cualquiera de los dos menús sin
+    saber cuál es.
+    """
+    items = [MenuItem("sec_stores", "TIENDAS A CARGAR", kind="header")]
+    items += [
+        MenuItem(
+            f"set:{field}", label, kind="check",
+            checked=bool(values.get(field)),
+            payload={"field": field},
+        )
+        for field, label in SETTINGS_STORES
     ]
 
     items.append(MenuItem("sec_end", "", kind="header"))

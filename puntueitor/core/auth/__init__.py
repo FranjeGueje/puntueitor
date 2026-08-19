@@ -7,10 +7,10 @@ El token se guarda en `CACHE_DIR` con el mismo criterio que el de IGDB
 """
 from puntueitor.core.auth.errors import AuthError, NotLoggedIn, SessionExpired
 from puntueitor.core.auth.oauth import OAuthSession
-from puntueitor.core.auth.paste import extract_code, extract_steam_id
+from puntueitor.core.auth.paste import extract_code
 from puntueitor.core.auth.token_store import TokenStore
 
 __all__ = [
     "AuthError", "NotLoggedIn", "SessionExpired",
-    "OAuthSession", "TokenStore", "extract_code", "extract_steam_id",
+    "OAuthSession", "TokenStore", "extract_code",
 ]

@@ -216,8 +216,8 @@ mismo fichero:
 ### 🔑 Cuentas
 
 Cada tienda se consulta con tu propia sesión, así que hay que iniciarla una
-vez. Se hace desde **Cuentas** —`a` en la TUI, Select → Configuración →
-CUENTAS en el carrusel— y el gesto es el mismo en las cuatro:
+vez. Se hace desde **Cuentas** —`a` en la TUI, Select → Cuentas en el
+carrusel— y el gesto es el mismo en GOG, Epic y Amazon:
 
 1. Elige la tienda y pulsa **Abrir navegador**.
 2. Inicia sesión con tu cuenta de siempre.
@@ -240,11 +240,17 @@ queda en el log para que la abras donde puedas.
 > las dos cosas (el modo juego del Deck, por ejemplo) el aviso lo dice en vez
 > de quedarse callado.
 
-**Steam necesita además una API key**, que Valve solo entrega a mano: sácala
-de [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) y
-pégala en Configuración. Entrar por Cuentas te ahorra teclear el Steam ID,
-que es lo que más se equivoca. Y recuerda que tu perfil y los detalles de
-juego tienen que estar en **público** para que Steam los sirva.
+**Steam es la excepción y se configura a mano**, en la misma pantalla de
+Cuentas: su Steam ID y su API key. No hay botón de conectar porque Steam no
+ofrece OAuth a terceros — su OpenID solo diría quién eres, sin entregar
+ningún permiso, así que la clave haría falta igual. Sácala de
+[steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey).
+
+> La API key y el Steam ID tienen que ser **de la misma cuenta**. Siéndolo,
+> la documentación de Steamworks dice que los ajustes de privacidad no se
+> aplican (*«...unless you are asking for your own personal details»*), así
+> que no haría falta tener el perfil en público. Si usas la clave de otra
+> cuenta, entonces sí: perfil y detalles de juego en público.
 
 > Los tokens se guardan en `~/.cache/puntueitor/` y se renuevan solos. Si se
 > pierden, lo único que pasa es que hay que volver a entrar.
@@ -263,8 +269,8 @@ juego tienen que estar en **público** para que Steam los sirva.
 | Tecla | Acción | Descripción |
 |---|---|---|
 | `p` | **Puntueitor** | Abre selector de sistema de puntuación |
-| `c` | **Configurar** | Diálogo de configuración de API keys y tiendas |
-| `a` | **Cuentas** | Iniciar o cerrar sesión en Steam, GOG, Epic y Amazon |
+| `c` | **Configurar** | Qué tiendas se cargan |
+| `a` | **Cuentas** | Credenciales de IGDB y Steam, y sesiones de GOG, Epic y Amazon |
 | `o` | **Ocultos** | Alterna visibilidad de juegos marcados como ocultos |
 | `s` | **Ordenar** | Diálogo de ordenación (nombre, puntuación, duración…) |
 | `f` | **Filtrar** | Diálogo de filtros (nombre, duración, flags…) |
@@ -418,7 +424,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-557 tests (unitarios + integración) que cubren:
+556 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)

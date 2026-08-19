@@ -134,7 +134,7 @@ class SteamApi:
         Devuelve None si la petición falló —el porqué ya está en el log— y
         lista vacía si Steam contestó pero sin juegos. Son dos casos
         distintos: el primero se arregla solo cuando vuelva la red, y el
-        segundo casi siempre es un perfil en privado.
+        segundo es de configuración.
         """
         url = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
         params = {
@@ -152,14 +152,22 @@ class SteamApi:
 
         entry = data.get("response", {}).get("games")
         if not entry:
-            # Steam contesta 200 y un `response` VACÍO cuando el perfil es
-            # privado o el SteamID no es el que se cree. Sin esto era
-            # indistinguible de "no tienes juegos", que es lo que parecía.
+            # Steam contesta 200 y un `response` VACÍO cuando no tiene nada
+            # que enseñarnos. Sin esto era indistinguible de "no tienes
+            # juegos", que es lo que parecía.
+            #
+            # El orden de las causas importa, porque es lo que la gente lee
+            # cuando se queda sin juegos. La privacidad va la ÚLTIMA: según
+            # la documentación de Steamworks no aplica cuando la API key
+            # pertenece a la misma cuenta que se consulta, que es el caso
+            # normal aquí. Lo más probable es que la clave y el ID no sean
+            # de la misma cuenta.
             logger.warning(
                 f"Steam no devolvió ningún juego para el usuario {steamid}: "
-                "lo normal es que el perfil (o los detalles del juego) esté en "
-                "privado, o que el Steam ID no sea correcto. "
-                "Revísalo en Opciones → Configuración"
+                "comprueba que el Steam ID es correcto y que la API key es de "
+                "ESA misma cuenta. Si la clave es de otra cuenta, además "
+                "tendrías que tener el perfil (y los detalles de juego) en "
+                "público. Revísalo en Opciones → Cuentas"
             )
             return []
 

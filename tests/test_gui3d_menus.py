@@ -131,7 +131,7 @@ class TestCreditos:
 
     def test_it_is_in_the_options_menu(self):
         keys = [i.key for i in menus.OPTIONS_ITEMS]
-        assert keys == ["config", "gui3d", "advanced", "credits", "quit"]
+        assert keys == ["accounts", "config", "gui3d", "advanced", "credits", "quit"]
 
     def test_it_fits_on_one_screen(self):
         """
@@ -331,9 +331,21 @@ class TestAdvancedMenu:
         assert not any(i.color for i in items)
 
 
-class TestSettingsAccounts:
+class TestMenuOpciones:
+    def test_accounts_comes_first(self):
+        """
+        Es lo primero que hay que hacer: sin credenciales ni sesiones no se
+        carga ninguna biblioteca, y todo lo demás del menú opera sobre juegos
+        que todavía no existen.
+        """
+        keys = [i.key for i in menus.OPTIONS_ITEMS]
+        assert keys[0] == "accounts"
+        assert keys.index("accounts") < keys.index("config")
+
+
+class TestMenuCuentas:
     """
-    Las filas de CUENTAS del menú de Configuración.
+    El menú de Cuentas: con qué te identificas ante cada servicio.
 
     Se prueban las CLAVES, no el aspecto: son el contrato con `_activate` de
     `gui3d/app.py`, y ya pasó que el menú pintaba las filas bien pero el
@@ -342,15 +354,38 @@ class TestSettingsAccounts:
     """
 
     @staticmethod
+    def _items(values=None, sessions=None):
+        return menus.build_accounts_items(values or {}, sessions)
+
+    @staticmethod
     def _cuentas(values=None, sessions=None):
         return [
-            item for item in menus.build_settings_items(values or {}, sessions)
+            item for item in menus.build_accounts_items(values or {}, sessions)
             if item.key.startswith("login:")
         ]
 
-    def test_there_is_one_row_per_store(self):
+    def test_it_has_the_credentials_and_the_stores(self):
+        cabeceras = [i.label for i in self._items() if i.kind == "header"]
+        assert "IGDB" in cabeceras
+        assert "STEAM" in cabeceras
+        assert "TIENDAS" in cabeceras
+
+    def test_the_credentials_are_text_fields(self):
+        claves = [i.key for i in self._items()]
+        for campo in ("igdb_client_id", "igdb_client_secret",
+                      "steam_user_id", "steam_api_key"):
+            assert f"set:{campo}" in claves
+
+    def test_steam_has_no_connect_row(self):
+        """
+        Steam no tiene OAuth para terceros: entrar por el navegador no
+        ahorraría poner la API key a mano, solo lo aparentaría.
+        """
+        assert "login:steam" not in [i.key for i in self._items()]
+
+    def test_there_is_one_row_per_store_with_a_session(self):
         assert [i.key for i in self._cuentas()] == [
-            "login:gog", "login:epic", "login:amazon", "login:steam",
+            "login:gog", "login:epic", "login:amazon",
         ]
 
     def test_the_prefix_is_the_one_the_dispatcher_routes(self):
@@ -381,13 +416,30 @@ class TestSettingsAccounts:
         assert all(i.kind not in ("check", "cycle") for i in self._cuentas())
 
     def test_they_carry_the_store_in_the_payload(self):
-        tiendas = [i.payload["store"] for i in self._cuentas()]
-        assert tiendas == ["gog", "epic", "amazon", "steam"]
+        assert [i.payload["store"] for i in self._cuentas()] == [
+            "gog", "epic", "amazon",
+        ]
 
-    def test_the_header_is_there(self):
+    def test_it_can_be_saved(self):
+        assert "set:save" in [i.key for i in self._items()]
+
+
+class TestMenuConfiguracion:
+    """Lo que queda tras llevarse las credenciales a Cuentas."""
+
+    def test_it_only_has_the_stores_to_load(self):
         items = menus.build_settings_items({})
-        cabeceras = [i.label for i in items if i.kind == "header"]
-        assert "CUENTAS" in cabeceras
+        casillas = [i.payload["field"] for i in items if i.kind == "check"]
+        assert casillas == [campo for campo, _ in menus.SETTINGS_STORES]
+
+    def test_the_credentials_are_no_longer_here(self):
+        claves = [i.key for i in menus.build_settings_items({})]
+        for campo in ("igdb_client_secret", "steam_api_key", "steam_user_id"):
+            assert f"set:{campo}" not in claves
+
+    def test_no_store_logins_here_either(self):
+        claves = [i.key for i in menus.build_settings_items({})]
+        assert not any(k.startswith("login:") for k in claves)
 
 
 class TestSettingsDispatch:
@@ -403,9 +455,16 @@ class TestSettingsDispatch:
     class AppFalsa:
         def __init__(self):
             self.recibidas = []
+            self.menus_abiertos = []
 
         def _activate_setting(self, key):
             self.recibidas.append(key)
+
+        def _open_accounts_menu(self):
+            self.menus_abiertos.append("accounts")
+
+        def _open_settings_menu(self):
+            self.menus_abiertos.append("config")
 
     @staticmethod
     def _elegir(key):
@@ -424,3 +483,20 @@ class TestSettingsDispatch:
     def test_every_account_row_is_routed(self):
         for store, _ in menus.SETTINGS_ACCOUNTS:
             assert self._elegir(f"login:{store}") == [f"login:{store}"]
+
+    @staticmethod
+    def _abrir(key):
+        from puntueitor.gui3d.app import App
+
+        app = TestSettingsDispatch.AppFalsa()
+        App._activate(app, menu=None, key=key)
+        return app.menus_abiertos
+
+    def test_the_two_option_entries_open_their_own_menu(self):
+        """
+        Son dos menús distintos sobre la misma configuración. Si "accounts"
+        no estuviera enrutado, elegirlo no haría nada visible — que es
+        exactamente lo que pasó con las filas de CUENTAS.
+        """
+        assert self._abrir("accounts") == ["accounts"]
+        assert self._abrir("config") == ["config"]
