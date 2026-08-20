@@ -15,7 +15,7 @@ def _resolver():
     return GOGResolver
 
 
-def _session():
+def _session(config):
     from puntueitor.core.auth.gog import GOGSession
 
     return GOGSession()

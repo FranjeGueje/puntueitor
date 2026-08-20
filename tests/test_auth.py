@@ -188,3 +188,101 @@ class TestLoQueSePega:
     def test_the_order_of_the_names_matters(self):
         pegado = "https://x?code=segundo&authorizationCode=primero"
         assert extract_code(pegado, ("authorizationCode", "code")) == "primero"
+
+
+class HttpDoble:
+    """Un `requests.Session` de mentira: devuelve códigos de una cola."""
+
+    def __init__(self, *codigos):
+        self.codigos = list(codigos) or [200]
+        self.peticiones = []
+
+    def request(self, method, url, **kwargs):
+        self.peticiones.append((method, url, kwargs))
+        return RespuestaDoble(self.codigos.pop(0) if self.codigos else 200)
+
+
+class RespuestaDoble:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"user": {"username": "alguien"}}
+
+
+class TestItchio:
+    """
+    La sesión más rara de las cinco, y por un motivo estructural: itch.io usa
+    concesión implícita. El token llega ya hecho dentro de la URL, no caduca y
+    no trae `refresh_token` — justo lo contrario de lo que `OAuthSession` da
+    por supuesto. Estas pruebas fijan el apaño que lo encaja.
+    """
+
+    def _sesion(self, http=None, client_id="ID"):
+        from puntueitor.core.auth.itchio import ItchioSession
+
+        return ItchioSession(client_id=client_id, session=http or HttpDoble())
+
+    def test_without_a_client_id_it_says_where_to_get_one(self):
+        """
+        A diferencia de GOG/Epic/Amazon, no hay client_id ajeno que
+        reutilizar: cada instalación registra el suyo.
+        """
+        with pytest.raises(AuthError, match="oauth-apps"):
+            self._sesion(client_id="").login_url()
+
+    def test_the_login_url_asks_for_a_token_not_for_a_code(self):
+        url = self._sesion().login_url()
+
+        assert "response_type=token" in url
+        assert "scope=profile%3Aowned" in url
+
+    def test_what_is_pasted_is_already_the_token(self):
+        """No hay nada que canjear: el token viene en el fragmento de la URL."""
+        sesion = self._sesion()
+        sesion.complete_login("https://itch.io/#access_token=T0KEN&scope=profile")
+
+        assert sesion.tokens.access_token == "T0KEN"
+
+    def test_a_token_that_itchio_rejects_is_not_saved(self):
+        """
+        Se valida contra `/profile` antes de darlo por bueno: guardar un token
+        roto lo escondería hasta la primera recarga de la biblioteca.
+        """
+        sesion = self._sesion(http=HttpDoble(401))
+
+        with pytest.raises(SessionExpired):
+            sesion.complete_login("https://itch.io/#access_token=MALO")
+        assert not sesion.is_logged_in()
+
+    def test_a_freshly_saved_token_is_usable(self):
+        """
+        Sin la caducidad sintética, `TokenStore` daría por caducado cualquier
+        token sin `expires_at` y la sesión moriría en la primera llamada.
+        """
+        sesion = self._sesion()
+        sesion.complete_login("https://itch.io/#access_token=T0KEN")
+
+        assert sesion.access_token() == "T0KEN"
+
+    def test_once_the_window_passes_it_revalidates_the_same_token(self):
+        http = HttpDoble(200)
+        sesion = self._sesion(http=http)
+        sesion.tokens.save({
+            "access_token": "T0KEN", "refresh_token": "T0KEN", "expires_in": 1,
+        })
+
+        assert sesion.access_token() == "T0KEN"
+        assert http.peticiones[-1][0] == "GET"
+
+    def test_a_revoked_token_ends_the_session(self):
+        sesion = self._sesion(http=HttpDoble(401))
+        sesion.tokens.save({
+            "access_token": "T0KEN", "refresh_token": "T0KEN", "expires_in": 1,
+        })
+
+        with pytest.raises(SessionExpired):
+            sesion.access_token()

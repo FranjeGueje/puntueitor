@@ -2,6 +2,41 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
+## [No publicado]
+
+### Añadido
+
+- **itch.io, quinta tienda.** Su biblioteca se trae por la *Owned Keys API
+  Route* con el permiso `profile:owned` — la única de las cinco que es una
+  API **oficial y documentada** por la propia tienda, sin nada averiguado por
+  ingeniería inversa. Se activa en Opciones → Tiendas como las demás.
+- **Un paso más, una sola vez, para iniciar sesión en itch.io.** Precisamente
+  por ser oficial no hay ningún cliente ajeno cuyo `client_id` reutilizar (en
+  GOG, Epic y Amazon se usa el de su cliente oficial): cada instalación
+  registra su propia aplicación en `itch.io/user/settings/oauth-apps` y pega
+  el Client ID en Cuentas, que ahora tiene una sección para él. Si falta, el
+  inicio de sesión lo dice y explica dónde conseguirlo, en vez de abrir el
+  navegador en una página de error.
+
+### Notas de diseño
+
+- **Se pega la dirección, igual que en las otras tres.** itch.io sí admitiría
+  un `redirect_uri` a `localhost` —y capturar la vuelta automáticamente—,
+  pero sería la única tienda que se comporta distinto: un gesto que aprender
+  en vez de cuatro pantallas iguales. Cuando eso pueda hacerse en todas,
+  bastará con cambiar un módulo.
+- **Su token no caduca ni trae `refresh_token`**: itch.io usa concesión
+  implícita, así que el token llega ya hecho dentro de la dirección que se
+  pega. Como el resto del código da por caducado cualquier token sin fecha,
+  se guarda con una caducidad ficticia de 30 días y, al cumplirse, en vez de
+  canjear nada se revalida contra `/profile`. Eso además detecta una sesión
+  revocada desde itch.io, que si no pasaría inadvertida.
+- **Se resuelve por id, no solo por título.** IGDB indexa itch.io como fuente
+  externa (nº 30), y su identificador es el mismo número que devuelve la
+  tienda — comprobado contra la API real de IGDB antes de escribir el
+  resolver, no supuesto. Aun así queda la búsqueda por título de reserva:
+  itch.io tiene cientos de miles de juegos y IGDB no los tiene todos.
+
 ## [3.0.0] - 2026-08-19
 
 Puntueitor deja de leer los ficheros de otros programas. GOG, Epic y Amazon

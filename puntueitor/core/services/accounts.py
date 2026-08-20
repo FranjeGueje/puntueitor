@@ -55,13 +55,21 @@ class LoginResult:
 
 
 def _sesion(store: str):
-    """La sesión de una tienda, del registro."""
+    """
+    La sesión de una tienda, del registro.
+
+    Se le pasa la configuración por si la necesita: la mayoría de sesiones
+    no la usan (GOG, Epic y Amazon reutilizan credenciales de su cliente
+    oficial), pero itch.io sí — no hay client_id ajeno que reutilizar, cada
+    instalación registra el suyo en itch.io/user/settings/oauth-apps.
+    """
     from puntueitor.core import stores
+    from puntueitor.core.config import ConfigManager
 
     spec = stores.find(store)
     if spec is None or not spec.has_session:
         raise ValueError(f"{store} no usa sesión")
-    return spec.session()
+    return spec.session(ConfigManager().get)
 
 
 def login_url(store: str) -> str:

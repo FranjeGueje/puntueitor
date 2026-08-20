@@ -348,11 +348,30 @@ SETTINGS_ACCOUNTS = tuple(
 )
 
 #: Campos de texto: clave de config, etiqueta y si va tapado en la lista.
-SETTINGS_TEXTS = (
-    ("igdb_client_id", "Client ID", False),
-    ("igdb_client_secret", "Client Secret", True),
-    ("steam_user_id", "Steam User ID", False),
-    ("steam_api_key", "API Key", True),
+#: En grupos con nombre, y no una tupla plana rebanada por posición, porque
+#: eso fue lo que se rompió al añadir itch.io: un tercer grupo no encaja en
+#: "los dos primeros / el resto".
+SETTINGS_TEXT_GROUPS: dict[str, tuple[tuple[str, str, bool], ...]] = {
+    "IGDB": (
+        ("igdb_client_id", "Client ID", False),
+        ("igdb_client_secret", "Client Secret", True),
+    ),
+    "STEAM": (
+        ("steam_user_id", "Steam User ID", False),
+        ("steam_api_key", "API Key", True),
+    ),
+    # itch.io no tiene un client_id ajeno que reutilizar (a diferencia de
+    # GOG/Epic/Amazon): cada instalación registra el suyo, y por eso
+    # necesita un campo de texto ADEMÁS de su fila de sesión en TIENDAS.
+    "ITCH.IO": (
+        ("itchio_client_id", "Client ID", False),
+    ),
+}
+
+#: Aplanada, para quien recorra todos los campos sin importarle el grupo
+#: (`open_config_form`, que solo necesita saber qué claves leer y guardar).
+SETTINGS_TEXTS = tuple(
+    campo for grupo in SETTINGS_TEXT_GROUPS.values() for campo in grupo
 )
 
 
@@ -398,11 +417,10 @@ def build_accounts_items(values: dict, sessions: dict | None = None) -> list[Men
     momento —el token ya está guardado— y no puede deshacerse saliendo sin
     guardar, así que mezclarlo con lo demás mentiría sobre lo que hace "B".
     """
-    items = [MenuItem("sec_igdb", "IGDB", kind="header")]
-    items += _campos(values, SETTINGS_TEXTS[:2])
-
-    items.append(MenuItem("sec_steam", "STEAM", kind="header"))
-    items += _campos(values, SETTINGS_TEXTS[2:])
+    items = []
+    for grupo, campos in SETTINGS_TEXT_GROUPS.items():
+        items.append(MenuItem(f"sec_{grupo.lower()}", grupo, kind="header"))
+        items += _campos(values, campos)
 
     items.append(MenuItem("sec_tiendas", "TIENDAS", kind="header"))
     items += [

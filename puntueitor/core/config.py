@@ -49,11 +49,16 @@ class Config:
     steam_user_id: int = 0
     igdb_client_id: str = ""
     igdb_client_secret: str = ""
+    # itch.io no tiene un client_id ajeno que reutilizar como GOG/Epic/
+    # Amazon: cada instalación registra el suyo en
+    # itch.io/user/settings/oauth-apps.
+    itchio_client_id: str = ""
 
     steam_is_active: bool = True
     gog_is_active: bool = False
     epic_is_active: bool = False
     amazon_is_active: bool = False
+    itchio_is_active: bool = False
 
 
 @dataclass

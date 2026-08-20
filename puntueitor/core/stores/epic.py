@@ -15,7 +15,7 @@ def _resolver():
     return EpicResolver
 
 
-def _session():
+def _session(config):
     from puntueitor.core.auth.epic import EpicSession
 
     return EpicSession()

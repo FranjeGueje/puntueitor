@@ -19,20 +19,21 @@ class FakeConfig:
     gog_is_active: bool = True
     epic_is_active: bool = True
     amazon_is_active: bool = True
+    itchio_is_active: bool = True
 
 
 class TestActiveStores:
     def test_all(self):
         assert active_stores(FakeConfig()) == {
-            Stores.STEAM, Stores.GOG, Stores.EPIC, Stores.AMAZON,
+            Stores.STEAM, Stores.GOG, Stores.EPIC, Stores.AMAZON, Stores.ITCHIO,
         }
 
     def test_some(self):
-        config = FakeConfig(gog_is_active=False, amazon_is_active=False)
+        config = FakeConfig(gog_is_active=False, amazon_is_active=False, itchio_is_active=False)
         assert active_stores(config) == {Stores.STEAM, Stores.EPIC}
 
     def test_none(self):
-        config = FakeConfig(False, False, False, False)
+        config = FakeConfig(False, False, False, False, False)
         assert active_stores(config) == set()
 
 

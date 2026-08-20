@@ -72,7 +72,7 @@ class TestSteamEsLaExcepcion:
         assert Stores.STEAM not in [s.store for s in stores.with_session()]
 
     def test_the_others_do_have_one(self):
-        assert {s.key for s in stores.with_session()} == {"gog", "epic", "amazon"}
+        assert {s.key for s in stores.with_session()} == {"gog", "epic", "amazon", "itchio"}
 
 
 class TestActivas:
@@ -88,7 +88,8 @@ class TestActivas:
         gana cuando un juego está en varias tiendas.
         """
         config = Config(steam_is_active=True, gog_is_active=True,
-                        epic_is_active=True, amazon_is_active=True)
+                        epic_is_active=True, amazon_is_active=True,
+                        itchio_is_active=True)
         orden = [s.key for s in stores.active(config)]
 
         assert orden == [s.key for s in stores.all_stores()]
@@ -123,7 +124,7 @@ class TestUnaTiendaNueva:
             color=(0.0, 0.3, 0.9),
             provider=lambda config: "proveedor",
             resolver=lambda: str,
-            session=lambda: "sesión",
+            session=lambda config: "sesión",
             paste_hint="Pega lo que te dé PlayStation",
         )
         registro = tuple(

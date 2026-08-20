@@ -91,3 +91,30 @@ class TestEstado:
         accounts.logout("gog")
 
         assert not accounts.has_session("gog")
+
+
+class TestItchioNecesitaSuClientId:
+    """
+    itch.io es la única que no puede iniciar sesión nada más instalar: no hay
+    client_id ajeno que reutilizar como en GOG/Epic/Amazon, cada instalación
+    registra el suyo. Lo que se comprueba aquí es que eso se dice, en vez de
+    abrir el navegador en una página de error.
+    """
+
+    def test_without_it_the_login_says_where_to_register_the_app(self):
+        resultado = accounts.open_login("itchio")
+
+        assert not resultado.ok
+        assert "oauth-apps" in resultado.mensaje
+
+    def test_with_it_configured_the_page_opens(self, sin_navegador):
+        from puntueitor.core.config import ConfigManager
+
+        manager = ConfigManager()
+        manager.get.itchio_client_id = "abc123"
+        manager.save()
+
+        resultado = accounts.open_login("itchio")
+
+        assert resultado.ok
+        assert "client_id=abc123" in sin_navegador[0]

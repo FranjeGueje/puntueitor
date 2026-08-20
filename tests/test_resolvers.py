@@ -7,6 +7,7 @@ from puntueitor.core.models import Stores
 from puntueitor.core.resolvers.amazon_resolver import AmazonResolver
 from puntueitor.core.resolvers.epic_resolver import EpicResolver
 from puntueitor.core.resolvers.gog_resolver import GOGResolver
+from puntueitor.core.resolvers.itchio_resolver import ItchioResolver
 from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
 
 IGDB_GAME = {"id": 99, "name": "Test Game", "genres": []}
@@ -149,3 +150,36 @@ class TestAmazonResolver:
         games = resolver.resolve({"app_name": "amz1", "title": "Test"})
 
         assert games[0].igdb_id == 7
+
+
+class TestItchioResolver:
+    """
+    itch.io sí se resuelve por id, no solo por título como Amazon: IGDB lo
+    indexa como fuente externa nº 30 ("Itchio"), comprobado contra su API real
+    y no supuesto por documentación de terceros.
+    """
+
+    def test_it_looks_it_up_by_the_external_id_first(self, igdb):
+        igdb.search_by_external_game.return_value = [IGDB_GAME]
+        resolver = _resolver(ItchioResolver, igdb)
+
+        games = resolver.resolve({"app_name": "583923", "title": "Test Game"})
+
+        igdb.search_by_external_game.assert_called_once_with(
+            source_id=30, external_uid="583923", cache_results=True,
+        )
+        igdb.search_by_title.assert_not_called()
+        assert games[0].stores[Stores.ITCHIO] == "583923"
+
+    def test_if_igdb_does_not_have_it_indexed_it_falls_back_to_the_title(self, igdb):
+        """
+        itch.io tiene cientos de miles de juegos y IGDB no indexa ni de lejos
+        todos: sin esta caída, casi toda la biblioteca acabaría en
+        Desconocidos.
+        """
+        igdb.search_by_title.return_value = [IGDB_GAME]
+        resolver = _resolver(ItchioResolver, igdb)
+
+        games = resolver.resolve({"app_name": "583923", "title": "Test Game"})
+
+        assert games[0].igdb_id == 99

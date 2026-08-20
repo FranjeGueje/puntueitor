@@ -9,6 +9,11 @@ resolvers esperan encontrar.
 from puntueitor.core.providers.amazon import AmazonProvider
 from puntueitor.core.providers.epic import EpicProvider
 from puntueitor.core.providers.gog import GOGProvider
+from puntueitor.core.providers.itchio import (
+    MAX_PAGINAS,
+    POR_PAGINA,
+    ItchioProvider,
+)
 from puntueitor.core.providers.steam import SteamProvider
 
 
@@ -317,3 +322,89 @@ class TestEpicNoRepitePreguntas:
             provider.fetch(refresh=True)
 
         assert any("no se pudieron consultar" in r.message for r in caplog.records)
+
+
+class TestItchio:
+    """
+    La única tienda de las cinco con API oficial y documentada.
+
+    Lo que se prueba aquí es cómo se para de paginar: `owned-keys` no dice
+    cuántas páginas hay —a diferencia de GOG—, así que el proveedor tiene que
+    deducirlo, y equivocarse ahí significa o media biblioteca o un bucle sin
+    fin.
+    """
+
+    @staticmethod
+    def _clave(id_juego, titulo):
+        return {"game": {"id": id_juego, "title": titulo, "url": f"https://x/{titulo}"}}
+
+    def test_the_id_and_the_title_come_out_where_the_resolver_looks(self):
+        http = HttpDoble({"owned_keys": [self._clave(583923, "Celeste Classic")]})
+        provider = ItchioProvider(session=SesionDoble(), http=http)
+
+        juegos = provider.fetch(refresh=True)
+
+        # `app_name` es el mismo id numérico que IGDB indexa como `uid` de su
+        # fuente externa "Itchio": el resolver lo busca tal cual.
+        assert juegos[0]["app_name"] == "583923"
+        assert juegos[0]["title"] == "Celeste Classic"
+
+    def test_a_page_that_is_not_full_is_the_last_one(self):
+        http = HttpDoble({"owned_keys": [self._clave(1, "Uno")]})
+        ItchioProvider(session=SesionDoble(), http=http).fetch(refresh=True)
+
+        assert len(http.peticiones) == 1
+
+    def test_it_keeps_asking_while_the_pages_come_full(self):
+        llenas = [self._clave(n, f"J{n}") for n in range(POR_PAGINA)]
+        http = HttpDoble({"owned_keys": llenas}, {"owned_keys": [self._clave(99, "Fin")]})
+        provider = ItchioProvider(session=SesionDoble(), http=http)
+
+        juegos = provider.fetch(refresh=True)
+
+        assert len(juegos) == POR_PAGINA + 1
+        assert [p[1]["params"]["page"] for p in http.peticiones] == [1, 2]
+
+    def test_an_empty_page_also_stops_it(self):
+        """
+        Una página llena justa de la que no hay siguiente: itch.io contesta
+        con la lista vacía y ahí se acaba, sin pedir la tercera.
+        """
+        llenas = [self._clave(n, f"J{n}") for n in range(POR_PAGINA)]
+        http = HttpDoble({"owned_keys": llenas}, {"owned_keys": []})
+        provider = ItchioProvider(session=SesionDoble(), http=http)
+
+        assert len(provider.fetch(refresh=True)) == POR_PAGINA
+        assert len(http.peticiones) == 2
+
+    def test_a_key_without_its_game_is_left_out(self):
+        """
+        Se compran también cosas que no son juegos (packs, bundles): vienen
+        sin `game` y colarlas rompería al normalizar.
+        """
+        http = HttpDoble({"owned_keys": [{"id": 1}, self._clave(2, "Sí")]})
+        provider = ItchioProvider(session=SesionDoble(), http=http)
+
+        assert [j["title"] for j in provider.fetch(refresh=True)] == ["Sí"]
+
+    def test_it_does_not_spin_forever(self, caplog):
+        """
+        Si itch.io contestara siempre con páginas llenas, el tope corta y deja
+        aviso: mejor media biblioteca que un refresco que no termina nunca.
+        """
+        llenas = [self._clave(n, f"J{n}") for n in range(POR_PAGINA)]
+
+        class HttpSinFin(HttpDoble):
+            def get(self, url, **kwargs):
+                self.peticiones.append((url, kwargs))
+                return RespuestaDoble({"owned_keys": llenas})
+
+        http = HttpSinFin()
+        provider = ItchioProvider(session=SesionDoble(), http=http)
+
+        with caplog.at_level("WARNING"):
+            juegos = provider.fetch(refresh=True)
+
+        assert len(http.peticiones) == MAX_PAGINAS
+        assert len(juegos) == MAX_PAGINAS * POR_PAGINA
+        assert "puede faltar parte de la biblioteca" in caplog.text

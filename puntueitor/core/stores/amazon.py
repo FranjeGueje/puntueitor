@@ -15,7 +15,7 @@ def _resolver():
     return AmazonResolver
 
 
-def _session():
+def _session(config):
     from puntueitor.core.auth.amazon import AmazonSession
 
     return AmazonSession()

@@ -1139,7 +1139,7 @@ typed. The registry tests catch both omissions, in both directions.
 
 ## Store providers: the cache is the safety net, not an optimisation
 
-Three of the four store APIs (GOG, Epic, Amazon) are undocumented — they are
+Three of the five store APIs (GOG, Epic, Amazon) are undocumented — they are
 the ones gogdl, Legendary and Nile use, and they can change without notice.
 `LibraryProvider.fetch()` therefore **never returns empty when it has cached
 data**: no network, expired session, or a store answering with zero games all
@@ -1151,7 +1151,7 @@ almost always a fault on their side, not a sold account, so `save_games()`
 keeps the previous copy when handed an empty list. Without it, one bad answer
 would wipe a library and the next startup would look like the user's fault.
 
-`fetch()` also **never raises**. `load_library` walks the four stores in one
+`fetch()` also **never raises**. `load_library` walks the five stores in one
 loop, and one store blowing up would take the ones behind it with it.
 
 A network failure while *renewing* a token is not an expired session
@@ -1207,12 +1207,30 @@ Control characters are stripped **on accept** as well as on paste
 it would sit invisibly inside the URL and the store would reject the code
 with nothing to see.
 
-## OAuth: why the three logins are copy-paste (and why Steam has none)
+## OAuth: why the four logins are copy-paste (and why Steam has none)
 
 GOG, Epic and Amazon pin their `redirect_uri` to a domain of their own — we
 use their official clients' credentials and cannot register `localhost`. The
 browser never comes back to us, so short of embedding a whole browser, pasting
 is the only way.
+
+**itch.io is the exception that stays in line anyway.** Its API is official and
+public, so it *would* accept a `localhost` redirect and the login could be
+captured automatically. It pastes like the rest on purpose: one gesture to
+learn across every store beats one store behaving differently. Changing this
+later touches only `auth/itchio.py`.
+
+Being official has a cost, though: there is no third-party client whose
+`client_id` we can borrow, so itch.io's comes from `Config.itchio_client_id`
+and the user registers their own app. That is why `StoreSpec.session` takes
+the config — the other three ignore it.
+
+**itch.io's token never expires and has no refresh token** (implicit grant:
+the token arrives inside the pasted URL). `OAuthSession` assumes the opposite,
+so `auth/itchio.py` stores the token as its own `refresh_token` with a
+synthetic 30-day expiry; when that lapses, `_renew` revalidates against
+`/profile` instead of exchanging anything. That doubles as the only way a
+session revoked from itch.io ever gets noticed.
 
 **Steam has no login at all.** It briefly had one (OpenID, to fill in the
 SteamID), and it was removed: Steam grants third parties no library access, so
@@ -1544,8 +1562,8 @@ Opciones — nothing loads without credentials, so everything else in that menu
 operates on games that do not exist yet.
 
 - **Cuentas** (`build_accounts_items`): IGDB id/secret, Steam user id/API key,
-  and login rows for GOG/Epic/Amazon.
-- **Tiendas** (`build_settings_items`): the four store checkboxes.
+  itch.io client id, and login rows for GOG/Epic/Amazon/itch.io.
+- **Tiendas** (`build_settings_items`): the five store checkboxes.
 
 Each mirrors the matching TUI screen (`tui/screens/accounts.py`,
 `tui/screens/configuration.py`).

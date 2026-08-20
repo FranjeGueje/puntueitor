@@ -13,7 +13,7 @@ tiendas a la vez (ver `gui3d/store_colors.py`).
 Para añadir una tienda, ver `spec.py`.
 """
 from puntueitor.core.models import Stores
-from puntueitor.core.stores import amazon, epic, gog, steam
+from puntueitor.core.stores import amazon, epic, gog, itchio, steam
 from puntueitor.core.stores.spec import StoreSpec
 
 #: Todas las tiendas, en orden de presentación.
@@ -22,6 +22,7 @@ REGISTRY: tuple[StoreSpec, ...] = (
     gog.SPEC,
     epic.SPEC,
     amazon.SPEC,
+    itchio.SPEC,
 )
 
 _POR_TIENDA = {spec.store: spec for spec in REGISTRY}

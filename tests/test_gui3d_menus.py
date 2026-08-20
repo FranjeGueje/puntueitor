@@ -401,7 +401,7 @@ class TestMenuCuentas:
 
     def test_there_is_one_row_per_store_with_a_session(self):
         assert [i.key for i in self._cuentas()] == [
-            "login:gog", "login:epic", "login:amazon",
+            "login:gog", "login:epic", "login:amazon", "login:itchio",
         ]
 
     def test_the_prefix_is_the_one_the_dispatcher_routes(self):
@@ -433,7 +433,7 @@ class TestMenuCuentas:
 
     def test_they_carry_the_store_in_the_payload(self):
         assert [i.payload["store"] for i in self._cuentas()] == [
-            "gog", "epic", "amazon",
+            "gog", "epic", "amazon", "itchio",
         ]
 
     def test_it_can_be_saved(self):

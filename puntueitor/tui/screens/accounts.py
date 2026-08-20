@@ -51,6 +51,12 @@ class AccountsScreen(Screen):
                     )
                     yield Input(password=True, id="steam-api-key")
 
+                    yield Label("itch.io", classes="section-title")
+                    yield Label(
+                        "Client ID (itch.io/user/settings/oauth-apps)"
+                    )
+                    yield Input(id="itchio-client-id")
+
                     yield Label(
                         "Tiendas: Puntueitor abre el navegador; al terminar "
                         "de entrar, copia la dirección de la barra y pégala.",
@@ -89,6 +95,9 @@ class AccountsScreen(Screen):
         self.query_one("#steam-api-key", Input).value = config.steam_api_key or ""
         self.query_one("#steam-user-id", Input).value = (
             str(config.steam_user_id) if config.steam_user_id else ""
+        )
+        self.query_one("#itchio-client-id", Input).value = (
+            config.itchio_client_id or ""
         )
 
     # ──────────────────────────────
@@ -148,6 +157,7 @@ class AccountsScreen(Screen):
             "#igdb-client-secret", Input
         ).value
         config.steam_api_key = self.query_one("#steam-api-key", Input).value
+        config.itchio_client_id = self.query_one("#itchio-client-id", Input).value
 
         user_id = self.query_one("#steam-user-id", Input).value
         try:

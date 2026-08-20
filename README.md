@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Centraliza, gestiona y optimiza la elección de tus próximas partidas basándose en tus bibliotecas actuales</b><br>
-  Unifica Steam, GOG, Epic Games y Amazon en <b>dos interfaces</b>: una de terminal
+  Unifica Steam, GOG, Epic Games, Amazon e itch.io en <b>dos interfaces</b>: una de terminal
   y un carrusel 3D pensado para el mando.<br>
   Enriquecimiento automático, filtros, puntuación multi-criterio y persistencia.
 </p>
@@ -94,7 +94,7 @@
 | Característica | Detalle |
 |---|---|
 | **Dos interfaces** | TUI de terminal (Textual) y carrusel 3D (Panda3D), sobre la misma biblioteca |
-| **Multi-tienda** | Steam, GOG, Epic Games y Amazon, cada una por su propia API |
+| **Multi-tienda** | Steam, GOG, Epic Games, Amazon e itch.io, cada una por su propia API |
 | **Sin conexión** | La última biblioteca de cada tienda queda guardada: si no hay red, tus juegos siguen ahí |
 | **Enriquecimiento IGDB** | Carátula, género, puntuación de crítica, storyline, fecha de lanzamiento |
 | **Duración** | HowLongToBeat — búsqueda automática por similitud de título |
@@ -209,9 +209,11 @@ mismo fichero:
 | `gog_is_active` | `bool` | Cargar juegos de GOG |
 | `epic_is_active` | `bool` | Cargar juegos de Epic |
 | `amazon_is_active` | `bool` | Cargar juegos de Amazon |
+| `itchio_is_active` | `bool` | Cargar juegos de itch.io |
+| `itchio_client_id` | `string` | Client ID de tu app OAuth de itch.io (https://itch.io/user/settings/oauth-apps) |
 | `scoring_*` | `float/list` | Pesos de puntuación y géneros preferidos |
 
-> Las cuatro banderas `*_is_active` deciden dos cosas: **de qué tiendas se
+> Las cinco banderas `*_is_active` deciden dos cosas: **de qué tiendas se
 > escanea** y **qué juegos se enseñan**. Un juego que tengas en dos tiendas se
 > sigue viendo mientras una de ellas esté marcada.
 >
@@ -225,7 +227,7 @@ mismo fichero:
 
 Cada tienda se consulta con tu propia sesión, así que hay que iniciarla una
 vez. Se hace desde **Cuentas** —`a` en la TUI, Select → Cuentas en el
-carrusel— y el gesto es el mismo en GOG, Epic y Amazon:
+carrusel— y el gesto es el mismo en GOG, Epic, Amazon e itch.io:
 
 1. Elige la tienda y pulsa **Abrir navegador**.
 2. Inicia sesión con tu cuenta de siempre.
@@ -237,6 +239,13 @@ carrusel— y el gesto es el mismo en GOG, Epic y Amazon:
 No hace falta buscar nada dentro de la dirección: se pega entera. Si no hay
 navegador que abrir —por SSH, o en el modo juego del Deck—, la dirección
 queda en el log para que la abras donde puedas.
+
+> **itch.io pide un paso más, una sola vez.** Es la única tienda con API
+> oficial y pública, y por eso mismo no hay ningún cliente ajeno cuyo
+> `client_id` reutilizar: hay que registrar una aplicación propia en
+> [itch.io/user/settings/oauth-apps](https://itch.io/user/settings/oauth-apps),
+> con `https://itch.io/` como URL de redirección, y pegar su **Client ID** en
+> Cuentas. A partir de ahí, el inicio de sesión es igual que en las otras tres.
 
 > **Para pegar en el carrusel 3D**: `Ctrl+V`, o el botón **X** del mando. Las
 > direcciones de vuelta pasan de los cuatrocientos caracteres y teclearlas
@@ -278,7 +287,7 @@ ningún permiso, así que la clave haría falta igual. Sácala de
 |---|---|---|
 | `p` | **Puntueitor** | Abre selector de sistema de puntuación |
 | `c` | **Tiendas** | Qué tiendas se cargan |
-| `a` | **Cuentas** | Credenciales de IGDB y Steam, y sesiones de GOG, Epic y Amazon |
+| `a` | **Cuentas** | Credenciales de IGDB, Steam e itch.io, y sesiones de tienda |
 | `o` | **Ocultos** | Alterna visibilidad de juegos marcados como ocultos |
 | `s` | **Ordenar** | Diálogo de ordenación (nombre, puntuación, duración…) |
 | `f` | **Filtrar** | Diálogo de filtros (nombre, duración, flags…) |
@@ -432,7 +441,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-700 tests (unitarios + integración) que cubren:
+717 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
@@ -525,10 +534,10 @@ su licencia junto al fichero:
 
 **Datos** — [IGDB](https://www.igdb.com) (fichas y carátulas),
 [HowLongToBeat](https://howlongtobeat.com) (duración) y las APIs de Steam,
-GOG, Epic Games y Amazon (bibliotecas y reseñas).
+GOG, Epic Games, Amazon e itch.io (bibliotecas y reseñas).
 
 **Las APIs de GOG, Epic y Amazon las averiguaron ellos** —sus dueños no las
-documentan—, y sin ese trabajo tres de las cuatro tiendas no funcionarían:
+documentan—, y sin ese trabajo tres de las cinco tiendas no funcionarían:
 [gogdl](https://github.com/Heroic-Games-Launcher/heroic-gogdl),
 [Legendary](https://github.com/derrod/legendary) y
 [Nile](https://github.com/imLinguin/nile). Puntueitor no usa su código ni
