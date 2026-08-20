@@ -42,6 +42,20 @@ SFX_NAMES = (ACCEPT_NAME, BACK_NAME, MOVE_NAME)
 #: girar rápido se oye un traqueteo regular en vez de un zumbido.
 MOVE_MIN_INTERVAL = 0.07
 
+#: Cuánto tiempo después de un "aceptar" se calla un "atrás".
+#:
+#: Un botón tiene que sonar UNA vez. Hay acciones que aplican y cierran el
+#: menú en el mismo gesto —elegir un sistema de puntuación, Guardar, decir
+#: que sí en una confirmación—, y esas pasan por `play_accept` y acto seguido
+#: por `play_back` desde `_pop_menu`: se oían los dos clics pisándose. En vez
+#: de repartir un "cierra sin sonido" por los diez sitios que cierran así, la
+#: regla vive aquí, donde también valdrá para el que se añada mañana.
+#:
+#: El precio es que pulsar A y B a menos de esta distancia se come el
+#: segundo clic. Con dos pulsaciones deliberadas no pasa; a propósito sí, y
+#: es preferible a que la mitad de los menús suenen doble.
+BACK_AFTER_ACCEPT = 0.12
+
 
 class Audio:
     """
@@ -64,6 +78,7 @@ class Audio:
         self._clock = clock
 
         self._sfx: dict[str, object] = {}
+        self._last_accept = float("-inf")
         self._music = None
         # A menos infinito y no a cero: con un reloj que empieza en cero (el
         # de una prueba, o `monotonic` recién arrancado el sistema) el primer
@@ -175,10 +190,10 @@ class Audio:
             self._music.play()
 
     def play_accept(self) -> None:
-        self._play(ACCEPT_NAME)
-
-    def play_back(self) -> None:
-        self._play(BACK_NAME)
+        # El instante se apunta solo si ha sonado de verdad: quien no tenga
+        # `accept` puesto y sí `back` tiene que seguir oyendo el suyo.
+        if self._play(ACCEPT_NAME):
+            self._last_accept = self._clock()
 
     def play_move(self) -> None:
         """El clic de mover el foco, con el freno de `MOVE_MIN_INTERVAL`."""
@@ -188,11 +203,19 @@ class Audio:
         self._last_move = ahora
         self._play(MOVE_NAME)
 
-    def _play(self, nombre: str) -> None:
+    def play_back(self) -> None:
+        """El clic de volver, callado si acaba de sonar el de aceptar."""
+        if self._clock() - self._last_accept < BACK_AFTER_ACCEPT:
+            return
+        self._play(BACK_NAME)
+
+    def _play(self, nombre: str) -> bool:
+        """Reproduce el efecto si está puesto. Dice si ha sonado."""
         sonido = self._sfx.get(nombre)
         if sonido is None:
-            return
+            return False
         # `play()` sobre un sonido que ya suena lo reinicia desde el
         # principio, que es justo lo que se quiere al pulsar dos veces
         # seguidas: se oyen dos clics, no uno alargado.
         sonido.play()
+        return True

@@ -16,6 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.conftest import AudioDoble
+
 from puntueitor.gui3d import editor_ui, menus
 
 
@@ -64,6 +66,7 @@ class AppFalsa:
         self.notifier = SimpleNamespace(show=self.avisos.append)
         self.flags_guardados = []
         self.filtro_aplicado = False
+        self.audio = AudioDoble()
 
     def _apply_hidden_filter(self):
         self.filtro_aplicado = True

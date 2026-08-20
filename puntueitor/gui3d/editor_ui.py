@@ -40,7 +40,10 @@ def toggle_editor_mode(app) -> None:
         app.notifier.show("Editor Rápido: solo en la biblioteca")
         return
 
+    # Entrar y salir del modo suenan distinto: entrar es "aceptar", salir es
+    # "volver" a la navegación normal, igual que un menú.
     app._editor_mode = not app._editor_mode
+    (app.audio.play_accept if app._editor_mode else app.audio.play_back)()
     # Se olvida la última posición del stick: si se sale y se entra con el
     # stick echado, el flanco tiene que volver a contarse desde cero.
     app._editor_stick = (0, 0)
@@ -88,6 +91,11 @@ def editor_gesture(app, direction: tuple[int, int]) -> None:
     entry = app.carousel.selected
     if field is None or entry is None or entry.game is None:
         return
+
+    # Marcar un estado es aceptar algo, aunque aquí se haga con el stick:
+    # sin sonido, el editor es la única parte de la interfaz donde se cambia
+    # la biblioteca sin oír nada.
+    app.audio.play_accept()
 
     game = entry.game
     nuevo = not bool(getattr(game, field))

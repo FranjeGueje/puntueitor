@@ -15,6 +15,15 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
   valen para cualquiera de los cuatro). Sin esa carpeta todo suena igual que
   antes, o sea nada, y se dice en el log. Así no hay que meter en el
   repositorio material de terceros con su licencia detrás.
+- **Un botón, un sonido, y solo si hace algo.** El efecto de aceptar cubre
+  todas las formas de aceptar —una fila de menú, una casilla, abrir Opciones
+  o Puntueitor con Select y Start, abrir el menú de un juego con A, marcar un
+  estado en el Editor Rápido—, y no solo las filas de menú que ejecutan una
+  acción, que es lo único que sonaba al principio. Pulsar A sobre un valor
+  que se cambia con izquierda/derecha sigue callado, porque ahí no pasa nada:
+  un clic sin efecto se lee como que la aplicación se ha colgado. Y las
+  acciones que aplican y cierran el menú de una vez (elegir un sistema de
+  puntuación, Guardar, confirmar) suenan a aceptar, no a aceptar y volver.
 - El clic de mover el foco tiene un **freno de 70 ms**. El carrusel acelera
   hasta unos veinte pasos por segundo mientras se mantiene la dirección, y un
   clic por paso no es un sonido de interfaz, es una ametralladora.

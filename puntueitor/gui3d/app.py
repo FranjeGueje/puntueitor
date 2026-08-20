@@ -1173,6 +1173,7 @@ class App(ShowBase):
         """Muestra u oculta las etiquetas de todas las cajas (espacio / Y)."""
         if self._typing or self._blocked_in_unknown_mode("Etiquetas"):
             return
+        self.audio.play_accept()
         self._labels_visible = not self._labels_visible
         self.carousel.set_labels_visible(self._labels_visible)
 
@@ -1225,6 +1226,7 @@ class App(ShowBase):
         """
         if self._typing or self._blocked_in_unknown_mode("Ocultos"):
             return
+        self.audio.play_accept()
         self._show_hidden = not self._show_hidden
         self._apply_hidden_filter()
         # La selección puede haber cambiado de juego (si el que estaba
@@ -1505,6 +1507,10 @@ class App(ShowBase):
             return
 
         self._menu_opener = opener
+        # Select, Start y X abren desde aquí (Opciones, Puntueitor y
+        # Filtrar): es el mismo gesto de "entrar en algo" que A, así que
+        # suena igual. Cerrarlos ya suena a "atrás" desde `_pop_menu`.
+        self.audio.play_accept()
         self._push_menu(menu)
 
     def _open_options_menu(self) -> None:
@@ -1544,11 +1550,13 @@ class App(ShowBase):
         lo que haya en pantalla.
         """
         if self.text_prompt.is_open:
+            self.audio.play_accept()
             self._paste_into_prompt()
             return
         if self._typing:
             return
         if self.active_menu is self.scoring_menu:
+            self.audio.play_accept()
             scoring_ui.configure_focused_scoring(self)
         elif not self._blocked_in_unknown_mode("Filtrar"):
             if self._blocked_in_editor("Filtrar"):
@@ -1581,19 +1589,33 @@ class App(ShowBase):
     # ── Acciones ──
 
     def _on_confirm(self) -> None:
-        """A / Enter: elige en el menú activo, o abre el del juego."""
+        """
+        A / Enter: elige en el menú activo, o abre el del juego.
+
+        Aquí está el sonido de "aceptar", y no en `_activate`: por este
+        método pasan TODAS las formas de aceptar —una fila de menú, una
+        casilla, abrir el menú de un juego, confirmar lo escrito en un
+        cuadro de texto—, y `_activate` solo veía la primera. Suena en cada
+        rama que hace algo, en vez de una vez arriba, para que las dos que
+        no hacen nada (un menú sin foco, un valor que solo cambia con
+        izquierda/derecha) sigan calladas: un clic al pulsar algo que no
+        responde se lee como que la aplicación se ha quedado colgada.
+        """
         if self.text_prompt.is_open:
             # Con el cuadro abierto, A confirma lo escrito. (Enter no pasa
             # por aquí: los atajos están sueltos y lo recoge el propio
             # DirectEntry, que llama a su `command`.)
+            self.audio.play_accept()
             self.text_prompt.accept_text()
             return
 
         menu = self.active_menu
         if menu is None:
             if self._unknown_mode:
+                self.audio.play_accept()
                 self._open_unknown_menu()
             elif not self._blocked_in_editor("Menú del juego"):
+                self.audio.play_accept()
                 self._open_game_menu()
             return
 
@@ -1602,6 +1624,7 @@ class App(ShowBase):
             return
 
         if item.kind == "check":
+            self.audio.play_accept()
             menu.toggle_focused()
             # Las casillas salen en dos sitios y no significan lo mismo: en
             # el menú de juego marcan un estado del juego (y se guardan en la
@@ -1620,12 +1643,11 @@ class App(ShowBase):
             # tocar el mismo valor.
             return
 
+        self.audio.play_accept()
         self._activate(menu, item.key)
 
     def _activate(self, menu: Menu, key: str) -> None:
         """Qué hace elegir un elemento de menú."""
-        # Una sola llamada para las decenas de claves del despacho.
-        self.audio.play_accept()
         if key == "accounts":
             accounts_ui.open_accounts_menu(self)
         elif key == "config":
@@ -1746,6 +1768,12 @@ class App(ShowBase):
         item = menu.focused_item
         if item is None or item.kind != "cycle":
             return
+
+        # Cambiar un valor con izquierda/derecha suena como navegar, no como
+        # aceptar: es el mismo eje y el mismo gesto de recorrer opciones. Y
+        # con su mismo freno, que estos SÍ se repiten al mantener (subir un
+        # peso de 40 a 60 son veinte toques, ver `_focused_repeats`).
+        self.audio.play_move()
 
         if menu is self.filter_menu:
             field = item.payload.get("field")
@@ -1939,6 +1967,9 @@ class App(ShowBase):
             return
         if not self.active_carousel.jump_to_start():
             return
+        # Un salto es moverse, no aceptar: suena como navegar. Lo mismo en
+        # `_jump_group`.
+        self.audio.play_move()
         self._on_selection_changed()
 
     def _jump_group(self, direction: int) -> None:
@@ -1959,6 +1990,7 @@ class App(ShowBase):
         if not self.carousel.jump_to_group(direction):
             return
 
+        self.audio.play_move()
         self._on_selection_changed()
         criterion = self._sort_criterion
         group = self.carousel.group_at_selection(self._groups)
@@ -2147,6 +2179,7 @@ class App(ShowBase):
             return
         if self._blocked_in_editor("Actualizar"):
             return
+        self.audio.play_accept()
         self._start_library_job(SOFT)
 
     def _build_carousel(self, raw_entries, pending_downloads) -> None:
@@ -2427,6 +2460,7 @@ class App(ShowBase):
     def _enter_unknown_mode(self) -> None:
         if self._unknown_carousel is None and not self._build_unknown_carousel():
             return
+        self.audio.play_accept()
         self._unknown_mode = True
         self.carousel_root.hide()
         self._unknown_root.show()
@@ -2438,6 +2472,9 @@ class App(ShowBase):
     def _exit_unknown_mode(self) -> None:
         if not self._unknown_mode:
             return
+        # Salir de Desconocidos es volver a la biblioteca, igual que B en un
+        # menú: el mismo sonido de "atrás".
+        self.audio.play_back()
         self._unknown_mode = False
         if self._unknown_root is not None:
             self._unknown_root.hide()

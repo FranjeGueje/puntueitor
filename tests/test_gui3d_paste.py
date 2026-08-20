@@ -14,6 +14,8 @@ objeto de mentira por `self`, sin abrir ninguna ventana.
 """
 import pytest
 
+from tests.conftest import AudioDoble
+
 from puntueitor.core.services import clipboard
 
 
@@ -41,6 +43,7 @@ class AppFalsa:
             "N", (), {"show": lambda _s, m: self.avisos.append(m)},
         )()
         self.filtros_abiertos = 0
+        self.audio = AudioDoble()
 
     def _paste_into_prompt(self):
         # El de verdad: así el test de X cubre el camino ENTERO, del botón

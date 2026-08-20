@@ -228,3 +228,43 @@ class TestVolumen:
         )
 
         assert manager.volumen == 1.0
+
+
+class TestUnBotonUnSonido:
+    """
+    Hay acciones que aplican y cierran el menú de una vez —elegir un sistema
+    de puntuación, Guardar, decir que sí a una confirmación—: pasan por
+    "aceptar" y acto seguido por "volver", desde `_pop_menu`. Sonaban los dos
+    clics pisándose en la misma pulsación.
+    """
+
+    def _con_reloj(self, carpeta):
+        _crear(carpeta, "accept.wav", "back.wav")
+        self.ahora = 0.0
+        return Audio(CargadorDoble(), clock=lambda: self.ahora)
+
+    def test_closing_right_after_accepting_does_not_click_twice(self, carpeta):
+        sonido = self._con_reloj(carpeta)
+
+        sonido.play_accept()
+        sonido.play_back()
+
+        assert sonido._sfx["accept"].reproducido == 1
+        assert sonido._sfx["back"].reproducido == 0
+
+    def test_going_back_on_its_own_does_sound(self, carpeta):
+        sonido = self._con_reloj(carpeta)
+
+        sonido.play_back()
+
+        assert sonido._sfx["back"].reproducido == 1
+
+    def test_a_deliberate_b_after_an_a_still_sounds(self, carpeta):
+        """Entrar en un menú y salir de él son dos gestos, y suenan dos."""
+        sonido = self._con_reloj(carpeta)
+
+        sonido.play_accept()
+        self.ahora += audio.BACK_AFTER_ACCEPT * 2
+        sonido.play_back()
+
+        assert sonido._sfx["back"].reproducido == 1

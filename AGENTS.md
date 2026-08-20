@@ -1233,12 +1233,24 @@ commercial Windows backends). Even working, the result would depend on each
 machine's instrument bank. WAV, Ogg Vorbis and Opus are native
 (`WavAudio`/`VorbisAudio`/`OpusAudio` live inside `libpanda`).
 
-The three effects hook into `App._navigate`, `App._activate` and
-`App._pop_menu` — **not** into the `Menu` widget, which is generic, and not
-into `_on_back`/`_on_escape_key`, which both end up calling `_pop_menu` and
-would double the sound. `_navigate` is the single path for moving focus,
-menu and carousel, key and pad, single press and held repeat; that last one
-is why `play_move` carries a 70 ms floor.
+**Hook the sound where the button is decided to do something, not where the
+consequence happens.** The first attempt put "accept" in `App._activate`,
+which only sees menu rows that run an action: opening Options with Select,
+opening a game's menu with A, ticking a checkbox and confirming typed text
+all stayed silent. It now sits in `_on_confirm` (one call per branch that
+acts, so the two branches that do nothing stay quiet), `_toggle_root_menu`
+(Select/Start/X), the immediate toggles, and the editor gesture. "back" stays
+in `_pop_menu` — **not** in `_on_back`/`_on_escape_key`, which both end up
+there and would double it. `_navigate` and `_adjust_focused` take "move":
+same axis, same gesture of running through options.
+
+Two floors in `audio.py` keep it to one sound per press. `play_move` ignores
+calls within 70 ms, because the carousel accelerates to ~20 steps/second when
+a direction is held. `play_back` ignores a call within 120 ms of an accept,
+because plenty of actions apply *and* close in the same press (picking a
+scoring system, Guardar, confirming) and both clicks landed on top of each
+other; the rule lives in `Audio` rather than as a `silent=True` flag threaded
+through the ten places that close that way.
 
 ## OAuth: why the four logins are copy-paste (and why Steam has none)
 

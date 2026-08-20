@@ -287,9 +287,14 @@ los pones tú en `~/.config/puntueitor/audio/`, con estos nombres exactos.
 | Fichero | Cuándo suena |
 |---|---|
 | `music.ogg` | De fondo, en bucle, desde que arranca |
-| `accept.wav` | Al elegir cualquier cosa de un menú (A / Enter) |
-| `back.wav` | Al volver o cerrar un menú (B / Esc) |
-| `move.wav` | Al mover el foco de un menú o girar el carrusel |
+| `accept.wav` | Al **hacer** algo: elegir en un menú, abrir Opciones, Puntueitor o Filtrar, abrir el menú de un juego, marcar una casilla o un estado en el Editor, mostrar u ocultar etiquetas, actualizar la biblioteca |
+| `back.wav` | Al **volver**: cerrar un menú, salir del Editor o de Desconocidos |
+| `move.wav` | Al **moverse**: girar el carrusel, mover el foco de un menú, saltar de grupo o cambiar un valor con izquierda/derecha |
+
+Un botón suena una vez y solo si hace algo. Pulsar A sobre un valor que solo
+cambia con izquierda/derecha no suena, porque no pasa nada; y elegir un
+sistema de puntuación —que aplica y cierra el menú de una vez— suena a
+aceptar, no a aceptar y volver.
 
 Sin esa carpeta, o sin alguno de esos ficheros, no suena nada y se dice en el
 log. No hay nada que activar.
@@ -472,7 +477,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-749 tests (unitarios + integración) que cubren:
+752 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)

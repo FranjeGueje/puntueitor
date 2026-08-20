@@ -230,3 +230,31 @@ def selection_context() -> SelectionContext:
         release_year=2020,
         steam_appid="12345",
     )
+
+
+class AudioDoble:
+    """
+    El sonido, apuntado en vez de reproducido.
+
+    Compartido porque las aplicaciones de mentira de `tests/test_gui3d_*`
+    necesitan todas lo mismo: `app.audio` tiene que existir —si no, cualquier
+    acción con sonido revienta con `AttributeError`— y en los tests que van
+    del botón al efecto conviene poder mirar QUÉ sonó.
+    """
+
+    def __init__(self):
+        self.sonados: list[str] = []
+
+    def play_accept(self):
+        self.sonados.append("accept")
+
+    def play_back(self):
+        self.sonados.append("back")
+
+    def play_move(self):
+        self.sonados.append("move")
+
+
+@pytest.fixture
+def audio_doble() -> AudioDoble:
+    return AudioDoble()
