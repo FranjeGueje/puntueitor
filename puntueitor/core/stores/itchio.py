@@ -35,6 +35,7 @@ SPEC = StoreSpec(
     store=Stores.ITCHIO,
     label="itch.io",
     config_flag="itchio_is_active",
+    banner_label="ITCH",
     color=(0.98, 0.30, 0.30),
     provider=_provider,
     resolver=_resolver,

@@ -34,6 +34,7 @@ from puntueitor.gui3d.game_case import (
     CORNER_SEGMENTS,
     inner_size,
 )
+from puntueitor.core import stores
 from puntueitor.gui3d.store_colors import STORE_COLORS, STORE_PRIORITY
 
 NAVY = (0.03, 0.07, 0.18, 1.0)
@@ -43,12 +44,13 @@ CHIP_PADDING_V = 0.014
 TEXT_SCALE = 0.042
 
 _STORE_ORDER = STORE_PRIORITY
-_STORE_LABELS = {
-    Stores.STEAM: "STEAM",
-    Stores.GOG: "GOG",
-    Stores.EPIC: "EPIC",
-    Stores.AMAZON: "AMZN",
-}
+
+# Del registro de tiendas, como los colores y la prioridad de aquí al lado
+# (`store_colors.py`). Esta tabla ESTABA escrita a mano, con las cuatro
+# tiendas de entonces, y el día que se añadió itch.io el carrusel se caía con
+# un `KeyError` al pintar cualquier caja suya: una tienda que no aparece en
+# una tabla del frontend no se nota hasta que un juego suyo se dibuja.
+_STORE_LABELS = {spec.store: spec.banner_text for spec in stores.all_stores()}
 _CHIP_WIDTH = {store: 0.028 * len(label) + 0.05 for store, label in _STORE_LABELS.items()}
 
 

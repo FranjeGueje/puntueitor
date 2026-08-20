@@ -25,6 +25,7 @@ SPEC = StoreSpec(
     store=Stores.AMAZON,
     label="Amazon",
     config_flag="amazon_is_active",
+    banner_label="AMZN",
     color=(0.82,0.53,0.13),
     provider=_provider,
     resolver=_resolver,

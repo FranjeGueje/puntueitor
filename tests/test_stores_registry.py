@@ -168,6 +168,42 @@ class TestUnaTiendaNueva:
         assert accounts._sesion("amazon") == "sesión"
 
 
+class TestElBannerDelEstuche:
+    """
+    Los chips de tienda del estuche, que es donde se notó el problema.
+
+    Sin ventana: lo que se prueba es la TABLA, no el dibujo. Que cada tienda
+    tenga su etiqueta y su ancho es justo lo que faltaba el día que el
+    carrusel se cayó con un `KeyError` al pintar una caja de itch.io.
+    """
+
+    def test_every_store_has_a_chip(self):
+        from puntueitor.gui3d import case_banner
+
+        for spec in stores.all_stores():
+            assert spec.store in case_banner._STORE_LABELS, spec.label
+            assert spec.store in case_banner._CHIP_WIDTH, spec.label
+
+    def test_the_abbreviations_fit_in_the_chip(self):
+        """
+        Cinco letras es lo que cabe sin que el chip se coma el de al lado en
+        un estuche con tres tiendas. "Amazon" e "itch.io" no caben enteras, y
+        por eso declaran su `banner_label`.
+        """
+        for spec in stores.all_stores():
+            assert 1 <= len(spec.banner_text) <= 5, spec.label
+
+    def test_by_default_it_is_the_name_in_capitals(self):
+        from puntueitor.core.stores.spec import StoreSpec
+
+        spec = StoreSpec(
+            store=Stores.GOG, label="Tienda", config_flag="x", color=(0, 0, 0),
+            provider=lambda config: None, resolver=lambda: object,
+        )
+
+        assert spec.banner_text == "TIENDA"
+
+
 class TestNoVuelvenLasTablasParalelas:
     """
     Que nadie escriba otra lista de las cuatro tiendas por su cuenta.
@@ -180,6 +216,11 @@ class TestNoVuelvenLasTablasParalelas:
 
     #: Módulos donde SÍ puede estar la lista: el registro y sus tiendas.
     PERMITIDOS = ("core/stores/",)
+
+    #: Y uno más para la variante de abajo: los datos de ejemplo del carrusel
+    #: son una biblioteca inventada, con juegos que están en unas tiendas y no
+    #: en otras. Nombrar varias ahí no es una tabla paralela, es el contenido.
+    PERMITIDOS_ENUM = PERMITIDOS + ("gui3d/sample_data.py",)
 
     @staticmethod
     def _fuentes():
@@ -213,6 +254,42 @@ class TestNoVuelvenLasTablasParalelas:
         assert not culpables, (
             "estas líneas listan tiendas a mano en vez de usar el registro: "
             + ", ".join(culpables)
+        )
+
+    def test_nobody_writes_a_table_keyed_by_enum_member_either(self):
+        """
+        La misma tabla, escrita con `Stores.STEAM` en vez de `"steam"` y con
+        una tienda por línea, se le escapaba al test de arriba: mira una
+        línea cada vez y busca cadenas literales. Así entró la tabla de
+        etiquetas del banner del estuche (`gui3d/case_banner.py`), que
+        reventaba el carrusel con un `KeyError` al pintar una caja de la
+        quinta tienda.
+
+        Se cuenta por FICHERO: nombrar dos miembros distintos del enum en el
+        código de un mismo módulo es señal de tabla escrita a mano, aunque
+        estén en líneas separadas.
+        """
+        import re
+
+        from puntueitor.core.models import Stores
+
+        culpables = []
+        for ruta, texto in self._fuentes():
+            if any(p in str(ruta) for p in self.PERMITIDOS_ENUM):
+                continue
+            codigo = "\n".join(
+                linea.split("#", 1)[0] for linea in texto.splitlines()
+            )
+            nombrados = {
+                nombre for nombre in re.findall(r"\bStores\.([A-Z_]+)\b", codigo)
+                if nombre in Stores.__members__
+            }
+            if len(nombrados) >= 2:
+                culpables.append(f"{ruta} ({', '.join(sorted(nombrados))})")
+
+        assert not culpables, (
+            "estos módulos escriben una tabla por tienda a mano en vez de "
+            "sacarla del registro: " + "; ".join(culpables)
         )
 
     def test_the_enum_is_not_walked_where_the_registry_should_be(self):

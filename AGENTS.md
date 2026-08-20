@@ -222,7 +222,9 @@ box's cover, full width (no side margin — same width as the cover itself) —
 not a floating 2D panel — so they move/rotate with the case for free as a
 child node. No real Steam/Epic/GOG/Amazon logo assets in the repo (trademark
 concerns for unofficial material); badges are colored text chips instead,
-same palette as the cover placeholders.
+same palette as the cover placeholders. Their four-or-five-letter
+abbreviation comes from `StoreSpec.banner_text`, **not** from a table in
+`case_banner.py` — see below.
 
 The carousel's vertical framing is controlled by `CAROUSEL_RAISE` in
 `app.py` (translates `carousel_root` in world Z), not by tilting the
@@ -276,7 +278,7 @@ would change the cover's aspect ratio (0.9/1.23 instead of 1.0/1.33) and
 visibly stretch the art.
 
 That frame is also what finally made the per-store case color
-(`store_colors.py`, priority Steam > GOG > Epic > Amazon > neutral gray)
+(`store_colors.py`, priority = registry order, neutral gray as fallback)
 actually visible — before the inset, the body color existed but had nowhere
 to show.
 
@@ -353,8 +355,8 @@ the same reason: the default `down` was rescaling every 264x374 cover to
 back at draw time.
 
 Case body color now follows the game's primary store
-(`store_colors.py:primary_store_color`, priority Steam > GOG > Epic > Amazon
-> default dark gray) instead of a single fixed dark navy for every case.
+(`store_colors.py:primary_store_color`, priority = registry order, default
+dark gray as fallback) instead of a single fixed dark navy for every case.
 `game_case.py`'s `build_game_case`/`build_case_reflection` take a
 `body_color` param threaded from `carousel.py`'s `CarouselBox.__init__`, so
 the case and its mirrored reflection always share the same store color. It
@@ -1128,6 +1130,14 @@ into a list it had no business being in.
 more stores outside `core/stores/`, the other for `for store in Stores`. If you
 need "all the stores", ask `stores.all_stores()` — it also carries the right
 order, which drives both menu order and colour priority.
+
+**The grep-based guard has two halves, and the second one exists because the
+first was not enough.** `test_nobody_lists_the_four_stores_by_hand` scans one
+line at a time for string literals, so a dict keyed by `Stores.STEAM` with one
+entry per line walked straight past it — which is how `case_banner.py` kept a
+hand-written label table and crashed the whole carousel with a `KeyError` the
+first time a fifth store had a box drawn. `test_nobody_writes_a_table_keyed_by
+_enum_member_either` counts distinct enum members per *file* instead.
 
 Per-store facts belong in the spec, not in a constant elsewhere. `session=None`
 is how Steam says it has no OAuth; `resolvable_by_id=False` is how Amazon says

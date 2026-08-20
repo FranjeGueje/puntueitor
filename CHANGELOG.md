@@ -31,6 +31,20 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
   inicio de sesión lo dice y explica dónde conseguirlo, en vez de abrir el
   navegador en una página de error.
 
+### Corregido
+
+- **El carrusel se caía al pintar una caja de itch.io.** El banner de tiendas
+  del estuche (`gui3d/case_banner.py`) tenía las abreviaturas en una tabla
+  escrita a mano con las cuatro tiendas de antes, así que la quinta reventaba
+  con un `KeyError` — en la práctica, al entrar en Desconocidos, que es donde
+  cayó el único juego de itch.io. Ahora la abreviatura la declara cada tienda
+  en el registro (`StoreSpec.banner_label`, "AMZN" e "ITCH"; el resto es el
+  nombre en mayúsculas).
+- El guardián que impide volver a escribir listas de tiendas a mano **no veía
+  esa tabla**: mira línea a línea buscando cadenas literales, y aquella usaba
+  `Stores.STEAM` con una tienda por línea. Se añade la comprobación que
+  faltaba, contando miembros del enum por fichero.
+
 ### Notas de diseño
 
 - **Se pega la dirección, igual que en las otras tres.** itch.io sí admitiría

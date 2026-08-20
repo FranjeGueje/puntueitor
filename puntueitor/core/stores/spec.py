@@ -57,6 +57,17 @@ class StoreSpec:
     #: que no tienen sesión.
     paste_hint: str = ""
 
+    #: Cómo se abrevia en el chip del banner del estuche, donde no caben más
+    #: de cuatro o cinco letras ("AMZN" por Amazon, "ITCH" por itch.io).
+    #: Vacío significa "el nombre en mayúsculas", que es lo que ya vale para
+    #: Steam, GOG y Epic — ver `banner_text`.
+    #:
+    #: Vive aquí y no en `gui3d/case_banner.py` porque una tabla de tiendas
+    #: escrita a mano en el frontend es justo lo que este registro existe
+    #: para no tener: la que había reventaba el carrusel entero con un
+    #: `KeyError` en cuanto apareció una tienda que no estaba en ella.
+    banner_label: str = ""
+
     #: Si un juego suyo se puede volver a identificar por su id de tienda.
     #: Amazon no: sus juegos se buscan solo por título, así que ahí la única
     #: vía es buscar a mano (ver `services/unknown_actions.py`).
@@ -66,6 +77,11 @@ class StoreSpec:
     def key(self) -> str:
         """La clave en texto (`"gog"`), que es como viaja por la config."""
         return str(self.store)
+
+    @property
+    def banner_text(self) -> str:
+        """Lo que se escribe en su chip del banner."""
+        return self.banner_label or self.label.upper()
 
     @property
     def has_session(self) -> bool:
