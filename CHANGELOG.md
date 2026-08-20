@@ -2,129 +2,27 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
-## [No publicado]
+## [3.0.0] - 2026-08-20
 
-### Añadido
-
-- **Sonido en el carrusel**: música de fondo en bucle y tres efectos —
-  aceptar, volver y mover el foco—, con volumen independiente para música y
-  efectos en Opciones → Puntueitor3D. Poner la música a cero la para, no la
-  deja sonando en silencio.
-- **El audio no viene incluido**: se lee de `~/.config/puntueitor/audio/`
-  (`music.ogg`, `accept.wav`, `back.wav`, `move.wav`; las dos extensiones
-  valen para cualquiera de los cuatro). Sin esa carpeta todo suena igual que
-  antes, o sea nada, y se dice en el log. Así no hay que meter en el
-  repositorio material de terceros con su licencia detrás.
-- **Un botón, un sonido, y solo si hace algo.** El efecto de aceptar cubre
-  todas las formas de aceptar —una fila de menú, una casilla, abrir Opciones
-  o Puntueitor con Select y Start, abrir el menú de un juego con A, marcar un
-  estado en el Editor Rápido—, y no solo las filas de menú que ejecutan una
-  acción, que es lo único que sonaba al principio. Pulsar A sobre un valor
-  que se cambia con izquierda/derecha sigue callado, porque ahí no pasa nada:
-  un clic sin efecto se lee como que la aplicación se ha colgado. Y las
-  acciones que aplican y cierran el menú de una vez (elegir un sistema de
-  puntuación, Guardar, confirmar) suenan a aceptar, no a aceptar y volver.
-- El clic de mover el foco tiene un **freno de 70 ms**. El carrusel acelera
-  hasta unos veinte pasos por segundo mientras se mantiene la dirección, y un
-  clic por paso no es un sonido de interfaz, es una ametralladora.
-
-- **itch.io, quinta tienda.** Su biblioteca se trae por la *Owned Keys API
-  Route* con el permiso `profile:owned` — la única de las cinco que es una
-  API **oficial y documentada** por la propia tienda, sin nada averiguado por
-  ingeniería inversa. Se activa en Opciones → Tiendas como las demás.
-- **Un paso más, una sola vez, para iniciar sesión en itch.io.** Precisamente
-  por ser oficial no hay ningún cliente ajeno cuyo `client_id` reutilizar (en
-  GOG, Epic y Amazon se usa el de su cliente oficial): cada instalación
-  registra su propia aplicación en `itch.io/user/settings/oauth-apps` y pega
-  el Client ID en Cuentas, que ahora tiene una sección para él. Si falta, el
-  inicio de sesión lo dice y explica dónde conseguirlo, en vez de abrir el
-  navegador en una página de error.
-
-### Cambiado
-
-- **Se acabó el "Guardar" en Opciones (carrusel 3D).** Cuentas, Tiendas y
-  Puntueitor3D guardan **cada ajuste en cuanto lo terminas de tocar**: al
-  aceptar lo escrito en un campo, al marcar una tienda, al mover un volumen.
-  La fila "Guardar" no solo añadía un paso, es que **cerraba el menú**:
-  escribir el Client ID de itch.io obligaba a guardar, salir de Cuentas y
-  volver a entrar para llegar a la fila de "itch.io" que estaba dos líneas más
-  abajo del campo que acababas de rellenar. A cambio, **B en estos tres menús
-  ya no descarta, solo cierra** — lo que ves es lo que hay, como en los filtros
-  y en el menú del juego.
-- **Los volúmenes se oyen mientras los mueves.** Antes había que guardar para
-  saber cómo había quedado el ajuste que estabas buscando a tientas.
-- Los formularios de puntuación (pesos, horas, géneros) **siguen editándose
-  sobre una copia** con su "Guardar", y ahora son el único sitio que lo hace:
-  repartir tres porcentajes obliga a pasar por totales que no suman 100, así
-  que guardar en cada cambio los haría inservibles.
-
-### Corregido
-
-- **El carrusel se caía al pintar una caja de itch.io.** El banner de tiendas
-  del estuche (`gui3d/case_banner.py`) tenía las abreviaturas en una tabla
-  escrita a mano con las cuatro tiendas de antes, así que la quinta reventaba
-  con un `KeyError` — en la práctica, al entrar en Desconocidos, que es donde
-  cayó el único juego de itch.io. Ahora la abreviatura la declara cada tienda
-  en el registro (`StoreSpec.banner_label`, "AMZN" e "ITCH"; el resto es el
-  nombre en mayúsculas).
-- El guardián que impide volver a escribir listas de tiendas a mano **no veía
-  esa tabla**: mira línea a línea buscando cadenas literales, y aquella usaba
-  `Stores.STEAM` con una tienda por línea. Se añade la comprobación que
-  faltaba, contando miembros del enum por fichero.
-- **Reintentar un desconocido de itch.io usaba el resolver de GOG.** El
-  despacho de `services/unknown_actions.py` era un `if/elif` con un `else`
-  que mandaba allí todo lo que no fuera Steam ni Epic, así que el juego se
-  buscaba en IGDB por la fuente externa equivocada y, de encajar algo por
-  título, se habría guardado como juego de GOG. Ahora el resolver sale del
-  registro. La suite pasaba con el fallo dentro porque nadie probaba esa
-  función: se añaden tests que recorren las cinco tiendas y comprueban tanto
-  el resolver como que el id llega con el nombre que esa tienda usa (Steam
-  dice "appid" donde las demás dicen "app_name", y con la clave equivocada el
-  juego se descarta sin llegar a buscarse).
-
-### Notas de diseño
-
-- **Se pega la dirección, igual que en las otras tres.** itch.io sí admitiría
-  un `redirect_uri` a `localhost` —y capturar la vuelta automáticamente—,
-  pero sería la única tienda que se comporta distinto: un gesto que aprender
-  en vez de cuatro pantallas iguales. Cuando eso pueda hacerse en todas,
-  bastará con cambiar un módulo.
-- **Su token no caduca ni trae `refresh_token`**: itch.io usa concesión
-  implícita, así que el token llega ya hecho dentro de la dirección que se
-  pega. Como el resto del código da por caducado cualquier token sin fecha,
-  se guarda con una caducidad ficticia de 30 días y, al cumplirse, en vez de
-  canjear nada se revalida pidiendo la primera página de la biblioteca. Eso
-  además detecta una sesión revocada desde itch.io, que si no pasaría
-  inadvertida. Se comprueba contra la biblioteca y no contra `/profile`, que
-  sería más ligero, porque ese endpoint exige el permiso `profile:me` y aquí
-  solo se pide `profile:owned`: contestaba 403 con un token bueno.
-- **Se resuelve por id, no solo por título.** IGDB indexa itch.io como fuente
-  externa (nº 30), y su identificador es el mismo número que devuelve la
-  tienda — comprobado contra la API real de IGDB antes de escribir el
-  resolver, no supuesto. Aun así queda la búsqueda por título de reserva:
-  itch.io tiene cientos de miles de juegos y IGDB no los tiene todos.
-
-## [3.0.0] - 2026-08-19
-
-Puntueitor deja de leer los ficheros de otros programas. GOG, Epic y Amazon
-ya no salen de la caché en disco de Heroic, sino de **las APIs de sus
-tiendas**, con sesión propia; y de Steam ya solo se usa su Web API. Ya no
-hace falta tener Heroic instalado, ni abrirlo para que refresque, ni acertar
-con su carpeta.
+Puntueitor deja de leer los ficheros de otros programas. Las tiendas ya no
+salen de la caché en disco de Heroic ni de los `.vdf` de Steam, sino de **sus
+propias APIs**, con sesión propia. Ya no hace falta tener Heroic instalado, ni
+abrirlo para que refresque, ni acertar con su carpeta. Entra además **itch.io**
+como quinta tienda, y el carrusel deja de ser mudo.
 
 ### ⚠️ Al actualizar
 
-- **Hay que iniciar sesión** en GOG, Epic y Amazon: Opciones → **Cuentas**
-  (`a` en la TUI). Se abre el navegador, inicias sesión y pegas de vuelta la
-  dirección. Steam no: sigue con su API key y su Steam ID, como siempre.
-- El ajuste `heroic_path` desaparece. Si sigue en tu `config.json` se ignora
-  y se dice en el log; no hace falta tocar nada.
+- **Hay que iniciar sesión** en GOG, Epic, Amazon e itch.io: Opciones →
+  **Cuentas** (`a` en la TUI). Se abre el navegador, inicias sesión y pegas de
+  vuelta la dirección. Steam no: sigue con su API key y su Steam ID.
+- El ajuste `heroic_path` desaparece. Si sigue en tu `config.json` se ignora y
+  se dice en el log.
 - Nada de la biblioteca se pierde: tus marcas, notas y desconocidos siguen
-  donde estaban. La primera carga tras iniciar sesión vuelve a preguntar a
-  cada tienda.
-- **La biblioteca de Epic crecerá**: vuelven los DLC y las aplicaciones (de
-  451 entradas a 495 en una biblioteca real). Los que IGDB no reconozca irán
-  a Desconocidos, así que esa lista también crece.
+  donde estaban. La primera carga tras iniciar sesión vuelve a preguntar a cada
+  tienda.
+- **La biblioteca de Epic crecerá**: vuelven los DLC y las aplicaciones (de 451
+  entradas a 495 en una biblioteca real). Los que IGDB no reconozca irán a
+  Desconocidos, así que esa lista también crece.
 
 ### Añadido
 
@@ -133,148 +31,142 @@ con su carpeta.
   las del Epic Games Launcher; Amazon por su servicio de *entitlements*. Las
   tres últimas son las mismas que usan gogdl, Legendary y Nile, o sea las que
   ya había debajo de Heroic — solo que ahora la sesión es nuestra.
+- **itch.io, quinta tienda**, por la *Owned Keys API Route* con el permiso
+  `profile:owned`: la única de las cinco con una API oficial y documentada por
+  la propia tienda. Precisamente por eso no hay ningún cliente ajeno cuyo
+  `client_id` reutilizar, así que pide **un paso más, una sola vez**: registrar
+  una aplicación en `itch.io/user/settings/oauth-apps` y pegar su Client ID en
+  Cuentas. Si falta, el inicio de sesión lo dice y explica dónde conseguirlo.
 - **Funciona sin conexión.** La última biblioteca de cada tienda queda
   guardada. Si no hay red, si la sesión ha caducado o si la tienda contesta
-  cero juegos, se sirven los juegos de la última vez y se explica en el log,
-  en vez de dejar la biblioteca vacía sin decir por qué. Solo un refresco con
-  respuesta buena la reescribe.
-- **Menú de Cuentas** en las dos interfaces, el primero de Opciones: las
-  credenciales de IGDB y Steam, y el estado de las sesiones de GOG, Epic y
-  Amazon con sus botones de entrar y salir. Acepta la dirección entera, el
+  cero juegos, se sirven los juegos de la última vez y se explica en el log, en
+  vez de dejar la biblioteca vacía sin decir por qué.
+- **Menú de Cuentas** en las dos interfaces: las credenciales de IGDB y Steam,
+  y el estado de las sesiones de cada tienda. Acepta la dirección entera, el
   texto que enseña Epic o el código a secas, para no obligar a nadie a buscar
   un parámetro dentro de una URL de cuatrocientos caracteres.
 - **Pegar en el carrusel 3D**, con `Ctrl+V` o el botón **X** del mando. Sin
-  esto, el login obligaba a teclear a mano esa dirección, con un mando y
-  desde el sofá.
-
-  Panda3D no expone el portapapeles, así que se pregunta al sistema en
-  orden: `wl-paste`, `xclip`, `xsel` y, si no hay ninguno, **Klipper por
-  D-Bus**, que es lo que hace que funcione en KDE Plasma sin instalar nada.
-  Ni `tkinter` ni `pyperclip` valían: la primera no importa sin el paquete
-  `tk` del sistema y la segunda, en Linux, se apoya en esas mismas
-  herramientas. Donde no hay ninguna vía —el modo juego del Deck— se dice,
-  en vez de fallar en silencio.
+  esto había que teclear esa dirección a mano, con un mando y desde el sofá.
+  Panda3D no expone el portapapeles, así que se pregunta al sistema:
+  `wl-paste`, `xclip`, `xsel` y, si no hay ninguno, **Klipper por D-Bus**, que
+  es lo que hace que funcione en KDE Plasma sin instalar nada.
+- **Sonido en el carrusel**: música de fondo en bucle y tres efectos —aceptar,
+  volver y mover el foco—, con volumen independiente para música y efectos.
+  **El audio no viene incluido**: se lee de `~/.config/puntueitor/audio/`
+  (`music.ogg`, `accept.wav`, `back.wav`, `move.wav`; las dos extensiones valen
+  para cualquiera). Sin esa carpeta suena lo de antes, o sea nada, y se dice en
+  el log; así no hay que meter en el repositorio material de terceros con su
+  licencia detrás. Un botón, un sonido, y solo si hace algo: pulsar A sobre un
+  valor que se cambia con izquierda/derecha sigue callado, porque un clic sin
+  efecto se lee como que la aplicación se ha colgado.
+- **Un registro de tiendas** (`core/stores/`): cada tienda declara en su módulo
+  todo lo suyo —etiqueta, color, bandera de configuración, proveedor, resolver,
+  sesión y qué se le pide pegar al usuario— y el resto del programa lo lee de
+  ahí. Antes ese mismo dato vivía en once ficheros sincronizados a mano, y eso
+  ya había fallado dos veces. Añadir una tienda pasa a ser escribir su módulo,
+  más dos líneas que no pueden vivir en él: su miembro del enum `Stores` y su
+  campo en `Config`. Hay tests que comprueban que no se olvidan.
 - Los tokens se guardan en `~/.cache/puntueitor/`, solo legibles por ti, y se
   renuevan solos.
 - Los créditos del carrusel nombran a **legendary, gogdl y nile**, que son
-  quienes averiguaron y publicaron las APIs de Epic, GOG y Amazon. No usamos
-  su código y su licencia no obliga a nada; se les nombra porque sin ellos
-  tres de las cuatro tiendas no funcionarían. Sale de ahí *Heroic*, que ya no
-  se lee.
-- `tools/entorno-prueba.sh`: arranca la aplicación contra un directorio
-  aparte para poder probar sin tocar tus datos.
+  quienes averiguaron y publicaron las APIs de Epic, GOG y Amazon. No usamos su
+  código y su licencia no obliga a nada; se les nombra porque sin ellos tres de
+  las cinco tiendas no funcionarían.
+- `tools/entorno-prueba.sh`: arranca la aplicación contra un directorio aparte
+  para poder probar sin tocar tus datos.
 
 ### Cambiado
 
-- **La configuración se parte en dos menús.** Lo que era "Configuración" pasa
-  a ser **Cuentas** (con qué te identificas) y **Tiendas** (cuáles se
-  cargan). Antes estaba todo junto sin más criterio que el orden en que se
-  fue añadiendo, y son dos cosas que se tocan en momentos distintos.
+- **La configuración se parte en dos menús.** Lo que era "Configuración" pasa a
+  ser **Cuentas** (con qué te identificas) y **Tiendas** (cuáles se cargan).
+- **Se acabó el "Guardar" en Opciones (carrusel 3D).** Cuentas, Tiendas y
+  Puntueitor3D guardan cada ajuste en cuanto lo terminas de tocar. La fila
+  "Guardar" no solo añadía un paso, es que **cerraba el menú**: escribir el
+  Client ID de itch.io obligaba a guardar, salir de Cuentas y volver a entrar
+  para llegar a la fila de "itch.io" que estaba dos líneas más abajo del campo
+  recién rellenado. A cambio, **B en esos tres menús ya no descarta, solo
+  cierra**. Los formularios de puntuación siguen editándose sobre una copia, y
+  son el único sitio que lo hace: repartir tres porcentajes obliga a pasar por
+  totales que no suman 100.
 - **Recargar es mucho más rápido.** Medido sobre una biblioteca real de 1.336
-  juegos en cuatro tiendas: de 31,3 s de red a unos 4 s, que es lo que tarda
-  la más lenta ahora que van en paralelo.
-  - Epic no vuelve a preguntar por juegos que ya conoce —su título y su
-    enlace no cambian, y ya estaban guardados—: de 22,6 s a 1,9 s. La primera
-    vez, sin nada guardado, 11,6 s.
-  - Las cuatro tiendas piden a la vez en lugar de una detrás de otra, así que
-    el tiempo muerto pasa de ser la suma a ser el máximo.
-  - Las páginas de GOG también van a la vez.
-- **Vuelven los DLC y las aplicaciones de Epic**, como en la 2.x: 495
-  entradas en lugar de 451. Se descartaban antes de llegar al identificador,
-  así que no aparecían ni en la biblioteca ni en Desconocidos.
-- `core/providers/` es la capa nueva: cada tienda sabe pedirse a sí misma y
-  el pipeline solo recorre proveedores. Antes la obtención de datos vivía
-  dentro de `load_library` y sabía de ficheros y de HTTP a la vez.
+  juegos: de 31,3 s de red a unos 4 s, que es lo que tarda la tienda más lenta
+  ahora que van en paralelo. Epic no vuelve a preguntar por juegos que ya
+  conoce (22,6 s → 1,9 s) y las páginas de GOG también van a la vez.
+- **Vuelven los DLC y las aplicaciones de Epic**, como en la 2.x: se
+  descartaban antes de llegar al identificador, así que no aparecían ni en la
+  biblioteca ni en Desconocidos.
+- `core/providers/` es la capa nueva: cada tienda sabe pedirse a sí misma y el
+  pipeline solo recorre proveedores. Antes la obtención de datos vivía dentro
+  de `load_library` y sabía de ficheros y de HTTP a la vez.
+- Los enriquecedores se construyen en un solo sitio
+  (`core/enrichers/factory.py`), y los textos de los sistemas de puntuación
+  viven en `core/scoring/catalog.py` en vez de estar escritos una vez por
+  interfaz. El cliente de la API de Steam deja de ser un paquete aparte
+  (`steampy/`) y pasa a `core/raw/`, junto al de HowLongToBeat.
+- `gui3d/app.py` se reparte en módulos —copias de seguridad, scoring, Cuentas y
+  Tiendas, Editor Rápido— y baja de las 3.000 líneas. Al escribir los tests de
+  scoring apareció un bug real: el catálogo había renombrado `config` a
+  `config_form` y cinco sitios seguían con el nombre viejo, así que el
+  formulario de configurar un sistema (tecla X) se habría roto.
 - El aviso de "Steam no devolvió ningún juego" ya no manda a mirar primero la
-  privacidad del perfil. Con la clave y el ID de la misma cuenta, la
-  documentación de Steamworks dice que la privacidad no se aplica, así que lo
-  probable es otra cosa: que la clave sea de otra cuenta o el ID no sea el
-  que se cree.
+  privacidad del perfil: con la clave y el ID de la misma cuenta la privacidad
+  no se aplica, así que lo probable es otra cosa.
 
 ### Corregido
 
 - **Las duraciones de HowLongToBeat se perdían.** Al acertar, el enriquecedor
-  devolvía el dato pero no lo guardaba —solo se persistían los fallos—, así
-  que los mismos juegos se consultaban en cada recarga, con el mismo
-  resultado, y se perdían al cerrar. Igual con las notas de Steam, que además
-  no dejaban rastro en el log.
-- **Los juegos de ejemplo no se iban.** El carrusel enseña seis juegos de
-  mentira cuando no hay nada que enseñar, pero al recargar los reales se
-  añadían encima y quedaban los seis mezclados hasta reiniciar. Ahora
-  desaparecen en cuanto entra el primero de verdad —en ese momento y no al
-  empezar la recarga, para que una recarga que no traiga nada te deje los
-  ejemplos en lugar de una pantalla vacía.
-- Marcar un juego de ejemplo como terminado, oculto, favorito o pendiente
-  dejaba una fila con un `igdb_id` que no corresponde a ningún juego tuyo en
-  `library.sqlite`, que es la única base de datos que no se puede regenerar.
-  Ahora no escribe nada y lo dice.
+  devolvía el dato pero no lo guardaba —solo se persistían los fallos—, así que
+  los mismos juegos se consultaban en cada recarga y se perdían al cerrar.
+  Igual con las notas de Steam, que además se guardaban solo en uno de los seis
+  caminos que llevaban a ellas.
+- **El carrusel se caía al pintar una caja de itch.io.** El banner del estuche
+  tenía las abreviaturas en una tabla escrita a mano con las cuatro tiendas de
+  antes, así que la quinta reventaba con un `KeyError`. Ahora la declara cada
+  tienda en el registro. El guardián que impide escribir listas de tiendas a
+  mano **no veía esa tabla** —mira línea a línea buscando cadenas literales—,
+  así que se añade la comprobación que faltaba.
+- **Reintentar un desconocido de itch.io usaba el resolver de GOG.** El
+  despacho tenía un `else` que mandaba allí todo lo que no fuera Steam ni Epic,
+  así que el juego se buscaba por la fuente externa equivocada y, de encajar
+  algo por título, se habría guardado como juego de GOG. La suite pasaba con el
+  fallo dentro porque nadie probaba esa función.
+- **Los juegos de ejemplo no se iban.** Al recargar los reales se añadían
+  encima y quedaban los seis mezclados hasta reiniciar. Y marcar uno dejaba una
+  fila huérfana en `library.sqlite`, que es la única base que no se puede
+  regenerar.
+- **La tecla `e` de la terminal actualiza también lo que ya se sabía**, como su
+  equivalente del carrusel; y un juego que falle al enriquecer ya no tumba el
+  lote entero en la TUI.
 - Un corte de internet renovando una sesión ya no se confunde con una sesión
-  caducada: antes, un rato sin red habría obligado a volver a entrar en las
-  tres tiendas.
+  caducada: antes, un rato sin red habría obligado a volver a entrar en todas
+  las tiendas.
 - Varios avisos mandaban a "Opciones → Configuración" para arreglar
   credenciales que ya no están ahí. Son justo los que se leen cuando algo no
   funciona, así que ahora cada uno manda al menú que toca.
 
-- **Un registro de tiendas** (`core/stores/`): cada tienda declara en su
-  módulo todo lo suyo —etiqueta, color, bandera de configuración, proveedor,
-  resolver, sesión y qué se le pide pegar al usuario— y el resto del programa
-  lo lee de ahí. Antes ese mismo dato vivía en once ficheros sincronizados a
-  mano, y eso ya había fallado dos veces.
+### Notas de diseño
 
-  Añadir una tienda pasa a ser escribir su módulo, más dos líneas que no
-  pueden vivir en él: su miembro del enum `Stores` (la clave con la que se
-  guardan sus juegos) y su campo en `Config`. Hay tests que comprueban que no
-  se olvidan, en los dos sentidos, y otros dos que impiden que vuelva a
-  aparecer una lista de tiendas escrita a mano.
-
-- **Las notas de Steam se guardaban en uno de los seis caminos.** El
-  enriquecedor se construía en seis sitios y cinco no le decían dónde
-  guardar, así que solo al recargar la biblioteca quedaban persistidas:
-  enriquecer un juego suelto, rescatar un desconocido o actualizar los extras
-  las volvían a pedir cada vez. Ahora se construyen en un solo sitio
-  (`core/enrichers/factory.py`), que además hace que un enriquecedor que falle
-  al prepararse no deje sin trabajar a los demás.
-- Los textos de los sistemas de puntuación estaban escritos dos veces, una
-  por interfaz, y habían divergido: la terminal tenía frases y una
-  recomendación final que el carrusel no enseñaba. Ahora viven en
-  `core/scoring/catalog.py` y las dos enseñan lo mismo — el carrusel gana esa
-  recomendación.
-
-- **La tecla `e` de la terminal actualiza también lo que ya se sabía.** Antes
-  solo rellenaba huecos, mientras que la acción del mismo nombre en el
-  carrusel refrescaba todo. Las dos interfaces reimplementaban el mismo
-  recorrido y habían divergido; ahora las dos llaman al servicio del core.
-- **Un juego que falle al enriquecer ya no tumba el lote entero en la
-  terminal.** El carrusel ya lo aislaba; la copia de la TUI no.
-- El cliente de la API de Steam deja de ser un paquete aparte (`steampy/`) y
-  pasa a `core/raw/`, junto al de HowLongToBeat. Estar fuera tenía sentido
-  cuando además traía su propia capa de dominio; borrada esa, lo que quedaba
-  era un cliente HTTP como el otro.
-
-- Las copias de seguridad del carrusel salen de `gui3d/app.py` a su propio
-  módulo. Es el primer trozo de una clase que tenía 148 métodos, y se empieza
-  por lo que menos toca el resto.
-
-- El scoring del carrusel sale de `gui3d/app.py` a `gui3d/scoring_ui.py`.
-  Al escribir sus tests apareció un bug real de la sesión anterior: el
-  catálogo de scoring había renombrado `config` a `config_form`, y cinco
-  sitios de `app.py` seguían usando el nombre viejo — el formulario de
-  configurar un sistema (tecla X) se habría roto en el carrusel.
-
-- Cuentas, Tiendas y los ajustes de Puntueitor3D salen de `gui3d/app.py` a
-  `gui3d/accounts_ui.py`.
-
-- El Editor Rápido sale de `gui3d/app.py` a `gui3d/editor_ui.py`. Con este,
-  `app.py` baja de las 3.000 líneas.
+- **En itch.io se pega la dirección, igual que en las otras.** Admitiría un
+  `redirect_uri` a `localhost` y capturar la vuelta automáticamente, pero sería
+  la única tienda que se comporta distinto: un gesto que aprender en vez de
+  cinco pantallas iguales. Cuando eso pueda hacerse en todas, bastará con
+  cambiar un módulo.
+- **Su token no caduca ni trae `refresh_token`** (concesión implícita), así que
+  se guarda con una caducidad ficticia de 30 días y, al cumplirse, se revalida
+  pidiendo la primera página de la biblioteca. Contra la biblioteca y no contra
+  `/profile`, que exige el permiso `profile:me` y contestaba 403 con un token
+  bueno. De paso, eso detecta una sesión revocada desde itch.io.
+- **Se resuelve por id, no solo por título**: IGDB indexa itch.io como fuente
+  externa (nº 30), comprobado contra la API real antes de escribir el resolver.
+  Aun así queda la búsqueda por título de reserva, porque itch.io tiene cientos
+  de miles de juegos y IGDB no los tiene todos.
 
 ### Eliminado
 
-- `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json`
-  y `nile_library.json`.
-- `steampy/core/`: el lector de los `.vdf` de Steam (`libraryfolders`,
-  `loginusers`, `config`, `shortcuts`). Era código muerto —nadie lo
-  importaba— y además dependía de un paquete que ni siquiera estaba en
-  `requirements.txt`, así que no habría podido ejecutarse.
+- `core/heroics/`: la lectura de `gog_library.json`, `legendary_library.json` y
+  `nile_library.json`.
+- `steampy/core/`: el lector de los `.vdf` de Steam. Era código muerto y además
+  dependía de un paquete que ni siquiera estaba en `requirements.txt`.
 - El ajuste `heroic_path` y su campo en las dos interfaces.
 
 ---
