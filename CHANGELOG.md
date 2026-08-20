@@ -6,6 +6,19 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 
 ### Añadido
 
+- **Sonido en el carrusel**: música de fondo en bucle y tres efectos —
+  aceptar, volver y mover el foco—, con volumen independiente para música y
+  efectos en Opciones → Puntueitor3D. Poner la música a cero la para, no la
+  deja sonando en silencio.
+- **El audio no viene incluido**: se lee de `~/.config/puntueitor/audio/`
+  (`music.ogg`, `accept.wav`, `back.wav`, `move.wav`; las dos extensiones
+  valen para cualquiera de los cuatro). Sin esa carpeta todo suena igual que
+  antes, o sea nada, y se dice en el log. Así no hay que meter en el
+  repositorio material de terceros con su licencia detrás.
+- El clic de mover el foco tiene un **freno de 70 ms**. El carrusel acelera
+  hasta unos veinte pasos por segundo mientras se mantiene la dirección, y un
+  clic por paso no es un sonido de interfaz, es una ametralladora.
+
 - **itch.io, quinta tienda.** Su biblioteca se trae por la *Owned Keys API
   Route* con el permiso `profile:owned` — la única de las cinco que es una
   API **oficial y documentada** por la propia tienda, sin nada averiguado por

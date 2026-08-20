@@ -1207,6 +1207,29 @@ Control characters are stripped **on accept** as well as on paste
 it would sit invisibly inside the URL and the store would reject the code
 with nothing to see.
 
+## Sound: the files are not in the repo, and MIDI is not an option
+
+`gui3d/audio.py` reads music and effects from `~/.config/puntueitor/audio/`
+(`core.paths.audio_dir`). Nothing ships in the repo: fonts were worth
+vendoring because SIL OFL says so in writing, generic audio is not. A missing
+folder, a missing file or a corrupt one leaves that slot silent plus one INFO
+line — never an exception. Note `loadSfx` does **not** raise on a broken file;
+it returns `None` or a sound whose `status()` is `AudioSound.BAD`, so both
+have to be checked.
+
+MIDI cannot be used: the audio backend here is OpenAL, which has no
+synthesiser (`audio-play-midi` and friends survive in the library from the
+commercial Windows backends). Even working, the result would depend on each
+machine's instrument bank. WAV, Ogg Vorbis and Opus are native
+(`WavAudio`/`VorbisAudio`/`OpusAudio` live inside `libpanda`).
+
+The three effects hook into `App._navigate`, `App._activate` and
+`App._pop_menu` — **not** into the `Menu` widget, which is generic, and not
+into `_on_back`/`_on_escape_key`, which both end up calling `_pop_menu` and
+would double the sound. `_navigate` is the single path for moving focus,
+menu and carousel, key and pad, single press and held repeat; that last one
+is why `play_move` carries a 70 ms floor.
+
 ## OAuth: why the four logins are copy-paste (and why Steam has none)
 
 GOG, Epic and Amazon pin their `redirect_uri` to a domain of their own — we

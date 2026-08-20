@@ -473,7 +473,19 @@ class TestSettingsDispatch:
     """
 
     class AppFalsa:
-        pass
+        """
+        La aplicación reducida a lo que `_activate` toca antes de despachar.
+
+        `audio` está porque el despacho hace sonar el clic de "aceptar" para
+        todas las claves de una vez; un doble mudo basta, lo que se prueba
+        aquí es a dónde va cada clave.
+        """
+
+        class _Audio:
+            def play_accept(self):
+                pass
+
+        audio = _Audio()
 
     @staticmethod
     def _elegir(key, monkeypatch):

@@ -212,6 +212,20 @@ SCORE_SOURCE_LABELS = {
 YES_NO_LABELS = {True: "Sí", False: "No"}
 
 
+#: De cuánto en cuánto se mueve un volumen al empujar izquierda/derecha.
+VOLUME_STEP = 10
+
+
+def volume_label(valor: int) -> str:
+    """
+    El volumen como se lee en el menú.
+
+    A cero se dice "Apagado" y no "0 %": es lo que de verdad pasa (la música
+    se para), y un cero suelto se confunde con "sin dato".
+    """
+    return "Apagado" if valor <= 0 else f"{valor} %"
+
+
 def build_gui3d_items(prefs) -> list[MenuItem]:
     """
     Los ajustes propios del frontend 3D, con los valores EN EDICIÓN.
@@ -220,9 +234,10 @@ def build_gui3d_items(prefs) -> list[MenuItem]:
     el menú de Tiendas y en los formularios de scoring, nada se aplica
     hasta pulsar "Guardar" (ver `app.App._open_gui3d_menu`).
 
-    Los dos ajustes son `kind="cycle"`, el mismo tipo que los filtros de tres
-    estados, así que heredan el cambio con izquierda/derecha sin tocar el
-    widget de menú.
+    Todos son `kind="cycle"`, el mismo tipo que los filtros de tres estados,
+    así que heredan el cambio con izquierda/derecha sin tocar el widget de
+    menú. Los volúmenes se mueven de diez en diez: con el paso a 1 había que
+    empujar el stick cien veces para cruzar la escala.
     """
     return [
         MenuItem(
@@ -235,6 +250,14 @@ def build_gui3d_items(prefs) -> list[MenuItem]:
             # siguiente arranque.
             "set3d:remember_filters", "Cargar filtros al inicio", kind="cycle",
             value=YES_NO_LABELS[bool(prefs.remember_filters)],
+        ),
+        MenuItem(
+            "set3d:music_volume", "Volumen de la música", kind="cycle",
+            value=volume_label(prefs.music_volume),
+        ),
+        MenuItem(
+            "set3d:sfx_volume", "Volumen de los efectos", kind="cycle",
+            value=volume_label(prefs.sfx_volume),
         ),
         MenuItem("sec3d_end", "", kind="header"),
         MenuItem("set3d:save", "Guardar"),

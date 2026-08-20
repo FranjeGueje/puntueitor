@@ -165,6 +165,7 @@ from puntueitor.core.services import unknown_actions
 from puntueitor.core.services.game_actions import forget_game
 from puntueitor.core.services.library_ops import active_stores, is_in_active_stores
 from puntueitor.gui3d import accounts_ui, backup_ui, editor_ui, menus, scoring_ui, state
+from puntueitor.gui3d.audio import Audio
 from puntueitor.gui3d.filters import (
     TRISTATE_LABELS,
     Filters,
@@ -665,6 +666,17 @@ class App(ShowBase):
         # Avisos efímeros, a la altura del título y pegados a la derecha.
         self.notifier = Notifier(self.aspect2d, self.get_aspect_ratio())
 
+        # Sonido. Los ficheros los pone el usuario en su carpeta de
+        # configuración y puede que no haya ninguno: `Audio` se encarga de
+        # que eso no se note más que en el log (ver `audio.py`).
+        self.audio = Audio(
+            self.loader,
+            sfx_manager=self.sfxManagerList[0] if self.sfxManagerList else None,
+            music_manager=self.musicManager,
+        )
+        self.audio.set_volumes(self.prefs.music_volume, self.prefs.sfx_volume)
+        self.audio.start_music(self.prefs.music_volume)
+
         # Y justo debajo, el estado de la actualización de la biblioteca.
         # No se usa el avisador: el suyo es un mensaje de usar y tirar que se
         # desvanece a los cuatro segundos, y esto tiene que quedarse puesto
@@ -1027,6 +1039,12 @@ class App(ShowBase):
         En el carrusel es horizontal y en un menú vertical, así que `_update_navigation`
         ya elige de qué eje viene; aquí solo se aplica al que esté al mando.
         """
+        # Aquí y no en `Menu.move_focus`: por este método pasan las dos
+        # formas de moverse —foco de menú y giro del carrusel—, de teclado y
+        # de mando, tanto la pulsación suelta como la repetición mantenida.
+        # `play_move` trae su propio freno para la repetición rápida.
+        self.audio.play_move()
+
         menu = self.active_menu
         if menu is not None:
             menu.move_focus(direction)
@@ -1353,6 +1371,10 @@ class App(ShowBase):
             return
         closed = self._menu_stack.pop()
         closed.close()
+        # El sonido de "atrás" se engancha AQUÍ y no en `_on_back` ni en
+        # `_on_escape_key`: los dos terminan llamando a este método, y
+        # ponerlo arriba lo haría sonar dos veces.
+        self.audio.play_back()
 
         # Salir de una confirmación con B no pasa por `_activate`, así que
         # el "qué hacer si dice que sí" se olvida aquí; si no, se quedaría
@@ -1602,6 +1624,8 @@ class App(ShowBase):
 
     def _activate(self, menu: Menu, key: str) -> None:
         """Qué hace elegir un elemento de menú."""
+        # Una sola llamada para las decenas de claves del despacho.
+        self.audio.play_accept()
         if key == "accounts":
             accounts_ui.open_accounts_menu(self)
         elif key == "config":

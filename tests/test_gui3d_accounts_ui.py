@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from puntueitor.core.config import ConfigManager
-from puntueitor.gui3d import accounts_ui, state
+from puntueitor.gui3d import accounts_ui, menus, state
 from puntueitor.gui3d.menu import MenuItem
 
 
@@ -47,6 +47,14 @@ class AppFalsa:
         self.menus_abiertos = []
         self.menus_cerrados = 0
         self.reordenado = False
+        # Guardar aplica los volúmenes, igual que aplica la nota de las
+        # cajas: se apunta con qué se llamó para poder comprobarlo.
+        self.volumenes = []
+        self.audio = SimpleNamespace(
+            set_volumes=lambda musica, efectos: self.volumenes.append(
+                (musica, efectos)
+            ),
+        )
 
     def _open_text_prompt(self, title, initial, on_accept):
         self.prompts.append((title, initial))
@@ -123,6 +131,51 @@ class TestAjustesDelCarrusel:
         assert guardados == [app._gui3d_prefs]
         assert app.prefs is app._gui3d_prefs
         assert app.menus_cerrados == 1
+
+    def test_the_volume_moves_in_steps_and_does_not_wrap_around(self):
+        """
+        Un volumen es una magnitud con dos extremos, no una lista de
+        opciones: que bajar del todo lo dejara a tope sería una sorpresa muy
+        desagradable con los cascos puestos.
+        """
+        app = AppFalsa()
+        accounts_ui.open_gui3d_menu(app)
+        app._gui3d_prefs.music_volume = 0
+
+        for _ in range(3):
+            accounts_ui.adjust_gui3d_setting(
+                app, MenuItem("set3d:music_volume", ""), direction=-1,
+            )
+        assert app._gui3d_prefs.music_volume == 0
+
+        accounts_ui.adjust_gui3d_setting(
+            app, MenuItem("set3d:music_volume", ""), direction=1,
+        )
+        assert app._gui3d_prefs.music_volume == menus.VOLUME_STEP
+
+    def test_saving_applies_the_volumes(self):
+        """
+        Como la nota de las cajas: hasta guardar, la copia era solo
+        intención, así que es aquí donde el sonido tiene que enterarse.
+        """
+        app = AppFalsa()
+        app.carousel = SimpleNamespace(set_score_source=lambda *a: None)
+        accounts_ui.open_gui3d_menu(app)
+        app._gui3d_prefs.music_volume = 30
+        app._gui3d_prefs.sfx_volume = 90
+
+        accounts_ui.save_gui3d_settings(app)
+
+        assert app.volumenes == [(30, 90)]
+
+    def test_the_menu_shows_the_volumes(self):
+        etiquetas = {
+            item.key: item.value
+            for item in menus.build_gui3d_items(state.Preferences(music_volume=0))
+        }
+
+        assert etiquetas["set3d:music_volume"] == "Apagado"
+        assert etiquetas["set3d:sfx_volume"] == "70 %"
 
     def test_it_does_not_apply_until_saved(self):
         """Salir con B sin guardar no puede cambiar nada."""

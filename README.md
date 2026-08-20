@@ -279,6 +279,37 @@ ningún permiso, así que la clave haría falta igual. Sácala de
 
 ---
 
+### 🔊 Sonido del carrusel
+
+El carrusel puede tener música de fondo y efectos, pero **no trae ninguno**:
+los pones tú en `~/.config/puntueitor/audio/`, con estos nombres exactos.
+
+| Fichero | Cuándo suena |
+|---|---|
+| `music.ogg` | De fondo, en bucle, desde que arranca |
+| `accept.wav` | Al elegir cualquier cosa de un menú (A / Enter) |
+| `back.wav` | Al volver o cerrar un menú (B / Esc) |
+| `move.wav` | Al mover el foco de un menú o girar el carrusel |
+
+Sin esa carpeta, o sin alguno de esos ficheros, no suena nada y se dice en el
+log. No hay nada que activar.
+
+**Formatos**: se acepta `.wav` y `.ogg` en los cuatro, da igual cuál pongas.
+Lo recomendable es **WAV** (PCM 16 bits, 44,1 kHz, mono) para los efectos —
+suenan sin latencia y un clic ocupa unos 9 KB— y **Ogg Vorbis** para la
+música, que va en streaming y no se carga entera en memoria. MP3 y FLAC
+también funcionan; **MIDI no**, el motor de audio no lleva sintetizador.
+
+Los volúmenes están en **Opciones → Puntueitor3D**, separados para música y
+efectos. Poner la música a cero la para del todo.
+
+> No se incluye audio en el repositorio para no arrastrar material de
+> terceros con su licencia detrás. Para buscarlo,
+> [Kenney](https://kenney.nl/assets?q=audio) tiene packs de interfaz en CC0 y
+> [freesound.org](https://freesound.org) permite filtrar por esa licencia.
+
+---
+
 ## ⌨️ Controles
 
 ### Interfaz de terminal
@@ -441,7 +472,7 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-718 tests (unitarios + integración) que cubren:
+734 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)

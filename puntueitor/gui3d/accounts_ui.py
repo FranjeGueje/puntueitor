@@ -54,6 +54,15 @@ def adjust_gui3d_setting(app, item, direction: int) -> None:
         app._gui3d_prefs.score_source = fuentes[
             (actual + direction) % len(fuentes)
         ]
+    elif item.key in ("set3d:music_volume", "set3d:sfx_volume"):
+        campo = item.key.removeprefix("set3d:")
+        paso = menus.VOLUME_STEP * (1 if direction > 0 else -1)
+        # Sin dar la vuelta: un volumen es una escala con dos extremos, y
+        # que bajar del todo lo dejara a tope sería una sorpresa desagradable
+        # con los cascos puestos. Los otros dos ajustes sí rotan porque son
+        # listas de opciones, no una magnitud.
+        actual = getattr(app._gui3d_prefs, campo)
+        setattr(app._gui3d_prefs, campo, max(0, min(100, actual + paso)))
     elif item.key == "set3d:remember_filters":
         app._gui3d_prefs.remember_filters = (
             not app._gui3d_prefs.remember_filters
@@ -78,6 +87,7 @@ def save_gui3d_settings(app) -> None:
     app.carousel.set_score_source(
         app.prefs.score_source, app._labels_visible,
     )
+    app.audio.set_volumes(app.prefs.music_volume, app.prefs.sfx_volume)
     app.notifier.show("Configuración guardada")
     logger.info(f"gui3d: ajustes guardados: {app.prefs}")
     app._pop_menu()

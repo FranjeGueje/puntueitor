@@ -55,6 +55,16 @@ class Preferences:
     #: sobrescribe lo guardado (ver `app.App._persist_filters`).
     remember_filters: bool = True
 
+    #: Volumen de la música de fondo, en porcentaje. A 0 se para (ver
+    #: `audio.Audio.set_volumes`): poner el volumen al mínimo ES la forma de
+    #: apagarla, así que no hace falta un interruptor aparte.
+    music_volume: int = 50
+
+    #: Volumen de los efectos, en porcentaje. Más alto que la música por
+    #: defecto: son cortos y compiten con ella, y lo que no se puede es
+    #: pulsar un botón y no oír nada.
+    sfx_volume: int = 70
+
 
 def _read() -> dict:
     path = paths.gui3d_state_file()
@@ -107,6 +117,12 @@ def load_preferences() -> Preferences:
     names = {f.name for f in dataclasses.fields(Preferences)}
     prefs = Preferences(**{k: v for k, v in data.items() if k in names})
 
+    # Los volúmenes se recortan en vez de rechazarse: este fichero se edita
+    # a mano, y un 500 escrito de más tiene un significado evidente (todo lo
+    # alto que se pueda), no es motivo para volver a los valores de fábrica.
+    prefs.music_volume = _volumen(prefs.music_volume)
+    prefs.sfx_volume = _volumen(prefs.sfx_volume)
+
     if prefs.score_source not in SCORE_SOURCES:
         logger.warning(
             f"gui3d: puntuación desconocida {prefs.score_source!r}; "
@@ -115,6 +131,13 @@ def load_preferences() -> Preferences:
         prefs.score_source = DEFAULT_SCORE_SOURCE
 
     return prefs
+
+
+def _volumen(valor) -> int:
+    try:
+        return max(0, min(100, int(valor)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def save_preferences(prefs: Preferences) -> None:

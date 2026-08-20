@@ -91,6 +91,18 @@ def config_file() -> Path:
     return config_dir() / "config.json"
 
 
+def audio_dir() -> Path:
+    """
+    Música y efectos del carrusel 3D, que pone el usuario.
+
+    En `CONFIG_DIR` y no en `DATA_DIR` porque es contenido suyo, que trae,
+    cambia y quita a mano: la misma categoría que `config.json`, y en la
+    carpeta de configuración lo encuentra sin tener que buscarlo. No se crea
+    nunca desde aquí — si no existe, el frontend arranca en silencio.
+    """
+    return config_dir() / "audio"
+
+
 def scoring_file() -> Path:
     """
     Ajustes de los sistemas de puntuación (pesos, horas, géneros).
