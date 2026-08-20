@@ -247,12 +247,27 @@ class TestItchio:
 
         assert sesion.tokens.access_token == "T0KEN"
 
+    def test_it_is_checked_against_the_library_not_against_the_profile(self):
+        """
+        Regresión: se validaba contra `/profile`, que exige el permiso
+        `profile:me`. Aquí solo se pide `profile:owned`, así que itch.io
+        contestaba 403 con un token perfectamente bueno y el inicio de sesión
+        no funcionaba NUNCA. Se comprueba contra lo que de verdad se va a
+        usar después.
+        """
+        http = HttpDoble()
+        sesion = self._sesion(http=http)
+        sesion.complete_login("https://itch.io/#access_token=T0KEN")
+
+        _, url, _ = http.peticiones[0]
+        assert url.endswith("/profile/owned-keys")
+
     def test_a_token_that_itchio_rejects_is_not_saved(self):
         """
         Se valida contra `/profile` antes de darlo por bueno: guardar un token
         roto lo escondería hasta la primera recarga de la biblioteca.
         """
-        sesion = self._sesion(http=HttpDoble(401))
+        sesion = self._sesion(http=HttpDoble(403))
 
         with pytest.raises(SessionExpired):
             sesion.complete_login("https://itch.io/#access_token=MALO")
@@ -279,7 +294,7 @@ class TestItchio:
         assert http.peticiones[-1][0] == "GET"
 
     def test_a_revoked_token_ends_the_session(self):
-        sesion = self._sesion(http=HttpDoble(401))
+        sesion = self._sesion(http=HttpDoble(403))
         sesion.tokens.save({
             "access_token": "T0KEN", "refresh_token": "T0KEN", "expires_in": 1,
         })

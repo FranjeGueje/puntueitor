@@ -29,8 +29,11 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
   implícita, así que el token llega ya hecho dentro de la dirección que se
   pega. Como el resto del código da por caducado cualquier token sin fecha,
   se guarda con una caducidad ficticia de 30 días y, al cumplirse, en vez de
-  canjear nada se revalida contra `/profile`. Eso además detecta una sesión
-  revocada desde itch.io, que si no pasaría inadvertida.
+  canjear nada se revalida pidiendo la primera página de la biblioteca. Eso
+  además detecta una sesión revocada desde itch.io, que si no pasaría
+  inadvertida. Se comprueba contra la biblioteca y no contra `/profile`, que
+  sería más ligero, porque ese endpoint exige el permiso `profile:me` y aquí
+  solo se pide `profile:owned`: contestaba 403 con un token bueno.
 - **Se resuelve por id, no solo por título.** IGDB indexa itch.io como fuente
   externa (nº 30), y su identificador es el mismo número que devuelve la
   tienda — comprobado contra la API real de IGDB antes de escribir el

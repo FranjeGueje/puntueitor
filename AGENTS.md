@@ -1228,9 +1228,16 @@ the config — the other three ignore it.
 **itch.io's token never expires and has no refresh token** (implicit grant:
 the token arrives inside the pasted URL). `OAuthSession` assumes the opposite,
 so `auth/itchio.py` stores the token as its own `refresh_token` with a
-synthetic 30-day expiry; when that lapses, `_renew` revalidates against
-`/profile` instead of exchanging anything. That doubles as the only way a
-session revoked from itch.io ever gets noticed.
+synthetic 30-day expiry; when that lapses, `_renew` revalidates by asking for
+the first page of the library instead of exchanging anything. That doubles as
+the only way a session revoked from itch.io ever gets noticed.
+
+**Validate against `owned-keys`, not against `/profile`.** The lighter
+endpoint requires the `profile:me` scope; we only ask for `profile:owned`, so
+it answers 403 for a perfectly good token and the login never worked. Checking
+against the endpoint we actually use is also the stronger check. A test pins
+the URL (`tests/test_auth.py::TestItchio`) because the HTTP double answers 200
+to anything, which is why the bug shipped.
 
 **Steam has no login at all.** It briefly had one (OpenID, to fill in the
 SteamID), and it was removed: Steam grants third parties no library access, so

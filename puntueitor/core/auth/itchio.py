@@ -27,10 +27,13 @@ logger = logging.getLogger(__name__)
 REDIRECT_URI = "https://itch.io/"
 
 AUTH_URL = "https://itch.io/user/oauth"
-PROFILE_URL = "https://api.itch.io/profile"
 
-#: Cuánto se considera válido un token antes de revalidarlo contra
-#: `/profile`. itch.io no hace caducar sus tokens (son claves API
+#: La biblioteca, y también con lo que se comprueba que un token sirve. Vive
+#: aquí y no en el proveedor porque el proveedor ya importa de este módulo:
+#: al revés haría falta un import diferido para no montar un ciclo.
+OWNED_KEYS_URL = "https://api.itch.io/profile/owned-keys"
+
+#: Cuánto se considera válido un token antes de revalidarlo. itch.io no hace caducar sus tokens (son claves API
 #: persistentes), así que este número no protege de una caducidad real —
 #: protege de tener una sesión revocada por el usuario sin que Puntueitor se
 #: entere hasta la siguiente vez que intente usarla.
@@ -58,9 +61,10 @@ class ItchioSession(OAuthSession):
     dispositivo): el propio token se guarda TAMBIÉN como si fuera su
     `refresh_token`, con una caducidad sintética de 30 días. Eso hace que,
     pasados esos 30 días, `_renew` se llame — y en vez de canjear nada,
-    revalida el mismo token contra `/profile` y lo vuelve a guardar. Si el
-    usuario lo revocó desde itch.io, esa llamada devuelve 401 y `_request`
-    ya lo convierte en `SessionExpired` sin más código aquí.
+    revalida el mismo token pidiendo la primera página de la biblioteca y lo
+    vuelve a guardar. Si el usuario lo revocó desde itch.io, esa llamada
+    devuelve 403 y `_request` ya lo convierte en `SessionExpired` sin más
+    código aquí.
     """
 
     STORE = str(Stores.ITCHIO)
@@ -88,9 +92,9 @@ class ItchioSession(OAuthSession):
 
     def _exchange(self, code: str) -> dict:
         # No hay nada que "canjear": `code` YA ES el access_token, sacado del
-        # fragmento de la URL pegada. Se valida contra `/profile` antes de
-        # darlo por bueno, para no guardar un token roto o sin el scope
-        # `profile:owned` sin que se note hasta la primera recarga.
+        # fragmento de la URL pegada. Se comprueba antes de darlo por bueno,
+        # para no guardar un token roto o sin el scope `profile:owned` sin
+        # que se note hasta la primera recarga.
         self._verificar(code)
         return self._payload(code)
 
@@ -101,7 +105,20 @@ class ItchioSession(OAuthSession):
         return self._payload(refresh_token)
 
     def _verificar(self, token: str) -> None:
-        self._get_json(PROFILE_URL, headers={"Authorization": f"Bearer {token}"})
+        """
+        Que el token sirve, preguntándoselo a itch.io.
+
+        Se comprueba contra la BIBLIOTECA y no contra `/profile`, que sería
+        más ligero, porque `/profile` exige el permiso `profile:me` y aquí
+        solo se pide `profile:owned`: contesta 403 aunque el token sea
+        perfectamente válido, y el login no funcionaba nunca. Además así se
+        prueba justo lo que hace falta que funcione, en vez de algo parecido.
+        """
+        self._get_json(
+            OWNED_KEYS_URL,
+            params={"page": 1},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     @staticmethod
     def _payload(token: str) -> dict:

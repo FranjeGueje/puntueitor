@@ -1,13 +1,11 @@
 import logging
 from collections.abc import Sequence
 
-from puntueitor.core.auth.itchio import ItchioSession
+from puntueitor.core.auth.itchio import OWNED_KEYS_URL, ItchioSession
 from puntueitor.core.models import Stores
 from puntueitor.core.providers.base import LibraryProvider
 
 logger = logging.getLogger(__name__)
-
-OWNED_KEYS_URL = "https://api.itch.io/profile/owned-keys"
 
 #: itch.io no dice cuántas páginas hay —a diferencia de GOG—, así que se
 #: para sola cuando llega una página vacía. El tope es la red de seguridad
