@@ -267,25 +267,15 @@ def _store_resolve(repo: LibraryRepository, unknown: Unknown) -> list[Game]:
     Va con `refresh=True` para saltarse la caché de resolvers: si se está
     reintentando es porque lo cacheado no sirve.
     """
+    from puntueitor.core import stores
     from puntueitor.core.igdb.service import IGDBService
 
+    spec = stores.find(unknown.store)
+    if spec is None:
+        raise ValueError(f"tienda desconocida: {unknown.store}")
+
     igdb = IGDBService()
-    cache_path = repo.cache_dir / "puntueitor.db"
-
-    if unknown.store == "steam":
-        from puntueitor.core.resolvers.steam_resolver import SteamIGDBResolver
-
-        resolver = SteamIGDBResolver(igdb, cache_path)
-        raw = {"appid": int(unknown.id), "name": unknown.title}
-    elif unknown.store == "epic":
-        from puntueitor.core.resolvers.epic_resolver import EpicResolver
-
-        resolver = EpicResolver(igdb, cache_path)
-        raw = {"app_name": unknown.id, "title": unknown.title}
-    else:
-        from puntueitor.core.resolvers.gog_resolver import GOGResolver
-
-        resolver = GOGResolver(igdb, cache_path)
-        raw = {"app_name": unknown.id, "title": unknown.title}
+    resolver = spec.resolver()(igdb, repo.cache_dir / "puntueitor.db")
+    raw = {spec.raw_id_field: unknown.id, "title": unknown.title}
 
     return list(resolver.resolve(raw, refresh=True))

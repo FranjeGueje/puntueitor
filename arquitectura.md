@@ -1,6 +1,7 @@
 # Arquitectura de Puntueitor 🏗️
 
-Puntueitor unifica bibliotecas de varias tiendas (Steam, GOG, Epic, Amazon),
+Puntueitor unifica bibliotecas de varias tiendas (Steam, GOG, Epic, Amazon,
+itch.io),
 las identifica contra IGDB, las enriquece con duraciones de HowLongToBeat y
 puntuaciones de Steam, y calcula recomendaciones con criterios combinables.
 
@@ -91,7 +92,7 @@ es cosmética.
 
 ## 🏬 Providers: de dónde salen los juegos
 
-Cada tienda tiene un `LibraryProvider` en `core/providers/`, y los cuatro
+Cada tienda tiene un `LibraryProvider` en `core/providers/`, y los cinco
 hacen lo mismo: piden la biblioteca a la API de la tienda, la guardan en
 `StoreLibraryCacher` y la sirven de ahí cuando no se puede llamar. El
 pipeline solo recorre proveedores; no sabe si detrás hay HTTP o una copia en
@@ -103,14 +104,15 @@ disco.
 | **GOG** | `embed.gog.com`, la del cliente Galaxy | OAuth2 |
 | **Epic** | `launcher` + `catalog`, las del Epic Games Launcher | OAuth2 |
 | **Amazon** | *entitlements* de Amazon Games | LWA con PKCE + registro de dispositivo |
+| **itch.io** | *Owned Keys*, oficial y documentada | OAuth2 con concesión implícita |
 
-Tres de las cuatro no están documentadas por su tienda: son las que usan
+Tres de las cinco no están documentadas por su tienda: son las que usan
 gogdl, Legendary y Nile, o sea las mismas que había debajo de Heroic cuando
 Puntueitor leía sus ficheros. La diferencia es que ahora la sesión es
 nuestra y no hace falta que Heroic exista.
 
 **La caché no es una optimización, es la red de seguridad.** Como tres de
-las cuatro APIs pueden cambiar sin avisar, `LibraryProvider.fetch()` nunca
+las cinco APIs pueden cambiar sin avisar, `LibraryProvider.fetch()` nunca
 devuelve vacío teniendo datos guardados: si no hay conexión, si la sesión
 caducó o si la tienda contesta cero juegos, se sirve la última biblioteca
 buena y se dice en el log. Un refresco explícito es lo único que la
@@ -123,7 +125,8 @@ IGDB, y lo renueva solo. Iniciar sesión es siempre el mismo gesto —abrir el
 navegador y pegar de vuelta la dirección—, incluso en Steam, que
 técnicamente podría recoger su OpenID en un servidor local: GOG, Epic y
 Amazon tienen su `redirect_uri` fijada hacia un dominio suyo y no hay
-`localhost` al que volver, así que o se empotra un navegador entero en la
+`localhost` al que volver (itch.io sí lo admitiría, y pega igual que las
+otras por uniformidad), así que o se empotra un navegador entero en la
 aplicación o se pega. Hacer Steam distinto solo añadiría un flujo más que
 mantener y otro que aprender.
 
@@ -219,6 +222,7 @@ distinto y no es evidente por qué:
 | **GOG** | `external_game_source = 5` + id de producto | Igual que Steam, con su propia fuente |
 | **Epic** | Extrae el *slug* de la URL y busca por él | Epic no tiene correlación de id estable en IGDB |
 | **Amazon** | Búsqueda por título + compara fecha de lanzamiento | No hay id ni slug; la fecha es lo que separa secuelas y remakes del original |
+| **itch.io** | `external_game_source = 30` + id de producto | Como Steam y GOG, aunque IGDB indexa una parte pequeña de su catálogo |
 
 Todos caen a búsqueda por título normalizado si su vía principal falla, y de
 ahí pasan al `Selector`, que elige entre candidatos combinando la nota del
@@ -265,6 +269,17 @@ ahí: el miembro del enum `Stores` (la clave con la que se guardan sus juegos
 en la base) y el campo `<tienda>_is_active` en `Config` (lo que se escribe en
 `config.json`). `tests/test_stores_registry.py` comprueba que no se olvidan,
 en los dos sentidos.
+
+> **Y aun así, barre el repositorio antes de darlo por hecho.** Añadiendo
+> itch.io se colaron dos sitios que enumeraban tiendas a mano y que el
+> registro no cubría: las abreviaturas del banner del estuche (una tabla
+> `dict` que tiraba el carrusel entero con un `KeyError`) y el despacho de
+> `unknown_actions._store_resolve` (un `if/elif` cuyo `else` mandaba la
+> tienda nueva al resolver de GOG). Los dos guardianes de
+> `test_stores_registry.py` cazan hoy esas dos formas, pero antes de fiarte
+> de un test de esos comprueba que FALLA plantando el patrón que debería
+> cazar: el primero leía línea a línea buscando cadenas literales y las dos
+> tablas se le escaparon.
 
 ### Añadir una fórmula de puntuación
 1. Implementa `GameScorer` en `core/scoring/atomic/` (o en `core/scoring/`

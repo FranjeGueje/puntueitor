@@ -9,6 +9,7 @@ Ningún test toca la red: IGDB y los resolvers van monkeypatcheados.
 """
 import pytest
 
+from puntueitor.core import stores
 from puntueitor.core.models import Stores
 from puntueitor.core.repository.library_repository import LibraryRepository
 from puntueitor.core.services import unknown_actions
@@ -124,6 +125,67 @@ class TestAdoptResult:
 
         assert not result.ok
         assert result.error is not None
+
+
+class TestCadaTiendaUsaSuResolver:
+    """
+    Reintentar un desconocido "por su tienda" tiene que lanzar EL resolver de
+    esa tienda.
+
+    Esto se despachaba con un if/elif y un `else` que mandaba todo lo demás
+    al de GOG: con la llegada de itch.io, sus juegos se buscaban en IGDB por
+    la fuente externa equivocada y, si algo llegaba a encajar por título, se
+    habría guardado como juego de GOG. La suite entera pasaba igual, porque
+    los tests de aquí abajo sustituyen `_store_resolve` por un doble y nadie
+    miraba dentro.
+    """
+
+    @pytest.fixture
+    def sin_igdb(self, monkeypatch):
+        """IGDB no se toca: lo que se prueba es a quién se llama."""
+        from puntueitor.core.igdb import service
+
+        monkeypatch.setattr(service, "IGDBService", lambda *a, **k: object())
+
+    def _resolver_usado(self, repo, monkeypatch, store, id_juego="1234"):
+        usados = []
+        from puntueitor.core.resolvers import base_resolver
+
+        monkeypatch.setattr(
+            base_resolver.BaseResolver, "resolve",
+            lambda self, raw, refresh=False: usados.append((type(self), raw)) or [],
+        )
+        unknown_actions._store_resolve(
+            repo, Unknown(store=store, title="Algo", id=id_juego),
+        )
+        return usados[0]
+
+    @pytest.mark.parametrize("spec", list(stores.all_stores()), ids=lambda s: s.key)
+    def test_the_resolver_is_the_one_the_registry_declares(
+        self, spec, repo, monkeypatch, sin_igdb,
+    ):
+        clase, _ = self._resolver_usado(repo, monkeypatch, spec.key)
+
+        assert clase is spec.resolver()
+
+    @pytest.mark.parametrize("spec", list(stores.all_stores()), ids=lambda s: s.key)
+    def test_the_id_reaches_the_resolver_where_it_looks_for_it(
+        self, spec, repo, monkeypatch, sin_igdb,
+    ):
+        """
+        Steam llama "appid" a lo que las demás llaman "app_name", y un crudo
+        con la clave equivocada deja el id vacío: el juego se descarta sin
+        buscarlo siquiera.
+        """
+        clase, raw = self._resolver_usado(repo, monkeypatch, spec.key, "9876")
+
+        assert clase(igdb=None)._extract_id(raw) == "9876"
+
+    def test_an_unregistered_store_says_so(self, repo, sin_igdb):
+        with pytest.raises(ValueError, match="tienda desconocida"):
+            unknown_actions._store_resolve(
+                repo, Unknown(store="playstation", title="Algo", id="1"),
+            )
 
 
 class TestResolveByStore:

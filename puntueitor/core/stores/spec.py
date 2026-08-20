@@ -68,6 +68,12 @@ class StoreSpec:
     #: `KeyError` en cuanto apareció una tienda que no estaba en ella.
     banner_label: str = ""
 
+    #: Con qué nombre viaja el id de un juego suyo dentro del crudo que
+    #: entiende su resolver. Steam es la excepción ("appid"); las demás usan
+    #: "app_name". Lo necesita `services/unknown_actions.py`, que reconstruye
+    #: un crudo mínimo para reintentar un desconocido y NO tiene el original.
+    raw_id_field: str = "app_name"
+
     #: Si un juego suyo se puede volver a identificar por su id de tienda.
     #: Amazon no: sus juegos se buscan solo por título, así que ahí la única
     #: vía es buscar a mano (ver `services/unknown_actions.py`).

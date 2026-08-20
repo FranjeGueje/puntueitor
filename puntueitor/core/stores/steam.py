@@ -21,6 +21,8 @@ SPEC = StoreSpec(
     store=Stores.STEAM,
     label="Steam",
     config_flag="steam_is_active",
+    # Steam llama "appid" a lo que las demás llaman "app_name".
+    raw_id_field="appid",
     color=(0.16, 0.22, 0.34),
     provider=_provider,
     resolver=_resolver,

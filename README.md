@@ -472,12 +472,13 @@ source .venv/bin/activate
 python -m pytest tests/
 ```
 
-738 tests (unitarios + integración) que cubren:
+749 tests (unitarios + integración) que cubren:
 - Modelos de dominio (Game, Library, ScoredLibrary)
 - Filtros (7 clases)
 - Scoring (helpers, atómicos, mixto, ponderado, tiempo disponible, género)
 - Selectores, Mappers, Enrichers
-- Resolvers (plantilla común y las 4 tiendas)
+- Resolvers (plantilla común y las 5 tiendas), y que reintentar un juego
+  desconocido use el resolver de SU tienda
 - El registro de tiendas: que ninguna quede a medio declarar, y que nadie
   vuelva a escribir una lista de tiendas a mano
 - Proveedores de tienda: paginación, reutilización de lo ya consultado, y
@@ -497,6 +498,8 @@ python -m pytest tests/
   escritos a mano fuera de su registro
 - El Editor Rápido: su tabla de gestos y la histéresis del stick derecho
   (ese test reproduce un rebote real de un mando)
+- El sonido: que la falta de un fichero o de la carpeta entera no rompa nada,
+  y el freno del clic al girar el carrusel deprisa
 
 Ninguno toca la red ni tus ficheros: `tests/conftest.py` monta un sandbox
 antes de importar nada, y la suite se niega a arrancar si ese aislamiento no

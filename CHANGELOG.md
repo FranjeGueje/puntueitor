@@ -44,6 +44,16 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
   esa tabla**: mira línea a línea buscando cadenas literales, y aquella usaba
   `Stores.STEAM` con una tienda por línea. Se añade la comprobación que
   faltaba, contando miembros del enum por fichero.
+- **Reintentar un desconocido de itch.io usaba el resolver de GOG.** El
+  despacho de `services/unknown_actions.py` era un `if/elif` con un `else`
+  que mandaba allí todo lo que no fuera Steam ni Epic, así que el juego se
+  buscaba en IGDB por la fuente externa equivocada y, de encajar algo por
+  título, se habría guardado como juego de GOG. Ahora el resolver sale del
+  registro. La suite pasaba con el fallo dentro porque nadie probaba esa
+  función: se añaden tests que recorren las cinco tiendas y comprueban tanto
+  el resolver como que el id llega con el nombre que esa tienda usa (Steam
+  dice "appid" donde las demás dicen "app_name", y con la clave equivocada el
+  juego se descarta sin llegar a buscarse).
 
 ### Notas de diseño
 
