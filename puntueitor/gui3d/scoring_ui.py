@@ -102,6 +102,11 @@ def open_scoring_config(app, scorer) -> None:
     escriben en la configuración al dar a "Guardar": repartir tres
     porcentajes obliga a pasar por estados que no suman 100 (bajas uno
     para subir otro), así que guardar en cada cambio sería imposible.
+
+    Es la ÚNICA excepción que queda: Cuentas, Tiendas y Puntueitor3D guardan
+    cada ajuste al tocarlo y ya no tienen fila de "Guardar" (ver
+    `gui3d/accounts_ui.py`). Aquí se aplica en bloque porque lo que se edita
+    es un reparto, no ajustes sueltos.
     """
     app._config_scorer = scorer
     if scorer.config_form == "weights":

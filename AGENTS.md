@@ -1561,18 +1561,18 @@ Dos ajustes propios del frontend 3D, en `state.Preferences`, persistidos en
   Reactivarlo recupera los de la última vez. El rótulo nombra la mitad que se
   nota; el campo nombra las dos, porque gobierna también `_persist_filters`.
 
-Como los menús de Cuentas y Tiendas, se edita sobre una **copia**
-(`_gui3d_prefs = dataclasses.replace(self.prefs)`) y solo se aplica al pulsar
-"Guardar", así que salir con B descarta. Antes se guardaba en el acto y era el
-único menú que se comportaba así.
+Como los menús de Cuentas y Tiendas, **cada cambio se guarda y se aplica al
+hacerlo** (`accounts_ui.adjust_gui3d_setting` → `apply_gui3d_settings`): no hay
+copia, no hay fila "Guardar" y B solo cierra. Hubo una etapa intermedia con
+copia y "Guardar", y con el volumen se vio que no valía: es un ajuste que se
+busca a tientas, y tener que guardar para oír cómo había quedado lo hacía
+imposible de afinar.
 
-El repintado de las cajas va en el Guardar, no al cambiar el valor:
+Repintar las cajas en cada cambio no cuesta lo que parece:
 `Carousel.set_score_source` recorre **todas** las cajas, no solo las visibles
 —una caja fuera del radio acabará entrando al navegar y se vería con la nota
-anterior, el mismo motivo que documenta `set_labels_visible`— y hasta el
-Guardar la copia es solo intención, no hay nada que pintar. Además
-`set_score_source` corta en seco si la nota no ha cambiado, así que guardar sin
-haber tocado esa opción no cuesta el recorrido.
+anterior, el mismo motivo que documenta `set_labels_visible`—, pero corta en
+seco si la nota no ha cambiado, así que mover el volumen no recorre nada.
 
 `tools/entorno-prueba.sh <dir>` monta un entorno aislado y arranca la app en
 él (`--3d`, `--shell`, `--copiar-config`, o `-- comando`). Úsalo para
@@ -1651,11 +1651,25 @@ but shown in clear **while editing**: you can't fix a one-character typo in a
 key you can't see, and opening the editor is already a deliberate act. If that
 trade-off is ever revisited, `DirectEntry` has an `obscured` option.
 
-Everything is edited on a **copy** and only written on "Guardar", so backing out
-with B leaves the config untouched. That matters more here than in the scoring
-forms — these are the credentials, and losing them to a stray button press is a
-different class of mistake. `ConfigManager.save()` also preserves unknown
-on-disk keys, so saving can't drop anything it doesn't model.
+**Every setting is written the moment you finish touching it** — accepting the
+text prompt, ticking a checkbox — through `accounts_ui.persist_setting`. There
+is no "Guardar" row and B only closes. The row that was removed didn't just add
+a step, it *closed the menu*: typing the itch.io Client ID meant saving, being
+thrown out of Cuentas, and walking back in to reach the itch.io login row two
+lines below the field you had just filled in.
+
+`persist_setting` writes **one field**, never the whole `app._settings` dict.
+Cuentas and Tiendas share that dict (one config, two windows), so dumping it
+from one screen would drag along whatever was half-touched in the other. There's
+a test for exactly that. `ConfigManager` is a singleton and `save()` preserves
+unknown on-disk keys, so a write can't drop anything it doesn't model.
+
+`toggle_setting_store` also calls `_apply_order()` + `_on_selection_changed()`:
+the ticked stores decide what's *visible*, not just what loads, so the change
+has to show immediately.
+
+The trade-off, taken knowingly: B no longer discards. The scoring forms are the
+**only** place left that still edits a copy — see below for why.
 
 Anything that covers a menu must **hide it first**: `Menu.hide()`/`show()`
 preserve focus, unlike `open()` which resets it to the first row. The text
@@ -1694,7 +1708,9 @@ navigation — 40→60 is twenty steps); A does nothing on them, so there's only
 one way to change a value. Weights and hours are edited on a **copy** and only
 written on "Guardar": distributing three percentages means passing through
 invalid totals on the way (you lower one to raise another), so validating per
-change would make them uneditable. Percentages are shown 0-100 but stored as
+change would make them uneditable. This is now the **only** copy-and-"Guardar"
+form in gui3d — Cuentas, Tiendas and Puntueitor3D all write per element. Don't
+copy the old mechanic into a new menu; a lone setting is saved when touched. Percentages are shown 0-100 but stored as
 fractions, same as the TUI.
 
 Refreshing such a form must **not** call `set_items` — that resets focus to the

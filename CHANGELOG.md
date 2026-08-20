@@ -40,6 +40,24 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
   inicio de sesión lo dice y explica dónde conseguirlo, en vez de abrir el
   navegador en una página de error.
 
+### Cambiado
+
+- **Se acabó el "Guardar" en Opciones (carrusel 3D).** Cuentas, Tiendas y
+  Puntueitor3D guardan **cada ajuste en cuanto lo terminas de tocar**: al
+  aceptar lo escrito en un campo, al marcar una tienda, al mover un volumen.
+  La fila "Guardar" no solo añadía un paso, es que **cerraba el menú**:
+  escribir el Client ID de itch.io obligaba a guardar, salir de Cuentas y
+  volver a entrar para llegar a la fila de "itch.io" que estaba dos líneas más
+  abajo del campo que acababas de rellenar. A cambio, **B en estos tres menús
+  ya no descarta, solo cierra** — lo que ves es lo que hay, como en los filtros
+  y en el menú del juego.
+- **Los volúmenes se oyen mientras los mueves.** Antes había que guardar para
+  saber cómo había quedado el ajuste que estabas buscando a tientas.
+- Los formularios de puntuación (pesos, horas, géneros) **siguen editándose
+  sobre una copia** con su "Guardar", y ahora son el único sitio que lo hace:
+  repartir tres porcentajes obliga a pasar por totales que no suman 100, así
+  que guardar en cada cambio los haría inservibles.
+
 ### Corregido
 
 - **El carrusel se caía al pintar una caja de itch.io.** El banner de tiendas

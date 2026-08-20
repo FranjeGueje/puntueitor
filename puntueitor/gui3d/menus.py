@@ -230,9 +230,9 @@ def build_gui3d_items(prefs) -> list[MenuItem]:
     """
     Los ajustes propios del frontend 3D, con los valores EN EDICIÓN.
 
-    `prefs` es la copia que se está editando, no la que está en uso: como en
-    el menú de Tiendas y en los formularios de scoring, nada se aplica
-    hasta pulsar "Guardar" (ver `app.App._open_gui3d_menu`).
+    `prefs` son las preferencias EN USO: cada cambio se guarda y se aplica al
+    hacerlo, como en Cuentas y en Tiendas, y por eso no hay fila de "Guardar"
+    (ver `accounts_ui.adjust_gui3d_setting`).
 
     Todos son `kind="cycle"`, el mismo tipo que los filtros de tres estados,
     así que heredan el cambio con izquierda/derecha sin tocar el widget de
@@ -259,8 +259,6 @@ def build_gui3d_items(prefs) -> list[MenuItem]:
             "set3d:sfx_volume", "Volumen de los efectos", kind="cycle",
             value=volume_label(prefs.sfx_volume),
         ),
-        MenuItem("sec3d_end", "", kind="header"),
-        MenuItem("set3d:save", "Guardar"),
     ]
 
 # ──────────────────────────────
@@ -432,13 +430,13 @@ def build_accounts_items(values: dict, sessions: dict | None = None) -> list[Men
     igual que a GOG haría creer que entrando por el navegador se acaba el
     trabajo, cuando la API key hay que ponerla a mano de todas formas.
 
-    `values` son los valores EN EDICIÓN, no los guardados: se trabaja sobre
-    una copia y solo se escribe al dar a "Guardar" (ver
-    `app.App._open_accounts_menu`).
+    `values` es el espejo de lo guardado: cada campo se escribe al aceptar su
+    cuadro de texto, así que no hay fila de "Guardar" (ver
+    `accounts_ui.persist_setting`). Eso es lo que permite escribir el Client ID
+    de itch.io y usarlo en la fila de login de dos más abajo sin salir de aquí.
 
     `sessions` va aparte y NO se edita: iniciar sesión tiene efecto en el
-    momento —el token ya está guardado— y no puede deshacerse saliendo sin
-    guardar, así que mezclarlo con lo demás mentiría sobre lo que hace "B".
+    momento, el token ya está guardado.
     """
     items = []
     for grupo, campos in SETTINGS_TEXT_GROUPS.items():
@@ -456,9 +454,6 @@ def build_accounts_items(values: dict, sessions: dict | None = None) -> list[Men
         )
         for store, label in SETTINGS_ACCOUNTS
     ]
-
-    items.append(MenuItem("sec_end", "", kind="header"))
-    items.append(MenuItem("set:save", "Guardar"))
     return items
 
 
@@ -483,9 +478,6 @@ def build_settings_items(values: dict, sessions: dict | None = None) -> list[Men
         )
         for field, label in SETTINGS_STORES
     ]
-
-    items.append(MenuItem("sec_end", "", kind="header"))
-    items.append(MenuItem("set:save", "Guardar"))
     return items
 
 

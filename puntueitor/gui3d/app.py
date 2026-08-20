@@ -1703,8 +1703,6 @@ class App(ShowBase):
             self._pop_menu()
         elif key == menus.CONFIRM_YES_KEY:
             self._run_confirmed_action()
-        elif key == "set3d:save":
-            accounts_ui.save_gui3d_settings(self)
         elif key.startswith(("set:", "login:")):
             # Las dos van a los menús de configuración: `set:` son los campos que
             # se editan y `login:` las filas de CUENTAS. Cuando esto solo

@@ -3,8 +3,8 @@ Cuentas, Tiendas y los ajustes propios del carrusel, ya fuera de
 `gui3d/app.py`.
 
 Tercer trozo que sale de esa clase. Las tres pantallas comparten módulo
-porque comparten mecánica: una copia en edición y "Guardar" que la aplica,
-a diferencia de Avanzado o Créditos, que no editan nada.
+porque comparten mecánica: cada ajuste se escribe al terminar de tocarlo, sin
+fila de "Guardar", a diferencia de Avanzado o Créditos, que no editan nada.
 
 Se prueba sin ventana con una aplicación de mentira; la parte que habla con
 disco de verdad (`ConfigManager`, la sesión de una tienda) usa el sandbox de
@@ -47,9 +47,13 @@ class AppFalsa:
         self.menus_abiertos = []
         self.menus_cerrados = 0
         self.reordenado = False
-        # Guardar aplica los volúmenes, igual que aplica la nota de las
+        # Cada ajuste aplica los volúmenes, igual que aplica la nota de las
         # cajas: se apunta con qué se llamó para poder comprobarlo.
         self.volumenes = []
+        self.notas = []
+        self.carousel = SimpleNamespace(
+            set_score_source=lambda fuente, visible: self.notas.append(fuente),
+        )
         self.audio = SimpleNamespace(
             set_volumes=lambda musica, efectos: self.volumenes.append(
                 (musica, efectos)
@@ -71,9 +75,6 @@ class AppFalsa:
 
     def _on_selection_changed(self):
         pass
-
-    def carousel(self):
-        return SimpleNamespace(set_score_source=lambda *a: None)
 
 
 class TestFiltrosRecordados:
@@ -99,74 +100,82 @@ class TestFiltrosRecordados:
 
 
 class TestAjustesDelCarrusel:
-    def test_opening_edits_a_copy(self):
+    """
+    Puntueitor3D: ya no hay copia ni "Guardar", cada cambio se escribe y se
+    aplica al hacerlo. El volumen se busca a tientas, y tener que guardar para
+    oír cómo había quedado lo hacía imposible.
+    """
+
+    def test_opening_shows_the_prefs_in_use(self):
         app = AppFalsa()
         app.prefs.score_source = "steamdb"
 
         accounts_ui.open_gui3d_menu(app)
 
-        assert app._gui3d_prefs is not app.prefs
+        assert not hasattr(app, "_gui3d_prefs")
         assert app.menus_abiertos == [app.gui3d_menu]
 
-    def test_adjusting_the_score_source_cycles(self):
+    def test_adjusting_the_score_source_cycles(self, monkeypatch):
+        monkeypatch.setattr(state, "save_preferences", lambda p: None)
         app = AppFalsa()
         accounts_ui.open_gui3d_menu(app)
-        app._gui3d_prefs.score_source = state.SCORE_SOURCES[0]
+        app.prefs.score_source = state.SCORE_SOURCES[0]
 
         accounts_ui.adjust_gui3d_setting(
             app, MenuItem("set3d:score_source", ""), direction=1,
         )
 
-        assert app._gui3d_prefs.score_source == state.SCORE_SOURCES[1]
+        assert app.prefs.score_source == state.SCORE_SOURCES[1]
+        assert app.notas == [state.SCORE_SOURCES[1]]
 
-    def test_saving_writes_the_copy_and_closes(self, monkeypatch):
+    def test_every_change_is_saved_on_the_spot(self, monkeypatch):
         guardados = []
-        monkeypatch.setattr(state, "save_preferences", lambda p: guardados.append(p))
+        monkeypatch.setattr(state, "save_preferences", guardados.append)
         app = AppFalsa()
-        app.carousel = SimpleNamespace(set_score_source=lambda *a: None)
         accounts_ui.open_gui3d_menu(app)
 
-        accounts_ui.save_gui3d_settings(app)
+        accounts_ui.adjust_gui3d_setting(
+            app, MenuItem("set3d:remember_filters", ""), direction=1,
+        )
 
-        assert guardados == [app._gui3d_prefs]
-        assert app.prefs is app._gui3d_prefs
-        assert app.menus_cerrados == 1
+        assert guardados == [app.prefs]
+        assert app.menus_cerrados == 0
 
-    def test_the_volume_moves_in_steps_and_does_not_wrap_around(self):
+    def test_the_volume_moves_in_steps_and_does_not_wrap_around(self, monkeypatch):
         """
         Un volumen es una magnitud con dos extremos, no una lista de
         opciones: que bajar del todo lo dejara a tope sería una sorpresa muy
         desagradable con los cascos puestos.
         """
+        monkeypatch.setattr(state, "save_preferences", lambda p: None)
         app = AppFalsa()
         accounts_ui.open_gui3d_menu(app)
-        app._gui3d_prefs.music_volume = 0
+        app.prefs.music_volume = 0
 
         for _ in range(3):
             accounts_ui.adjust_gui3d_setting(
                 app, MenuItem("set3d:music_volume", ""), direction=-1,
             )
-        assert app._gui3d_prefs.music_volume == 0
+        assert app.prefs.music_volume == 0
 
         accounts_ui.adjust_gui3d_setting(
             app, MenuItem("set3d:music_volume", ""), direction=1,
         )
-        assert app._gui3d_prefs.music_volume == menus.VOLUME_STEP
+        assert app.prefs.music_volume == menus.VOLUME_STEP
 
-    def test_saving_applies_the_volumes(self):
-        """
-        Como la nota de las cajas: hasta guardar, la copia era solo
-        intención, así que es aquí donde el sonido tiene que enterarse.
-        """
+    def test_moving_the_volume_is_heard_right_away(self, monkeypatch):
+        """Sin esto habría que guardar para saber cómo ha quedado."""
+        monkeypatch.setattr(state, "save_preferences", lambda p: None)
         app = AppFalsa()
-        app.carousel = SimpleNamespace(set_score_source=lambda *a: None)
         accounts_ui.open_gui3d_menu(app)
-        app._gui3d_prefs.music_volume = 30
-        app._gui3d_prefs.sfx_volume = 90
+        app.prefs.music_volume = 30
+        app.prefs.sfx_volume = 90
 
-        accounts_ui.save_gui3d_settings(app)
+        accounts_ui.adjust_gui3d_setting(
+            app, MenuItem("set3d:sfx_volume", ""), direction=-1,
+        )
 
-        assert app.volumenes == [(30, 90)]
+        assert app.volumenes == [(30, 90 - menus.VOLUME_STEP)]
 
     def test_the_menu_shows_the_volumes(self):
         etiquetas = {
@@ -177,14 +186,21 @@ class TestAjustesDelCarrusel:
         assert etiquetas["set3d:music_volume"] == "Apagado"
         assert etiquetas["set3d:sfx_volume"] == "70 %"
 
-    def test_it_does_not_apply_until_saved(self):
-        """Salir con B sin guardar no puede cambiar nada."""
-        app = AppFalsa()
-        original = app.prefs
-        accounts_ui.open_gui3d_menu(app)
-        app._gui3d_prefs.remember_filters = not original.remember_filters
+    def test_there_is_no_save_row_anymore(self):
+        claves = [i.key for i in menus.build_gui3d_items(state.Preferences())]
+        assert "set3d:save" not in claves
+        assert all(not c.startswith("sec3d") for c in claves)
 
-        assert app.prefs is original
+    def test_a_row_that_adjusts_nothing_writes_nothing(self, monkeypatch):
+        """La cabecera y cualquier fila desconocida se dejan en paz."""
+        guardados = []
+        monkeypatch.setattr(state, "save_preferences", guardados.append)
+        app = AppFalsa()
+        accounts_ui.open_gui3d_menu(app)
+
+        accounts_ui.adjust_gui3d_setting(app, MenuItem("sec3d_x", ""), direction=1)
+
+        assert guardados == []
 
 
 class TestCuentasYTiendas:
@@ -245,7 +261,7 @@ class TestCuentasYTiendas:
 
         assert iniciados == ["gog"]
 
-    def test_a_checkbox_flips_the_flag(self):
+    def test_a_checkbox_writes_the_flag_right_away(self):
         app = AppFalsa()
         accounts_ui.open_settings_menu(app)
         item = MenuItem("set:gog_is_active", "GOG", checked=True,
@@ -254,6 +270,12 @@ class TestCuentasYTiendas:
         accounts_ui.toggle_setting_store(app, item)
 
         assert app._settings["gog_is_active"] is True
+        assert ConfigManager().get.gog_is_active is True
+        # Las tiendas marcadas deciden qué se ve, no solo qué se carga.
+        assert app.reordenado
+        # Y no cierra el menú: antes lo hacía "Guardar", y encadenar dos
+        # tiendas obligaba a volver a entrar.
+        assert app.menus_cerrados == 0
 
     def test_a_numeric_field_falls_back_to_zero(self):
         """Igual que la TUI: lo que no se entienda se queda en 0."""
@@ -263,26 +285,36 @@ class TestCuentasYTiendas:
         accounts_ui.set_setting(app, "steam_user_id", "no-es-un-número")
 
         assert app._settings["steam_user_id"] == 0
+        assert ConfigManager().get.steam_user_id == 0
 
-    def test_saving_writes_to_the_real_config(self):
-        app = AppFalsa()
-        accounts_ui.open_settings_menu(app)
-        app._settings["gog_is_active"] = True
-
-        accounts_ui.save_settings(app)
-
-        assert ConfigManager().get.gog_is_active is True
-        assert app.reordenado
-        assert app.menus_cerrados == 1
-
-    def test_saving_reorders_because_active_stores_change_what_shows(self):
-        """Las tiendas marcadas deciden qué se ve, no solo qué se carga."""
+    def test_accepting_a_text_field_writes_it_without_any_save_row(self):
+        """
+        El caso que motivó quitar "Guardar": escribir el Client ID de itch.io
+        y poder usarlo en la fila de login de más abajo sin salir de Cuentas.
+        """
         app = AppFalsa()
         accounts_ui.open_accounts_menu(app)
 
-        accounts_ui.save_settings(app)
+        accounts_ui.activate_setting(app, "set:itchio_client_id")
+        app.acepta("un-client-id")
 
-        assert app.reordenado
+        assert ConfigManager().get.itchio_client_id == "un-client-id"
+        assert app.menus_cerrados == 0
+
+    def test_writing_in_one_screen_does_not_drag_the_other_along(self):
+        """
+        Cuentas y Tiendas comparten `_settings`. Se escribe CAMPO A CAMPO
+        justamente para que tocar uno no arrastre al disco lo demás: el día
+        que alguien vuelque el diccionario entero, esto salta.
+        """
+        app = AppFalsa()
+        accounts_ui.open_accounts_menu(app)
+        app._settings["gog_is_active"] = not ConfigManager().get.gog_is_active
+
+        accounts_ui.set_setting(app, "igdb_client_id", "abc")
+
+        assert ConfigManager().get.igdb_client_id == "abc"
+        assert ConfigManager().get.gog_is_active != app._settings["gog_is_active"]
 
 
 class TestLogin:
@@ -343,3 +375,12 @@ class TestYaNoEstanEnApp:
             "_toggle_setting_store", "_save_settings",
         ):
             assert not hasattr(App, metodo), metodo
+
+    def test_saving_in_bulk_is_gone_for_good(self):
+        """
+        Ni en la app ni en el módulo: los tres menús guardan por elemento, y
+        una función de guardar en bloque solo podría volver trayéndose
+        consigo la fila "Guardar" que se quitó.
+        """
+        for funcion in ("save_settings", "save_gui3d_settings"):
+            assert not hasattr(accounts_ui, funcion), funcion

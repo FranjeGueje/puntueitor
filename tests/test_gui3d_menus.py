@@ -436,8 +436,15 @@ class TestMenuCuentas:
             "gog", "epic", "amazon", "itchio",
         ]
 
-    def test_it_can_be_saved(self):
-        assert "set:save" in [i.key for i in self._items()]
+    def test_there_is_no_save_row_anymore(self):
+        """
+        Cada campo se escribe al aceptar su cuadro de texto. La fila obligaba
+        a guardar, cerraba Cuentas y había que volver a entrar para usar lo
+        recién escrito en la fila de login de al lado.
+        """
+        assert "set:save" not in [i.key for i in self._items()]
+        # Y la última fila es útil, no un hueco que dejó el separador.
+        assert self._items()[-1].key.startswith("login:")
 
 
 class TestMenuConfiguracion:
@@ -452,6 +459,11 @@ class TestMenuConfiguracion:
         claves = [i.key for i in menus.build_settings_items({})]
         for campo in ("igdb_client_secret", "steam_api_key", "steam_user_id"):
             assert f"set:{campo}" not in claves
+
+    def test_there_is_no_save_row_anymore(self):
+        claves = [i.key for i in menus.build_settings_items({})]
+        assert "set:save" not in claves
+        assert claves[-1].startswith("set:")
 
     def test_no_store_logins_here_either(self):
         claves = [i.key for i in menus.build_settings_items({})]

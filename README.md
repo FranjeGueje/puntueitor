@@ -182,7 +182,10 @@ mientras.
 La configuración vive en dos sitios, según lo que sea: **Cuentas** (`a` en la
 TUI, Select → Cuentas en el carrusel) guarda con qué te identificas —claves de
 IGDB y de Steam, sesiones de las tiendas— y **Tiendas** (`c`, Select →
-Tiendas), qué tiendas se cargan. También se puede editar a mano
+Tiendas), qué tiendas se cargan. En el carrusel **no hay que guardar**: cada
+ajuste se escribe en cuanto lo terminas de tocar —al aceptar lo escrito en un
+campo, al marcar una tienda, al mover un volumen—, y salir con B solo cierra el
+menú. También se puede editar a mano
 `~/.config/puntueitor/config.json`; las dos interfaces leen y escriben el
 mismo fichero:
 
@@ -245,7 +248,9 @@ queda en el log para que la abras donde puedas.
 > `client_id` reutilizar: hay que registrar una aplicación propia en
 > [itch.io/user/settings/oauth-apps](https://itch.io/user/settings/oauth-apps),
 > con `https://itch.io/` como URL de redirección, y pegar su **Client ID** en
-> Cuentas. A partir de ahí, el inicio de sesión es igual que en las otras tres.
+> Cuentas. Queda guardado al aceptarlo, así que la fila de "itch.io" que tienes
+> justo debajo ya lo usa sin salir del menú. A partir de ahí, el inicio de
+> sesión es igual que en las otras tres.
 
 > **Para pegar en el carrusel 3D**: `Ctrl+V`, o el botón **X** del mando. Las
 > direcciones de vuelta pasan de los cuatrocientos caracteres y teclearlas
@@ -306,7 +311,8 @@ música, que va en streaming y no se carga entera en memoria. MP3 y FLAC
 también funcionan; **MIDI no**, el motor de audio no lleva sintetizador.
 
 Los volúmenes están en **Opciones → Puntueitor3D**, separados para música y
-efectos. Poner la música a cero la para del todo.
+efectos, y se aplican mientras los mueves, que es la única forma de dar con el
+que buscas. Poner la música a cero la para del todo.
 
 > No se incluye audio en el repositorio para no arrastrar material de
 > terceros con su licencia detrás. Para buscarlo,
